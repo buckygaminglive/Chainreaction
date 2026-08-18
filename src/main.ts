@@ -4,6 +4,7 @@ import type { PlayerConfig, MoveEvent } from './game/types';
 import { ThreeRenderer, type OrbStyle } from './render3d/ThreeRenderer';
 import { PLAYER_THEMES } from './render/theme';
 import { sfx } from './sfx/Sfx';
+import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
@@ -280,29 +281,51 @@ async function onCellTapOnline(row: number, col: number) {
   net.sendMove(row, col);
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 async function applyAndAnimateMove(row: number, col: number) {
   if (!engine || !renderer) return;
   const result = engine.applyMove(row, col);
 
   // Game-state resolution (HUD, win screen) must never be skipped even if the
   // animation layer hits an edge case on a big cascading chain reaction.
-  try {
-    await renderer.playEvents(result.events, (ev: MoveEvent) => {
-      if (ev.type === 'place') sfx.place();
-      else if (ev.type === 'explode') sfx.explode();
+  const playAnimation = renderer
+    .playEvents(result.events, (ev: MoveEvent) => {
+      if (ev.type === 'place') {
+        sfx.place();
+        haptics.place();
+      } else if (ev.type === 'explode') {
+        sfx.explode();
+        haptics.explode();
+      }
+    })
+    .catch((err) => {
+      console.error('Board animation error (continuing anyway):', err);
     });
-  } catch (err) {
-    console.error('Board animation error (continuing anyway):', err);
+
+  const isWin = result.gameOver && result.winner !== null;
+  if (isWin) {
+    // The outcome is already decided — don't make players sit through a huge
+    // final cascade just to see who won. Cap the wait; any remaining
+    // explosion waves keep playing behind the win overlay.
+    await Promise.race([playAnimation, wait(1100)]);
+  } else {
+    await playAnimation;
   }
 
   for (const ev of result.events) {
-    if (ev.type === 'eliminate') sfx.eliminate();
+    if (ev.type === 'eliminate') {
+      sfx.eliminate();
+      haptics.eliminate();
+    }
   }
 
   renderPills();
 
-  if (result.gameOver && result.winner !== null) {
-    showWin(result.winner);
+  if (isWin) {
+    showWin(result.winner!);
   } else {
     sfx.turnChange();
     animating = false;
@@ -312,6 +335,7 @@ async function applyAndAnimateMove(row: number, col: number) {
 function showWin(winnerId: number) {
   if (!engine) return;
   sfx.win();
+  haptics.win();
   const winner = engine.players.find((p) => p.id === winnerId)!;
   const theme = colorOf(winnerId);
   winTitleEl.textContent = `${winner.name} Wins!`;
