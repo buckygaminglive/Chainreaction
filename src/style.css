@@ -635,3 +635,44 @@ body {
   opacity: 0.25;
   cursor: not-allowed;
 }
+
+.lobby-status {
+  position: absolute;
+  top: max(64px, calc(env(safe-area-inset-top) + 54px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: rgba(255, 194, 59, 0.14);
+  border: 1px solid rgba(255, 194, 59, 0.4);
+  color: #ffd98a;
+}
+
+.lobby-status.ok {
+  background: rgba(123, 255, 59, 0.14);
+  border-color: rgba(123, 255, 59, 0.4);
+  color: #c9ffab;
+}
+
+.lobby-status .spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: lobby-spin 0.7s linear infinite;
+}
+
+@keyframes lobby-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

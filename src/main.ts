@@ -34,6 +34,7 @@ function disconnectNet() {
   intentionalDisconnect = true;
   net?.disconnect();
   net = null;
+  hideLobbyStatus();
 }
 
 // ---------- DOM refs ----------
@@ -71,6 +72,7 @@ const lobbyBoardSizeGroup = $('lobby-board-size-group');
 const lobbyOrbStyleGroup = $('lobby-orb-style-group');
 const lobbyStartBtn = $<HTMLButtonElement>('lobby-start-btn');
 const lobbyWaitMsg = $('lobby-wait-msg');
+const lobbyStatusEl = $('lobby-status');
 
 // Before a game exists (menu swatches, lobby color picker) this is a plain index
 // lookup. Once `engine` exists, it reflects that player's *actual* assigned
@@ -259,6 +261,10 @@ async function mountGame(newEngine: GameEngine, style: OrbStyle) {
   renderPills();
   animating = false;
 
+  exposeDebug();
+}
+
+function exposeDebug() {
   if (import.meta.env.DEV) {
     (window as any).__debug = { engine, renderer, net, onCellTapLocal, onCellTapOnline };
   }
@@ -423,6 +429,7 @@ createRoomBtn.addEventListener('click', async () => {
     net = client;
     wireNetHandlers();
     enterLobby();
+    exposeDebug();
   } catch (err) {
     showOnlineError(err instanceof Error ? err.message : 'Could not create a room.');
   } finally {
@@ -446,6 +453,7 @@ joinRoomBtn.addEventListener('click', async () => {
     net = client;
     wireNetHandlers();
     enterLobby();
+    exposeDebug();
   } catch (err) {
     showOnlineError(err instanceof Error ? err.message : 'Could not join that room.');
   } finally {
@@ -463,19 +471,34 @@ function wireNetHandlers() {
   };
   net.onDisconnect = () => {
     net = null;
+    hideLobbyStatus();
     if (intentionalDisconnect) {
       intentionalDisconnect = false;
       return;
     }
     onlineMode = false;
-    showOnlineError('Lost connection to the room.');
+    showOnlineError('Lost connection to the room. Ask your friend for the code and try again.');
     showScreen(screenOnline);
   };
+  net.onReconnecting = (attempt, max) => {
+    lobbyStatusEl.className = 'lobby-status';
+    lobbyStatusEl.innerHTML = `<span class="spin"></span> Reconnecting… (${attempt}/${max})`;
+  };
+  net.onReconnected = () => {
+    lobbyStatusEl.className = 'lobby-status ok';
+    lobbyStatusEl.textContent = '✓ Back online';
+    setTimeout(hideLobbyStatus, 1800);
+  };
+}
+
+function hideLobbyStatus() {
+  lobbyStatusEl.classList.add('hidden');
 }
 
 function enterLobby() {
   showScreen(screenLobby);
   roomCodeBtn.textContent = net?.roomCode ?? '-----';
+  hideLobbyStatus();
 }
 
 roomCodeBtn.addEventListener('click', async () => {

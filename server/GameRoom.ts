@@ -121,17 +121,35 @@ export class GameRoom extends DurableObject<Env> {
       await this.handleRestart(att);
     } else if (msg.type === 'pickColor') {
       await this.handlePickColor(ws, att, msg.colorIndex);
+    } else if (msg.type === 'ping') {
+      this.send(ws, { type: 'pong' });
     }
   }
 
   async webSocketClose(ws: WebSocket) {
+    await this.handleDisconnect(ws);
+  }
+
+  async webSocketError(ws: WebSocket, error: unknown) {
+    console.error('WebSocket error', String(error));
+    await this.handleDisconnect(ws);
+  }
+
+  private async handleDisconnect(ws: WebSocket) {
     const att = ws.deserializeAttachment() as Attachment | undefined;
     if (!att) return;
-    const entry = this.roster.get(att.id);
-    if (entry) entry.connected = false;
+
+    if (!this.started) {
+      // Nothing durable depends on this slot yet — drop it cleanly so a
+      // reconnect looks like a normal fresh join instead of leaving a ghost.
+      this.roster.delete(att.id);
+    } else {
+      const entry = this.roster.get(att.id);
+      if (entry) entry.connected = false;
+    }
 
     if (!this.started && this.hostId === att.id) {
-      const next = this.ctx.getWebSockets()[0];
+      const next = this.ctx.getWebSockets().find((s) => s !== ws);
       if (next) {
         const nextAtt = next.deserializeAttachment() as Attachment;
         this.hostId = nextAtt.id;
@@ -237,8 +255,8 @@ export class GameRoom extends DurableObject<Env> {
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(payload);
-      } catch {
-        // socket gone; webSocketClose will clean it up
+      } catch (err) {
+        console.error(`broadcast(${msg.type}) failed for a socket:`, String(err));
       }
     }
   }

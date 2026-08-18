@@ -15,11 +15,13 @@ export type ClientMsg =
   | { type: 'startGame'; boardSize: BoardSizeKey; orbStyle: OrbStyleKey }
   | { type: 'move'; row: number; col: number }
   | { type: 'pickColor'; colorIndex: number }
-  | { type: 'restart' };
+  | { type: 'restart' }
+  | { type: 'ping' };
 
 export type ServerMsg =
   | { type: 'welcome'; youAreId: number; hostId: number; players: NetPlayer[] }
   | { type: 'players'; players: NetPlayer[]; hostId: number }
   | { type: 'gameStarted'; rows: number; cols: number; players: PlayerConfig[]; orbStyle: OrbStyleKey }
   | { type: 'move'; row: number; col: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'pong' };
