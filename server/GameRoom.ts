@@ -16,6 +16,7 @@ interface Attachment {
 interface RosterEntry {
   name: string;
   connected: boolean;
+  colorIndex: number;
 }
 
 interface Meta {
@@ -92,7 +93,7 @@ export class GameRoom extends DurableObject<Env> {
 
     server.serializeAttachment({ id, name } satisfies Attachment);
     this.ctx.acceptWebSocket(server);
-    this.roster.set(id, { name, connected: true });
+    this.roster.set(id, { name, connected: true, colorIndex: this.pickDefaultColor() });
     await this.persistMeta();
 
     this.send(server, { type: 'welcome', youAreId: id, hostId, players: this.rosterList() });
@@ -118,6 +119,8 @@ export class GameRoom extends DurableObject<Env> {
       await this.handleMove(ws, att, msg.row, msg.col);
     } else if (msg.type === 'restart') {
       await this.handleRestart(att);
+    } else if (msg.type === 'pickColor') {
+      await this.handlePickColor(ws, att, msg.colorIndex);
     }
   }
 
@@ -153,7 +156,8 @@ export class GameRoom extends DurableObject<Env> {
       .map((s) => s.deserializeAttachment() as Attachment)
       .sort((a, b) => a.id - b.id)
       .map((a) => {
-        const theme = PLAYER_THEMES[a.id % PLAYER_THEMES.length];
+        const colorIndex = this.roster.get(a.id)?.colorIndex ?? a.id % PLAYER_THEMES.length;
+        const theme = PLAYER_THEMES[colorIndex];
         return { id: a.id, name: a.name, color: theme.base, colorLight: theme.light, isAlive: true };
       });
 
@@ -180,6 +184,35 @@ export class GameRoom extends DurableObject<Env> {
     this.broadcastAll({ type: 'move', row, col });
   }
 
+  private async handlePickColor(ws: WebSocket, att: Attachment, colorIndex: number) {
+    if (this.started) return;
+    if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex >= PLAYER_THEMES.length) return;
+    const takenByOther = Array.from(this.roster.entries()).some(
+      ([id, entry]) => id !== att.id && entry.connected && entry.colorIndex === colorIndex
+    );
+    if (takenByOther) {
+      this.send(ws, { type: 'error', message: 'That color is already taken.' });
+      return;
+    }
+    const entry = this.roster.get(att.id);
+    if (!entry) return;
+    entry.colorIndex = colorIndex;
+    await this.persistMeta();
+    this.broadcastPlayers();
+  }
+
+  private pickDefaultColor(): number {
+    const taken = new Set(
+      Array.from(this.roster.values())
+        .filter((e) => e.connected)
+        .map((e) => e.colorIndex)
+    );
+    for (let i = 0; i < PLAYER_THEMES.length; i++) {
+      if (!taken.has(i)) return i;
+    }
+    return this.nextPlayerId % PLAYER_THEMES.length;
+  }
+
   private async handleRestart(att: Attachment) {
     if (att.id !== this.hostId) return;
     this.started = false;
@@ -191,7 +224,7 @@ export class GameRoom extends DurableObject<Env> {
 
   private rosterList(): NetPlayer[] {
     return Array.from(this.roster.entries())
-      .map(([id, entry]) => ({ id, name: entry.name, connected: entry.connected }))
+      .map(([id, entry]) => ({ id, name: entry.name, connected: entry.connected, colorIndex: entry.colorIndex }))
       .sort((a, b) => a.id - b.id);
   }
 

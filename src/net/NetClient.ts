@@ -92,6 +92,10 @@ export class NetClient {
     this.send({ type: 'move', row, col });
   }
 
+  pickColor(colorIndex: number) {
+    this.send({ type: 'pickColor', colorIndex });
+  }
+
   restart() {
     this.send({ type: 'restart' });
   }

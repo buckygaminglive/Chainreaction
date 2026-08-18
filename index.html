@@ -57,10 +57,10 @@
           <button id="play-btn" class="primary-btn">
             <span>PLAY</span>
           </button>
-          <div class="menu-row">
-            <button id="play-online-btn" class="ghost-btn">🌐 Play Online</button>
-            <button id="howto-btn" class="ghost-btn">How to Play</button>
-          </div>
+          <button id="play-online-btn" class="primary-btn primary-btn-blue">
+            <span>🌐 PLAY ONLINE</span>
+          </button>
+          <button id="howto-btn" class="ghost-btn">How to Play</button>
         </div>
       </section>
 
@@ -111,6 +111,11 @@
               <div id="lobby-players" class="lobby-players"></div>
             </div>
 
+            <div class="field">
+              <div class="field-label">Your Color</div>
+              <div id="lobby-color-picker" class="swatch-row"></div>
+            </div>
+
             <div id="lobby-host-controls">
               <div class="field">
                 <div class="field-label">Board Size</div>
@@ -151,6 +156,7 @@
         <div class="win-card">
           <div class="win-crown">👑</div>
           <div id="win-title" class="win-title">Player 1 Wins!</div>
+          <div id="win-leaderboard" class="win-leaderboard"></div>
           <div class="win-actions">
             <button id="play-again-btn" class="primary-btn">Play Again</button>
             <button id="win-menu-btn" class="ghost-btn">Main Menu</button>

@@ -283,7 +283,8 @@ body {
   box-shadow: 0 0 0 0 transparent;
 }
 
-#play-btn {
+#play-btn,
+#play-online-btn {
   width: 100%;
 }
 
@@ -327,6 +328,13 @@ body {
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.pill .pname {
+  max-width: 78px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pill.active {
@@ -433,14 +441,9 @@ body {
 }
 
 /* ---------- Online screens ---------- */
-.menu-row {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-}
-
-.menu-row .ghost-btn {
-  flex: 1;
+.primary-btn-blue {
+  background: linear-gradient(160deg, #4fc3ff, #2fb4ff 60%, #0f7fd1);
+  box-shadow: 0 10px 24px rgba(47, 180, 255, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 #screen-online .menu-inner,
@@ -557,4 +560,78 @@ body {
 
 #lobby-host-controls.hidden {
   display: none;
+}
+
+/* ---------- Win leaderboard ---------- */
+.win-leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 22px;
+  text-align: left;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+.leaderboard-row.winner {
+  background: rgba(255, 194, 59, 0.1);
+  border-color: rgba(255, 194, 59, 0.4);
+  color: var(--text);
+}
+
+.leaderboard-row .rank {
+  width: 22px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.leaderboard-row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.leaderboard-row .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-row .score {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 13px;
+}
+
+/* ---------- Lobby color picker ---------- */
+.swatch {
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.swatch:active {
+  transform: scale(0.92);
+}
+
+.swatch.mine {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px white, 0 0 14px 2px rgba(255, 255, 255, 0.5) !important;
+}
+
+.swatch.taken {
+  opacity: 0.25;
+  cursor: not-allowed;
 }

@@ -10,7 +10,6 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   PCFSoftShadowMap,
-  PlaneGeometry,
   Raycaster,
   Scene,
   SphereGeometry,
@@ -45,7 +44,8 @@ interface CellView {
 
 const CELL_SIZE = 1;
 const TILE_HEIGHT = 0.14;
-const ORB_RADIUS = 0.17;
+const ORB_RADIUS = 0.22;
+const ORB_SPREAD = 0.52;
 
 export class ThreeRenderer {
   private engine: GameEngine;
@@ -100,6 +100,7 @@ export class ThreeRenderer {
   async init(host: HTMLElement) {
     this.host = host;
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
@@ -153,14 +154,6 @@ export class ThreeRenderer {
 
     const boardW = cols * CELL_SIZE;
     const boardD = rows * CELL_SIZE;
-
-    const floorGeo = new PlaneGeometry(boardW * 1.6, boardD * 1.6);
-    const floorMat = new MeshStandardMaterial({ color: 0x0c0818, roughness: 1 });
-    const floor = new Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.03;
-    floor.receiveShadow = true;
-    this.boardGroup.add(floor);
 
     for (let r = 0; r < rows; r++) {
       const rowCells: CellView[] = [];
@@ -299,8 +292,8 @@ export class ThreeRenderer {
     }
 
     for (const [ox, oy] of positions) {
-      const px = ox * CELL_SIZE * 0.42;
-      const pz = oy * CELL_SIZE * 0.42;
+      const px = ox * CELL_SIZE * ORB_SPREAD;
+      const pz = oy * CELL_SIZE * ORB_SPREAD;
       const sphere = new Mesh(this.orbGeo, orbMat);
       sphere.position.set(px, ORB_RADIUS, pz);
       sphere.castShadow = true;

@@ -53,6 +53,7 @@ const orbStyleGroup = $('orb-style-group');
 const playPillsEl = $('player-pills');
 const boardHost = $('board-host');
 const winTitleEl = $('win-title');
+const winLeaderboardEl = $('win-leaderboard');
 const confettiLayer = $('confetti-layer');
 
 const nameInput = $<HTMLInputElement>('name-input');
@@ -63,13 +64,22 @@ const onlineErrorEl = $('online-error');
 const roomCodeBtn = $('room-code-btn');
 const lobbyHintEl = $('lobby-hint');
 const lobbyPlayersEl = $('lobby-players');
+const lobbyColorPickerEl = $('lobby-color-picker');
 const lobbyHostControls = $('lobby-host-controls');
 const lobbyBoardSizeGroup = $('lobby-board-size-group');
 const lobbyOrbStyleGroup = $('lobby-orb-style-group');
 const lobbyStartBtn = $<HTMLButtonElement>('lobby-start-btn');
 const lobbyWaitMsg = $('lobby-wait-msg');
 
+// Before a game exists (menu swatches, lobby color picker) this is a plain index
+// lookup. Once `engine` exists, it reflects that player's *actual* assigned
+// color — which, in online play, may differ from their id if they picked one.
 function colorOf(playerId: number) {
+  const p = engine?.players.find((pl) => pl.id === playerId);
+  if (p) {
+    const match = PLAYER_THEMES.find((t) => t.base === p.color);
+    if (match) return match;
+  }
   return PLAYER_THEMES[playerId % PLAYER_THEMES.length];
 }
 
@@ -202,7 +212,7 @@ function renderPills() {
     if (!p.isAlive) pill.classList.add('eliminated');
     const orbCount = countOrbs(p.id);
     const youTag = onlineMode && p.id === myPlayerId ? ' (You)' : '';
-    pill.innerHTML = `<span class="dot" style="background:${theme.css};box-shadow:0 0 8px ${theme.css}"></span>P${p.id + 1}${youTag} · ${orbCount}`;
+    pill.innerHTML = `<span class="dot" style="background:${theme.css};box-shadow:0 0 8px ${theme.css}"></span><span class="pname">${p.name}${youTag}</span> · ${orbCount}`;
     if (pill.classList.contains('active')) {
       pill.style.borderColor = theme.css;
       pill.style.boxShadow = `0 0 14px ${theme.css}55`;
@@ -249,7 +259,7 @@ async function mountGame(newEngine: GameEngine, style: OrbStyle) {
   animating = false;
 
   if (import.meta.env.DEV) {
-    (window as any).__debug = { engine, renderer, net, onCellTapLocal };
+    (window as any).__debug = { engine, renderer, net, onCellTapLocal, onCellTapOnline };
   }
 }
 
@@ -274,10 +284,16 @@ async function applyAndAnimateMove(row: number, col: number) {
   if (!engine || !renderer) return;
   const result = engine.applyMove(row, col);
 
-  await renderer.playEvents(result.events, (ev: MoveEvent) => {
-    if (ev.type === 'place') sfx.place();
-    else if (ev.type === 'explode') sfx.explode();
-  });
+  // Game-state resolution (HUD, win screen) must never be skipped even if the
+  // animation layer hits an edge case on a big cascading chain reaction.
+  try {
+    await renderer.playEvents(result.events, (ev: MoveEvent) => {
+      if (ev.type === 'place') sfx.place();
+      else if (ev.type === 'explode') sfx.explode();
+    });
+  } catch (err) {
+    console.error('Board animation error (continuing anyway):', err);
+  }
 
   for (const ev of result.events) {
     if (ev.type === 'eliminate') sfx.eliminate();
@@ -286,17 +302,42 @@ async function applyAndAnimateMove(row: number, col: number) {
   renderPills();
 
   if (result.gameOver && result.winner !== null) {
-    sfx.win();
-    const theme = colorOf(result.winner);
-    winTitleEl.textContent = `Player ${result.winner + 1} Wins!`;
-    winTitleEl.style.color = theme.css;
-    winTitleEl.style.textShadow = `0 0 24px ${theme.css}aa`;
-    launchConfetti();
-    setTimeout(() => showOverlay(screenWin), 450);
+    showWin(result.winner);
   } else {
     sfx.turnChange();
     animating = false;
   }
+}
+
+function showWin(winnerId: number) {
+  if (!engine) return;
+  sfx.win();
+  const winner = engine.players.find((p) => p.id === winnerId)!;
+  const theme = colorOf(winnerId);
+  winTitleEl.textContent = `${winner.name} Wins!`;
+  winTitleEl.style.color = theme.css;
+  winTitleEl.style.textShadow = `0 0 24px ${theme.css}aa`;
+
+  const standings = engine.players
+    .map((p) => ({ ...p, orbs: countOrbs(p.id) }))
+    .sort((a, b) => (b.id === winnerId ? 1 : 0) - (a.id === winnerId ? 1 : 0) || b.orbs - a.orbs);
+  const medals = ['🥇', '🥈', '🥉'];
+  winLeaderboardEl.innerHTML = standings
+    .map((p, i) => {
+      const t = colorOf(p.id);
+      const medal = i < medals.length ? medals[i] : `${i + 1}.`;
+      const status = p.isAlive ? `${p.orbs} orbs` : 'eliminated';
+      return `<div class="leaderboard-row${p.id === winnerId ? ' winner' : ''}">
+        <span class="rank">${medal}</span>
+        <span class="dot" style="background:${t.css};box-shadow:0 0 8px ${t.css}"></span>
+        <span class="name">${p.name}</span>
+        <span class="score">${status}</span>
+      </div>`;
+    })
+    .join('');
+
+  launchConfetti();
+  setTimeout(() => showOverlay(screenWin), 450);
 }
 
 function launchConfetti() {
@@ -459,8 +500,8 @@ $('lobby-back-btn').addEventListener('click', () => {
 
 function renderLobby(players: NetPlayer[], hostId: number) {
   lobbyPlayersEl.innerHTML = '';
-  players.forEach((p, idx) => {
-    const theme = colorOf(idx);
+  players.forEach((p) => {
+    const theme = colorOf(p.colorIndex);
     const row = document.createElement('div');
     row.className = 'lobby-player' + (p.connected ? '' : ' offline');
     const you = net && p.id === net.myId ? ' (You)' : '';
@@ -469,12 +510,38 @@ function renderLobby(players: NetPlayer[], hostId: number) {
     lobbyPlayersEl.appendChild(row);
   });
 
+  renderColorPicker(players);
+
   const isHost = !!net?.isHost;
   lobbyHostControls.classList.toggle('hidden', !isHost);
   lobbyStartBtn.classList.toggle('hidden', !isHost);
   lobbyWaitMsg.classList.toggle('hidden', isHost);
   const connectedCount = players.filter((p) => p.connected).length;
   lobbyStartBtn.toggleAttribute('disabled', connectedCount < 2);
+}
+
+function renderColorPicker(players: NetPlayer[]) {
+  lobbyColorPickerEl.innerHTML = '';
+  const myId = net?.myId ?? -1;
+  const mine = players.find((p) => p.id === myId);
+  PLAYER_THEMES.forEach((theme, idx) => {
+    const takenBy = players.find((p) => p.connected && p.colorIndex === idx && p.id !== myId);
+    const el = document.createElement('div');
+    el.className = 'swatch';
+    if (mine?.colorIndex === idx) el.className += ' mine';
+    else if (takenBy) el.className += ' taken';
+    el.style.background = `radial-gradient(circle at 35% 30%, ${theme.css}, ${theme.css}dd)`;
+    el.style.boxShadow = `0 0 14px 1px ${theme.css}88`;
+    el.textContent = mine?.colorIndex === idx ? '✓' : '';
+    el.title = takenBy ? `Taken by ${takenBy.name}` : theme.name;
+    if (!takenBy) {
+      el.addEventListener('click', () => {
+        sfx.buttonTap();
+        net?.pickColor(idx);
+      });
+    }
+    lobbyColorPickerEl.appendChild(el);
+  });
 }
 
 async function startOnlineGame(rows: number, cols: number, players: PlayerConfig[], style: OrbStyle) {
