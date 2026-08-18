@@ -47,6 +47,11 @@ const TILE_HEIGHT = 0.14;
 const ORB_RADIUS = 0.22;
 const ORB_SPREAD = 0.52;
 
+/** How long an exploding cell winds up (spinning, accelerating) before it actually
+ *  blasts. Exported so callers can sync sound/haptics to the real blast moment
+ *  rather than the start of the wind-up. */
+export const EXPLOSION_SPIN_UP_MS = 190;
+
 export class ThreeRenderer {
   private engine: GameEngine;
   private colorOf: (playerId: number) => ColorTheme;
@@ -77,6 +82,8 @@ export class ThreeRenderer {
 
   private onCellTap: (row: number, col: number) => void = () => {};
   private onPointerDownBound = (e: PointerEvent) => this.handlePointerDown(e);
+  private onContextLostBound = (e: Event) => this.handleContextLost(e);
+  private onContextRestoredBound = () => this.handleContextRestored();
 
   constructor(engine: GameEngine, colorOf: (playerId: number) => ColorTheme, orbStyle: OrbStyle = 'emoji') {
     this.engine = engine;
@@ -99,18 +106,7 @@ export class ThreeRenderer {
 
   async init(host: HTMLElement) {
     this.host = host;
-    this.renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
-    this.renderer.domElement.style.width = '100%';
-    this.renderer.domElement.style.height = '100%';
-    this.renderer.domElement.style.display = 'block';
-    this.renderer.domElement.style.touchAction = 'none';
+    this.renderer = this.createRenderer();
     host.appendChild(this.renderer.domElement);
 
     this.scene.add(this.boardGroup, this.fxGroup);
@@ -118,17 +114,66 @@ export class ThreeRenderer {
     this.buildGrid();
     this.layout();
 
-    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDownBound);
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(host);
 
     this.clock.start();
+    this.startLoop();
+  }
+
+  private createRenderer(): WebGLRenderer {
+    const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setClearColor(0x000000, 0);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = SRGBColorSpace;
+    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFSoftShadowMap;
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.addEventListener('pointerdown', this.onPointerDownBound);
+    renderer.domElement.addEventListener('webglcontextlost', this.onContextLostBound, false);
+    renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestoredBound, false);
+    return renderer;
+  }
+
+  private startLoop() {
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       this.tick();
       this.renderer.render(this.scene, this.camera);
     };
     loop();
+  }
+
+  /** Mobile GPUs reclaim the WebGL context when backgrounded/low on memory —
+   *  without this the board just goes black forever until the page reloads. */
+  private handleContextLost(e: Event) {
+    e.preventDefault();
+    cancelAnimationFrame(this.raf);
+    console.warn('WebGL context lost — waiting for the browser to restore it.');
+  }
+
+  private handleContextRestored() {
+    console.warn('WebGL context restored — rebuilding the renderer.');
+    // The dead context can't reliably resume rendering even after this event in
+    // some browsers, so swap in a fresh canvas/renderer bound to the new
+    // context. The scene graph itself (game state, meshes, materials) was
+    // never lost — only the GPU-side resources — so nothing needs rebuilding.
+    const old = this.renderer;
+    old.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
+    old.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
+    old.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
+    this.host.removeChild(old.domElement);
+    old.dispose();
+
+    this.renderer = this.createRenderer();
+    this.host.appendChild(this.renderer.domElement);
+    this.layout();
+    this.startLoop();
   }
 
   private setupLights() {
@@ -280,7 +325,14 @@ export class ThreeRenderer {
 
     view.tile.material = state.owner !== null ? this.getTileMaterial(state.owner) : this.neutralTileMat;
 
-    if (state.owner === null || state.orbs <= 0) return;
+    if (state.owner === null || state.orbs <= 0) {
+      // A cell that just emptied out (e.g. after exploding) may still have
+      // leftover spin-up rotation/scale — clear it so a future orb here
+      // doesn't inherit a stray twist.
+      view.orbGroup.rotation.set(0, 0, 0);
+      view.orbGroup.scale.set(1, 1, 1);
+      return;
+    }
 
     const positions = layoutFor(state.orbs);
     const orbMat = this.getOrbMaterial(state.owner);
@@ -418,20 +470,92 @@ export class ThreeRenderer {
     });
   }
 
+  /** Briefly freezes all active tweens at the moment of impact — the classic
+   *  "hit-stop" trick that makes a hit read as heavy rather than just fast. */
+  private hitStop(ms: number) {
+    gsap.globalTimeline.pause();
+    setTimeout(() => gsap.globalTimeline.resume(), ms);
+  }
+
+  /** Exploding cells wind up with an accelerating spin + charge-up scale right
+   *  before they blast — anticipation makes the release read as far punchier. */
+  /** Exploding cells wind up before they blast: the cluster strains outward
+   *  (scale) while each individual orb tumbles on its own random 3D axis at
+   *  its own random speed — a cluster of 2-3 never spins in lockstep, which
+   *  sells the "these are separate loose orbs" read rather than one rigid
+   *  piece rotating. */
+  private spinUp(batch: Extract<MoveEvent, { type: 'explode' }>[]): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (const ev of batch) {
+      const view = this.cells[ev.row][ev.col];
+
+      promises.push(
+        new Promise<void>((resolve) => {
+          gsap.to(view.orbGroup.scale, {
+            x: 1.4,
+            y: 1.4,
+            z: 1.4,
+            duration: EXPLOSION_SPIN_UP_MS / 1000,
+            ease: 'power2.in',
+            onComplete: () => resolve(),
+          });
+        })
+      );
+
+      for (const child of view.orbGroup.children) {
+        if (!(child instanceof Mesh)) continue;
+        const axis = new Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
+        const turns = 2.4 + Math.random() * 2.6;
+        const spin = { t: 0 };
+        promises.push(
+          new Promise<void>((resolve) => {
+            gsap.to(spin, {
+              t: 1,
+              duration: EXPLOSION_SPIN_UP_MS / 1000,
+              ease: 'power2.in',
+              onUpdate: () => child.setRotationFromAxisAngle(axis, spin.t * turns * Math.PI * 2),
+              onComplete: () => resolve(),
+            });
+          })
+        );
+      }
+    }
+    return Promise.all(promises).then(() => undefined);
+  }
+
   private async animateExplodeWave(batch: Extract<MoveEvent, { type: 'explode' }>[]) {
+    await this.spinUp(batch);
+
+    this.hitStop(Math.min(90, 32 + batch.length * 8));
     shakeCamera(this.camera, this.baseCameraPos, Math.min(0.2, 0.09 + batch.length * 0.018));
 
     const travelPromises: Promise<void>[] = [];
     for (const ev of batch) {
-      const pos = this.cellPos(ev.row, ev.col);
+      const view = this.cells[ev.row][ev.col];
+      const cellCenter = this.cellPos(ev.row, ev.col);
       const theme = this.colorOf(ev.player);
       const orbMat = this.getOrbMaterial(ev.player);
-      ring3d(this.fxGroup, pos, theme.base, CELL_SIZE * 0.72);
-      burst3d(this.fxGroup, pos, theme.base, 16, 1);
-      for (const target of ev.targets) {
+      const mass = this.engine.criticalMass(ev.row, ev.col);
+      const positions = layoutFor(mass);
+
+      ring3d(this.fxGroup, cellCenter, theme.base, CELL_SIZE * 0.72);
+      burst3d(this.fxGroup, cellCenter, theme.base, 16, 1);
+
+      // The clustered orbs physically "detach" here — hide the sitting cluster
+      // and let individually-positioned projectiles take over from exactly
+      // where each one sat, rather than all converging on one center point.
+      view.orbGroup.scale.set(1, 1, 1);
+      view.orbGroup.rotation.set(0, 0, 0);
+      for (const child of view.orbGroup.children) child.visible = false;
+
+      ev.targets.forEach((target, i) => {
+        const [ox, oy] = positions[i % positions.length];
+        const from = cellCenter
+          .clone()
+          .add(new Vector3(ox * CELL_SIZE * ORB_SPREAD, ORB_RADIUS, oy * CELL_SIZE * ORB_SPREAD));
         const to = this.cellPos(target.row, target.col);
-        travelPromises.push(travelOrb3d(this.fxGroup, pos, to, orbMat, this.orbGeo, ORB_RADIUS));
-      }
+        travelPromises.push(travelOrb3d(this.fxGroup, from, to, orbMat, this.orbGeo, ORB_RADIUS));
+      });
     }
 
     await Promise.all(travelPromises);
@@ -467,6 +591,8 @@ export class ThreeRenderer {
     this.ro?.disconnect();
     cancelAnimationFrame(this.raf);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
     this.renderer.dispose();
     this.host.removeChild(this.renderer.domElement);
   }

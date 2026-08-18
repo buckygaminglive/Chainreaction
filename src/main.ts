@@ -1,7 +1,7 @@
 import './style.css';
 import { GameEngine } from './game/GameEngine';
 import type { PlayerConfig, MoveEvent } from './game/types';
-import { ThreeRenderer, type OrbStyle } from './render3d/ThreeRenderer';
+import { ThreeRenderer, type OrbStyle, EXPLOSION_SPIN_UP_MS } from './render3d/ThreeRenderer';
 import { PLAYER_THEMES } from './render/theme';
 import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
@@ -16,7 +16,7 @@ const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
 
 let numPlayers = 2;
 let boardSizeKey: BoardSizeKey = 'medium';
-let orbStyle: OrbStyle = 'emoji';
+let orbStyle: OrbStyle = 'dots';
 let engine: GameEngine | null = null;
 let renderer: ThreeRenderer | null = null;
 let animating = false;
@@ -27,7 +27,7 @@ let net: NetClient | null = null;
 let onlineMode = false;
 let myPlayerId = -1;
 let lobbyBoardSize: BoardSizeKey = 'medium';
-let lobbyOrbStyle: OrbStyle = 'emoji';
+let lobbyOrbStyle: OrbStyle = 'dots';
 let intentionalDisconnect = false;
 
 function disconnectNet() {
@@ -287,39 +287,33 @@ async function onCellTapOnline(row: number, col: number) {
   net.sendMove(row, col);
 }
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
 async function applyAndAnimateMove(row: number, col: number) {
   if (!engine || !renderer) return;
   const result = engine.applyMove(row, col);
 
-  // Game-state resolution (HUD, win screen) must never be skipped even if the
-  // animation layer hits an edge case on a big cascading chain reaction.
-  const playAnimation = renderer
+  // Let the full cascade play out — including the final winning move — so the
+  // board visibly finishes converting before any winner is announced. Only the
+  // animation *error* path is guarded, so a rendering hiccup can't skip the
+  // win screen entirely.
+  await renderer
     .playEvents(result.events, (ev: MoveEvent) => {
       if (ev.type === 'place') {
         sfx.place();
         haptics.place();
       } else if (ev.type === 'explode') {
-        sfx.explode();
-        haptics.explode();
+        // The board visibly winds up (spinning) before it actually blasts —
+        // play the charge whir now, but delay the boom/buzz to land on the
+        // real blast moment instead of the start of the wind-up.
+        sfx.chargeUp();
+        setTimeout(() => {
+          sfx.explode();
+          haptics.explode();
+        }, EXPLOSION_SPIN_UP_MS);
       }
     })
     .catch((err) => {
       console.error('Board animation error (continuing anyway):', err);
     });
-
-  const isWin = result.gameOver && result.winner !== null;
-  if (isWin) {
-    // The outcome is already decided — don't make players sit through a huge
-    // final cascade just to see who won. Cap the wait; any remaining
-    // explosion waves keep playing behind the win overlay.
-    await Promise.race([playAnimation, wait(1100)]);
-  } else {
-    await playAnimation;
-  }
 
   for (const ev of result.events) {
     if (ev.type === 'eliminate') {
@@ -330,8 +324,8 @@ async function applyAndAnimateMove(row: number, col: number) {
 
   renderPills();
 
-  if (isWin) {
-    showWin(result.winner!);
+  if (result.gameOver && result.winner !== null) {
+    showWin(result.winner);
   } else {
     sfx.turnChange();
     animating = false;

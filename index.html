@@ -3,8 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#0a0718" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="A 3D chain-reaction strategy game. Trigger cascading explosions to capture the board — play locally with friends on one device, or online with a room code." />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Chain Reaction — Orb Wars" />
+    <meta property="og:description" content="Trigger cascading explosions to capture the board. Play locally or online with a room code." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Chain Reaction — Orb Wars" />
+    <meta name="twitter:description" content="Trigger cascading explosions to capture the board. Play locally or online with a room code." />
+
     <title>Chain Reaction — Orb Wars</title>
   </head>
   <body>
@@ -43,8 +58,8 @@
             <div class="field">
               <div class="field-label">Orb Style</div>
               <div id="orb-style-group" class="segmented">
-                <button class="segment" data-style="dots">Dots</button>
-                <button class="segment active" data-style="emoji">Emoji 🤯</button>
+                <button class="segment active" data-style="dots">Dots</button>
+                <button class="segment" data-style="emoji">Emoji 🤯</button>
               </div>
             </div>
 
@@ -129,8 +144,8 @@
               <div class="field">
                 <div class="field-label">Orb Style</div>
                 <div id="lobby-orb-style-group" class="segmented">
-                  <button class="segment" data-style="dots">Dots</button>
-                  <button class="segment active" data-style="emoji">Emoji 🤯</button>
+                  <button class="segment active" data-style="dots">Dots</button>
+                  <button class="segment" data-style="emoji">Emoji 🤯</button>
                 </div>
               </div>
             </div>
@@ -151,16 +166,18 @@
         <div id="board-host"></div>
       </section>
 
-      <!-- WIN OVERLAY -->
-      <section id="screen-win" class="screen hidden overlay">
+      <!-- WIN CORNER CARD (board stays fully visible behind it) -->
+      <section id="screen-win" class="screen hidden win-host">
         <div id="confetti-layer" class="confetti-layer"></div>
         <div class="win-card">
-          <div class="win-crown">👑</div>
-          <div id="win-title" class="win-title">Player 1 Wins!</div>
+          <div class="win-card-head">
+            <span class="win-crown">👑</span>
+            <div id="win-title" class="win-title">Player 1 Wins!</div>
+          </div>
           <div id="win-leaderboard" class="win-leaderboard"></div>
           <div class="win-actions">
-            <button id="play-again-btn" class="primary-btn">Play Again</button>
-            <button id="win-menu-btn" class="ghost-btn">Main Menu</button>
+            <button id="play-again-btn" class="primary-btn small-btn">Play Again</button>
+            <button id="win-menu-btn" class="ghost-btn small-btn">Main Menu</button>
           </div>
         </div>
       </section>

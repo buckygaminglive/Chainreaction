@@ -1,0 +1,19 @@
+{
+  "name": "Chain Reaction — Orb Wars",
+  "short_name": "Orb Wars",
+  "description": "A 3D chain-reaction strategy game — play locally or online with friends.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0718",
+  "theme_color": "#0a0718",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

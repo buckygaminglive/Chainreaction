@@ -363,7 +363,6 @@ body {
   padding: 20px;
 }
 
-.win-card,
 .howto-card {
   background: linear-gradient(160deg, #1b1236, #120b26);
   border: 1px solid var(--panel-border);
@@ -377,22 +376,66 @@ body {
   z-index: 2;
 }
 
+/* Win card floats over the finished board instead of blurring/hiding it —
+   the fully-converted board *is* the payoff, the card just confirms it. */
+.win-host {
+  pointer-events: none;
+}
+
+.win-card {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  margin: 0 auto;
+  max-width: 360px;
+  pointer-events: auto;
+  text-align: center;
+  background: linear-gradient(160deg, rgba(27, 18, 54, 0.96), rgba(18, 11, 38, 0.96));
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  padding: 16px 18px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  animation: win-card-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes win-card-in {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.win-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .win-crown {
-  font-size: 54px;
-  filter: drop-shadow(0 6px 14px rgba(255, 193, 59, 0.5));
+  font-size: 26px;
+  filter: drop-shadow(0 4px 10px rgba(255, 193, 59, 0.5));
 }
 
 .win-title {
   font-family: 'Baloo 2', sans-serif;
   font-weight: 800;
-  font-size: 26px;
-  margin: 10px 0 26px;
+  font-size: 18px;
 }
 
 .win-actions {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.win-actions .primary-btn,
+.win-actions .ghost-btn {
+  flex: 1;
 }
 
 .confetti-layer {
@@ -566,16 +609,18 @@ body {
 .win-leaderboard {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-bottom: 22px;
+  gap: 6px;
+  margin: 12px 0 14px;
   text-align: left;
+  max-height: 38vh;
+  overflow-y: auto;
 }
 
 .leaderboard-row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 12px;
+  padding: 7px 11px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.07);
