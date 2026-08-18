@@ -1,0 +1,560 @@
+@import '@fontsource/baloo-2/latin-600.css';
+@import '@fontsource/baloo-2/latin-800.css';
+@import '@fontsource/nunito/latin-400.css';
+@import '@fontsource/nunito/latin-700.css';
+@import '@fontsource/nunito/latin-900.css';
+
+:root {
+  --bg-0: #0a0718;
+  --bg-1: #150c2b;
+  --panel: rgba(255, 255, 255, 0.05);
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --text: #f4f1ff;
+  --text-dim: #a89fc9;
+  --accent: #ff3b5c;
+  --accent-light: #ff9db0;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  background: radial-gradient(120% 90% at 50% -10%, #241548 0%, var(--bg-0) 55%), var(--bg-0);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.25s ease;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- Buttons ---------- */
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.icon-btn:active {
+  transform: scale(0.9);
+}
+
+.corner-btn {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  z-index: 5;
+}
+
+.corner-btn-left {
+  right: auto;
+  left: 14px;
+}
+
+.primary-btn {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  color: white;
+  border: none;
+  border-radius: 18px;
+  padding: 16px 20px;
+  background: linear-gradient(160deg, #ff5c78, #ff2a52 60%, #d10f39);
+  box-shadow: 0 10px 24px rgba(255, 59, 92, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.primary-btn:active {
+  transform: scale(0.96);
+}
+
+.ghost-btn {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+
+.ghost-btn:active {
+  transform: scale(0.96);
+}
+
+/* ---------- Menu screen ---------- */
+#screen-menu,
+#screen-online,
+#screen-lobby {
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.menu-inner {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.logo-wrap {
+  text-align: center;
+  margin-top: 6px;
+}
+
+.logo {
+  font-family: 'Baloo 2', sans-serif;
+  margin: 0;
+  line-height: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.logo-chain {
+  font-size: 42px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.08em;
+}
+
+.logo-reaction {
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: linear-gradient(90deg, #ff5c78, #ffb23b 55%, #ff5cd0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(255, 90, 130, 0.45));
+}
+
+.tagline {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.panel {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  backdrop-filter: blur(10px);
+}
+
+.field-label {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+}
+
+.stepper-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stepper-btn:active {
+  transform: scale(0.92);
+}
+
+.stepper-value {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  min-width: 40px;
+  text-align: center;
+}
+
+.segmented {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.segment {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.segment.active {
+  background: linear-gradient(160deg, #ff5c78, #ff2a52);
+  color: white;
+  box-shadow: 0 4px 12px rgba(255, 59, 92, 0.35);
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.swatch {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 0 transparent;
+}
+
+#play-btn {
+  width: 100%;
+}
+
+/* ---------- Game screen ---------- */
+#screen-game {
+  padding-top: env(safe-area-inset-top);
+}
+
+#hud-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+
+.player-pills {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--text-dim);
+  transition: all 0.2s ease;
+}
+
+.pill .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pill.active {
+  color: white;
+  transform: scale(1.08);
+}
+
+.pill.eliminated {
+  opacity: 0.3;
+  text-decoration: line-through;
+}
+
+#board-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* ---------- Overlays ---------- */
+.overlay {
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 4, 16, 0.72);
+  backdrop-filter: blur(6px);
+  z-index: 20;
+  padding: 20px;
+}
+
+.win-card,
+.howto-card {
+  background: linear-gradient(160deg, #1b1236, #120b26);
+  border: 1px solid var(--panel-border);
+  border-radius: 26px;
+  padding: 34px 26px;
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 2;
+}
+
+.win-crown {
+  font-size: 54px;
+  filter: drop-shadow(0 6px 14px rgba(255, 193, 59, 0.5));
+}
+
+.win-title {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 26px;
+  margin: 10px 0 26px;
+}
+
+.win-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confetti-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  border-radius: 2px;
+  animation: fall linear forwards;
+}
+
+@keyframes fall {
+  to {
+    transform: translateY(115vh) rotate(540deg);
+  }
+}
+
+.howto-card {
+  text-align: left;
+}
+
+.howto-card h2 {
+  font-family: 'Baloo 2', sans-serif;
+  margin-top: 0;
+}
+
+.howto-list {
+  padding-left: 20px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  font-size: 14.5px;
+}
+
+.howto-list li {
+  margin-bottom: 10px;
+}
+
+.howto-card .primary-btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* ---------- Online screens ---------- */
+.menu-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.menu-row .ghost-btn {
+  flex: 1;
+}
+
+#screen-online .menu-inner,
+#screen-lobby .menu-inner {
+  gap: 16px;
+}
+
+.text-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: var(--text);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  outline: none;
+}
+
+.text-input:focus {
+  border-color: var(--accent);
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+}
+
+.code-input {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  text-align: center;
+  font-family: 'Baloo 2', sans-serif;
+}
+
+.small-btn {
+  font-size: 15px;
+  padding: 14px 18px;
+  white-space: nowrap;
+}
+
+.online-error {
+  color: var(--accent-light);
+  background: rgba(255, 59, 92, 0.12);
+  border: 1px solid rgba(255, 59, 92, 0.35);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: center;
+  width: 100%;
+}
+
+.room-code {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 44px;
+  letter-spacing: 0.14em;
+  background: linear-gradient(90deg, #ff5c78, #ffb23b 55%, #ff5cd0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  margin: 6px 0 0;
+}
+
+.room-code:active {
+  transform: scale(0.96);
+}
+
+.lobby-hint {
+  margin-top: 2px;
+}
+
+.lobby-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lobby-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  font-weight: 800;
+  font-size: 14.5px;
+}
+
+.lobby-player .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lobby-player .name {
+  flex: 1;
+}
+
+.lobby-player .crown {
+  font-size: 15px;
+}
+
+.lobby-player.offline {
+  opacity: 0.4;
+}
+
+#lobby-host-controls.hidden {
+  display: none;
+}

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0a0718" />
+    <title>Chain Reaction — Orb Wars</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- MENU SCREEN -->
+      <section id="screen-menu" class="screen">
+        <button id="mute-btn-menu" class="icon-btn corner-btn" aria-label="Toggle sound">🔊</button>
+        <div class="menu-inner">
+          <div class="logo-wrap">
+            <h1 class="logo">
+              <span class="logo-chain">CHAIN</span>
+              <span class="logo-reaction">REACTION</span>
+            </h1>
+            <p class="tagline">tap • chain • dominate the grid</p>
+          </div>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Players</div>
+              <div class="stepper">
+                <button id="players-minus" class="stepper-btn" aria-label="Fewer players">−</button>
+                <div id="players-count" class="stepper-value">2</div>
+                <button id="players-plus" class="stepper-btn" aria-label="More players">+</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Board Size</div>
+              <div id="board-size-group" class="segmented">
+                <button class="segment" data-size="small">Small</button>
+                <button class="segment active" data-size="medium">Medium</button>
+                <button class="segment" data-size="large">Large</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Orb Style</div>
+              <div id="orb-style-group" class="segmented">
+                <button class="segment" data-style="dots">Dots</button>
+                <button class="segment active" data-style="emoji">Emoji 🤯</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Colors</div>
+              <div id="player-swatches" class="swatch-row"></div>
+            </div>
+          </div>
+
+          <button id="play-btn" class="primary-btn">
+            <span>PLAY</span>
+          </button>
+          <div class="menu-row">
+            <button id="play-online-btn" class="ghost-btn">🌐 Play Online</button>
+            <button id="howto-btn" class="ghost-btn">How to Play</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ONLINE: CREATE / JOIN -->
+      <section id="screen-online" class="screen hidden">
+        <button id="online-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Back to menu">←</button>
+        <div class="menu-inner">
+          <div class="logo-wrap">
+            <h1 class="logo"><span class="logo-reaction">PLAY ONLINE</span></h1>
+            <p class="tagline">invite friends with a room code</p>
+          </div>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Your Name</div>
+              <input id="name-input" class="text-input" maxlength="16" placeholder="Player" />
+            </div>
+          </div>
+
+          <button id="create-room-btn" class="primary-btn"><span>CREATE ROOM</span></button>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Join a Room</div>
+              <div class="join-row">
+                <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" />
+                <button id="join-room-btn" class="primary-btn small-btn">JOIN</button>
+              </div>
+            </div>
+          </div>
+          <div id="online-error" class="online-error hidden"></div>
+        </div>
+      </section>
+
+      <!-- ONLINE: LOBBY -->
+      <section id="screen-lobby" class="screen hidden">
+        <button id="lobby-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Leave room">←</button>
+        <div class="menu-inner">
+          <div class="logo-wrap">
+            <p class="tagline">room code</p>
+            <button id="room-code-btn" class="room-code" title="Tap to copy invite link">-----</button>
+            <p id="lobby-hint" class="tagline lobby-hint">share this code with friends</p>
+          </div>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Players</div>
+              <div id="lobby-players" class="lobby-players"></div>
+            </div>
+
+            <div id="lobby-host-controls">
+              <div class="field">
+                <div class="field-label">Board Size</div>
+                <div id="lobby-board-size-group" class="segmented">
+                  <button class="segment" data-size="small">Small</button>
+                  <button class="segment active" data-size="medium">Medium</button>
+                  <button class="segment" data-size="large">Large</button>
+                </div>
+              </div>
+              <div class="field">
+                <div class="field-label">Orb Style</div>
+                <div id="lobby-orb-style-group" class="segmented">
+                  <button class="segment" data-style="dots">Dots</button>
+                  <button class="segment active" data-style="emoji">Emoji 🤯</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button id="lobby-start-btn" class="primary-btn"><span>START GAME</span></button>
+          <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host to start…</p>
+        </div>
+      </section>
+
+      <!-- GAME SCREEN -->
+      <section id="screen-game" class="screen hidden">
+        <div id="hud-top">
+          <button id="back-btn" class="icon-btn" aria-label="Back to menu">←</button>
+          <div id="player-pills" class="player-pills"></div>
+          <button id="mute-btn-game" class="icon-btn" aria-label="Toggle sound">🔊</button>
+        </div>
+        <div id="board-host"></div>
+      </section>
+
+      <!-- WIN OVERLAY -->
+      <section id="screen-win" class="screen hidden overlay">
+        <div id="confetti-layer" class="confetti-layer"></div>
+        <div class="win-card">
+          <div class="win-crown">👑</div>
+          <div id="win-title" class="win-title">Player 1 Wins!</div>
+          <div class="win-actions">
+            <button id="play-again-btn" class="primary-btn">Play Again</button>
+            <button id="win-menu-btn" class="ghost-btn">Main Menu</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW TO PLAY OVERLAY -->
+      <section id="screen-howto" class="screen hidden overlay">
+        <div class="howto-card">
+          <h2>How to Play</h2>
+          <ul class="howto-list">
+            <li>Tap any empty cell, or a cell you already own, to add an orb.</li>
+            <li>When a cell reaches its <b>critical mass</b> — 2 orbs in a corner, 3 on an edge, 4 in the middle — it explodes.</li>
+            <li>Exploding orbs shoot into neighboring cells, capturing them for you and possibly triggering more explosions.</li>
+            <li>Capture every orb on the board to eliminate opponents. Last player standing wins!</li>
+          </ul>
+          <button id="howto-close-btn" class="primary-btn">Got it</button>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
