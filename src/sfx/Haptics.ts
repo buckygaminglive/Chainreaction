@@ -13,22 +13,22 @@ export class Haptics {
 
   /** Subtle tick when an orb is placed. */
   place() {
-    this.fire(12);
+    this.fire(25);
   }
 
   /** One buzz per explosion wave — a multi-wave cascade naturally rumbles. */
   explode() {
-    this.fire(28);
+    this.fire(40);
   }
 
   /** A player is knocked out. */
   eliminate() {
-    this.fire([30, 40, 35]);
+    this.fire([45, 50, 55]);
   }
 
   /** Game-winning celebration pattern. */
   win() {
-    this.fire([40, 60, 40, 60, 90]);
+    this.fire([50, 70, 50, 70, 120]);
   }
 }
 
