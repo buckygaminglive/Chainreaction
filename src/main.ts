@@ -291,29 +291,54 @@ async function applyAndAnimateMove(row: number, col: number) {
   if (!engine || !renderer) return;
   const result = engine.applyMove(row, col);
 
-  // Let the full cascade play out — including the final winning move — so the
-  // board visibly finishes converting before any winner is announced. Only the
-  // animation *error* path is guarded, so a rendering hiccup can't skip the
-  // win screen entirely.
-  await renderer
-    .playEvents(result.events, (ev: MoveEvent) => {
-      if (ev.type === 'place') {
-        sfx.place();
-        haptics.place();
-      } else if (ev.type === 'explode') {
-        // The board visibly winds up (spinning) before it actually blasts —
-        // play the charge whir now, but delay the boom/buzz to land on the
-        // real blast moment instead of the start of the wind-up.
-        sfx.chargeUp();
-        setTimeout(() => {
-          sfx.explode();
-          haptics.explode();
-        }, EXPLOSION_SPIN_UP_MS);
-      }
-    })
+  // The engine resolves the whole cascade synchronously, but the board
+  // animates it wave by wave — so "who won" and "what the board visibly
+  // shows" can briefly disagree mid-cascade. Reveal the winner at the exact
+  // wave where the board actually matches that outcome (the loser's last
+  // orb has visibly disappeared), not a frame before and not by waiting for
+  // any further self-only cascading the winner's own cells keep doing.
+  let winShown = false;
+  const showWinIfBoardMatches = () => {
+    if (winShown || !result.gameOver || result.winner === null || !engine || !renderer) return;
+    const stillHasEnemyOrbs = engine.players.some(
+      (p) => p.id !== result.winner && renderer!.getPlayerOrbCount(p.id) > 0
+    );
+    if (!stillHasEnemyOrbs) {
+      winShown = true;
+      showWin(result.winner);
+    }
+  };
+
+  const playPromise = renderer
+    .playEvents(
+      result.events,
+      (ev: MoveEvent) => {
+        if (ev.type === 'place') {
+          sfx.place();
+          haptics.place();
+        } else if (ev.type === 'explode') {
+          // The board visibly winds up (spinning) before it actually blasts —
+          // play the charge whir now, but delay the boom/buzz to land on the
+          // real blast moment instead of the start of the wind-up.
+          sfx.chargeUp();
+          setTimeout(() => {
+            sfx.explode();
+            haptics.explode();
+          }, EXPLOSION_SPIN_UP_MS);
+        }
+      },
+      showWinIfBoardMatches
+    )
     .catch((err) => {
       console.error('Board animation error (continuing anyway):', err);
     });
+
+  await playPromise;
+
+  // Safety net: if the board somehow never reported a matching state
+  // mid-cascade (shouldn't happen for a real win), show it once everything
+  // has settled rather than leave the player without a win screen.
+  showWinIfBoardMatches();
 
   for (const ev of result.events) {
     if (ev.type === 'eliminate') {
@@ -324,9 +349,7 @@ async function applyAndAnimateMove(row: number, col: number) {
 
   renderPills();
 
-  if (result.gameOver && result.winner !== null) {
-    showWin(result.winner);
-  } else {
+  if (!result.gameOver) {
     sfx.turnChange();
     animating = false;
   }

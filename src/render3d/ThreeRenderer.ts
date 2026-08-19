@@ -48,9 +48,11 @@ const ORB_RADIUS = 0.22;
 const ORB_SPREAD = 0.52;
 
 /** How long an exploding cell winds up (spinning, accelerating) before it actually
- *  blasts. Exported so callers can sync sound/haptics to the real blast moment
- *  rather than the start of the wind-up. */
-export const EXPLOSION_SPIN_UP_MS = 190;
+ *  blasts. Kept short — this is a quick snap, not a deliberate charge-up hold,
+ *  so a chain reaction reads as one continuous cascade rather than a series of
+ *  "wait...blast, wait...blast" beats. Exported so callers can sync sound/
+ *  haptics to the real blast moment rather than the start of the wind-up. */
+export const EXPLOSION_SPIN_UP_MS = 70;
 
 export class ThreeRenderer {
   private engine: GameEngine;
@@ -426,7 +428,31 @@ export class ThreeRenderer {
     }
   }
 
-  async playEvents(events: MoveEvent[], onEventStart?: (ev: MoveEvent) => void): Promise<void> {
+  /** Sums orbs currently shown on the board for one player — reflects the
+   *  live animation state, not the (already-final) engine state, so callers
+   *  can tell exactly when a player's last orb visually disappears mid-cascade. */
+  getPlayerOrbCount(playerId: number): number {
+    let total = 0;
+    for (let r = 0; r < this.engine.rows; r++) {
+      for (let c = 0; c < this.engine.cols; c++) {
+        const cell = this.renderState[r][c];
+        if (cell.owner === playerId) total += cell.orbs;
+      }
+    }
+    return total;
+  }
+
+  async playEvents(
+    events: MoveEvent[],
+    onEventStart?: (ev: MoveEvent) => void,
+    onWaveSettled?: () => void
+  ): Promise<void> {
+    // Always plays at full natural speed, no matter how many waves a cascade
+    // has. `onWaveSettled` fires right after each wave's cell ownership/orb
+    // counts are actually applied, so a caller can detect the exact moment
+    // an opponent's last orb disappears and react then — without needing to
+    // wait for the rest of the cascade (which may keep going as pure
+    // self-cascading among the winner's own cells).
     let i = 0;
     while (i < events.length) {
       const ev = events[i];
@@ -443,6 +469,7 @@ export class ThreeRenderer {
         }
         onEventStart?.(batch[0]);
         await this.animateExplodeWave(batch);
+        onWaveSettled?.();
       } else {
         onEventStart?.(ev);
         i++;
@@ -470,32 +497,27 @@ export class ThreeRenderer {
     });
   }
 
-  /** Briefly freezes all active tweens at the moment of impact — the classic
-   *  "hit-stop" trick that makes a hit read as heavy rather than just fast. */
-  private hitStop(ms: number) {
-    gsap.globalTimeline.pause();
-    setTimeout(() => gsap.globalTimeline.resume(), ms);
-  }
-
-  /** Exploding cells wind up with an accelerating spin + charge-up scale right
-   *  before they blast — anticipation makes the release read as far punchier. */
   /** Exploding cells wind up before they blast: the cluster strains outward
-   *  (scale) while each individual orb tumbles on its own random 3D axis at
-   *  its own random speed — a cluster of 2-3 never spins in lockstep, which
-   *  sells the "these are separate loose orbs" read rather than one rigid
-   *  piece rotating. */
+   *  (scale) while each individual orb tumbles chaotically — independent
+   *  random rotation speed on all three axes at once (not just one spin
+   *  axis), so it reads as genuine 3D tumbling instead of a coin spinning
+   *  flat. Every orb also gets its own random duration/scale jitter so no
+   *  two explosions — or two orbs in the same cluster — ever wind up
+   *  looking identical. */
   private spinUp(batch: Extract<MoveEvent, { type: 'explode' }>[]): Promise<void> {
     const promises: Promise<void>[] = [];
     for (const ev of batch) {
       const view = this.cells[ev.row][ev.col];
+      const scaleTarget = 1.25 + Math.random() * 0.35;
+      const scaleDuration = (EXPLOSION_SPIN_UP_MS / 1000) * (0.85 + Math.random() * 0.3);
 
       promises.push(
         new Promise<void>((resolve) => {
           gsap.to(view.orbGroup.scale, {
-            x: 1.4,
-            y: 1.4,
-            z: 1.4,
-            duration: EXPLOSION_SPIN_UP_MS / 1000,
+            x: scaleTarget,
+            y: scaleTarget,
+            z: scaleTarget,
+            duration: scaleDuration,
             ease: 'power2.in',
             onComplete: () => resolve(),
           });
@@ -504,16 +526,24 @@ export class ThreeRenderer {
 
       for (const child of view.orbGroup.children) {
         if (!(child instanceof Mesh)) continue;
-        const axis = new Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
-        const turns = 2.4 + Math.random() * 2.6;
-        const spin = { t: 0 };
+        const spinDuration = (EXPLOSION_SPIN_UP_MS / 1000) * (0.8 + Math.random() * 0.5);
+        const rot = { x: child.rotation.x, y: child.rotation.y, z: child.rotation.z };
+        // Independent random turn count + direction per axis — this is what
+        // actually sells 3D tumbling instead of a flat spin: X, Y and Z all
+        // rotate at their own random rate, so the combined motion never
+        // settles into one clean plane.
+        const targetX = rot.x + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
+        const targetY = rot.y + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
+        const targetZ = rot.z + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
         promises.push(
           new Promise<void>((resolve) => {
-            gsap.to(spin, {
-              t: 1,
-              duration: EXPLOSION_SPIN_UP_MS / 1000,
+            gsap.to(rot, {
+              x: targetX,
+              y: targetY,
+              z: targetZ,
+              duration: spinDuration,
               ease: 'power2.in',
-              onUpdate: () => child.setRotationFromAxisAngle(axis, spin.t * turns * Math.PI * 2),
+              onUpdate: () => child.rotation.set(rot.x, rot.y, rot.z),
               onComplete: () => resolve(),
             });
           })
@@ -525,8 +555,6 @@ export class ThreeRenderer {
 
   private async animateExplodeWave(batch: Extract<MoveEvent, { type: 'explode' }>[]) {
     await this.spinUp(batch);
-
-    this.hitStop(Math.min(90, 32 + batch.length * 8));
     shakeCamera(this.camera, this.baseCameraPos, Math.min(0.2, 0.09 + batch.length * 0.018));
 
     const travelPromises: Promise<void>[] = [];
@@ -583,8 +611,6 @@ export class ThreeRenderer {
         ring3d(this.fxGroup, this.cellPos(target.row, target.col), theme.base, CELL_SIZE * 0.4);
       }
     }
-
-    await new Promise((resolve) => setTimeout(resolve, 60));
   }
 
   destroy() {

@@ -93,7 +93,9 @@ export function ring3d(group: Object3D, pos: Vector3, color: number, maxRadius =
   });
 }
 
-/** A glossy sphere arcs from `from` to `to`, spinning along its travel axis like a real rolling/flying ball. */
+/** A glossy sphere arcs from `from` to `to`, tumbling chaotically in flight —
+ *  independent random spin on all three local axes (not one "rolling
+ *  forward" axis), so no two flying orbs ever read as the same motion. */
 export function travelOrb3d(
   group: Object3D,
   from: Vector3,
@@ -110,8 +112,10 @@ export function travelOrb3d(
 
     const dir = new Vector3().subVectors(to, from);
     const dist = Math.max(0.0001, dir.length());
-    const spinAxis = new Vector3(-dir.z, 0, dir.x).normalize();
-    const spinAmount = (dist / radius) * 0.9;
+    const tumbleSpeed = (dist / radius) * 0.9;
+    const wx = (Math.random() * 2 - 1) * tumbleSpeed;
+    const wy = (Math.random() * 2 - 1) * tumbleSpeed;
+    const wz = (Math.random() * 2 - 1) * tumbleSpeed;
 
     const arcHeight = dist * 0.42 + 0.22;
     const baseY = from.y;
@@ -126,7 +130,10 @@ export function travelOrb3d(
         mesh.position.x = from.x + (to.x - from.x) * t;
         mesh.position.z = from.z + (to.z - from.z) * t;
         mesh.position.y = baseY + Math.sin(Math.PI * t) * arcHeight;
-        mesh.rotateOnWorldAxis(spinAxis, (spinAmount * (1 / 60)) / 0.28);
+        const dt = 1 / 60 / 0.28;
+        mesh.rotateX(wx * dt);
+        mesh.rotateY(wy * dt);
+        mesh.rotateZ(wz * dt);
         const s = 1 + t * 0.15;
         mesh.scale.set(s, s, s);
       },
@@ -139,19 +146,23 @@ export function travelOrb3d(
 }
 
 export function shakeCamera(camera: OrthographicCamera, basePos: Vector3, amount = 0.12) {
+  // A fast cascade fires this once per wave in quick succession. Without
+  // killing the previous shake's tween first, two overlapping shakes fight
+  // over camera.position each frame and the camera visibly stutters/jumps —
+  // this keeps only one shake driving the camera at a time.
+  gsap.killTweensOf(camera.position);
   const start = basePos.clone();
   const tl = gsap.timeline({
     onComplete: () => {
       camera.position.copy(start);
     },
   });
-  const p1 = start.clone().add(new Vector3(amount, 0, -amount * 0.5));
-  const p2 = start.clone().add(new Vector3(-amount * 0.7, 0, amount * 0.4));
-  const p3 = start.clone().add(new Vector3(amount * 0.4, 0, -amount * 0.25));
-  tl.to(camera.position, { x: p1.x, z: p1.z, duration: 0.045 })
-    .to(camera.position, { x: p2.x, z: p2.z, duration: 0.05 })
-    .to(camera.position, { x: p3.x, z: p3.z, duration: 0.05 })
-    .to(camera.position, { x: start.x, z: start.z, duration: 0.06 });
+  const baseAngle = Math.random() * Math.PI * 2;
+  const p1 = start.clone().add(new Vector3(Math.cos(baseAngle) * amount, 0, Math.sin(baseAngle) * amount));
+  const p2 = start.clone().add(new Vector3(Math.cos(baseAngle + 2.4) * amount * 0.6, 0, Math.sin(baseAngle + 2.4) * amount * 0.6));
+  tl.to(camera.position, { x: p1.x, z: p1.z, duration: 0.035 })
+    .to(camera.position, { x: p2.x, z: p2.z, duration: 0.035 })
+    .to(camera.position, { x: start.x, z: start.z, duration: 0.04 });
 }
 
 export function emojiPop3d(group: Object3D, pos: Vector3, char: string, size: number) {
