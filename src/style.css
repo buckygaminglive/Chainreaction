@@ -1308,6 +1308,118 @@ body {
   width: 100%;
 }
 
+/* ---------- Account & leaderboards ---------- */
+.account-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.22);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.account-strip .av {
+  color: var(--accent);
+}
+
+.boards-card {
+  max-width: 420px;
+}
+
+.board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 14px 0;
+  min-height: 120px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.board-row.me {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.board-row .bpos {
+  width: 22px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.board-row.me .bpos {
+  color: var(--accent);
+}
+
+.board-row .bname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row .bstat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.board-row .brating {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.board-empty {
+  padding: 22px 6px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.my-code {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--r-sm);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.my-code b {
+  display: block;
+  margin-top: 5px;
+  font-size: 20px;
+  letter-spacing: 0.26em;
+  color: var(--accent);
+}
+
 /* ---------- Quick match & room browser ---------- */
 .quick-status {
   display: flex;

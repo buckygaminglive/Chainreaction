@@ -7,12 +7,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "GAME_ROOM", "class_name": "GameRoom" },
-      { "name": "MATCHMAKER", "class_name": "Matchmaker" }
+      { "name": "MATCHMAKER", "class_name": "Matchmaker" },
+      { "name": "PLAYER_HUB", "class_name": "PlayerHub" }
     ]
   },
 
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
-    { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] }
+    { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] },
+    { "tag": "v3", "new_sqlite_classes": ["PlayerHub"] }
   ]
 }

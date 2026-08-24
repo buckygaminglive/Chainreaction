@@ -1,3 +1,4 @@
+import { account } from './account';
 import type { EngineSnapshot, PlayerConfig } from '../game/types';
 import type { GameModeKey } from '../game/modes';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from './protocol';
@@ -165,6 +166,13 @@ export class NetClient {
       // A quick-match room advertises itself, so someone browsing the list can
       // fill it too rather than everyone waiting on the queue alone.
       if (this.publicRoom) params.set('public', '1');
+      // Identifies the seat to the relay so a ranked result can be attributed
+      // to a verified account rather than to a name anyone could type.
+      const creds = account.credentials;
+      if (creds) {
+        params.set('pid', creds.id);
+        params.set('psec', creds.secret);
+      }
       const ws = new WebSocket(`${base}/api/room/${this.roomCode}?${params}`);
       this.ws = ws;
       let settled = false;

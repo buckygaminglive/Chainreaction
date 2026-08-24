@@ -15,6 +15,7 @@ import { modePreview } from './render/modePreview';
 import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
+import { account } from './net/account';
 import { TAUNTS, TAUNT_COOLDOWN_MS } from './net/taunts';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
@@ -1083,6 +1084,116 @@ function clearOnlineError() {
   onlineErrorEl.classList.add('hidden');
 }
 
+// ---------- Account, leaderboards, friends ----------
+const screenBoards = $('screen-boards');
+const accountStripEl = $('account-strip');
+const boardTabs = $('board-tabs');
+const boardRowsEl = $('board-rows');
+const friendToolsEl = $('friend-tools');
+const friendCodeInput = $<HTMLInputElement>('friend-code-input');
+const friendMsgEl = $('friend-msg');
+const myCodeEl = $('my-code');
+let boardTab: 'world' | 'friends' = 'world';
+
+function renderAccountStrip() {
+  const p = account.profile;
+  if (!p) {
+    accountStripEl.classList.add('hidden');
+    return;
+  }
+  accountStripEl.classList.remove('hidden');
+  accountStripEl.innerHTML =
+    `<span>rating <span class="av">${p.rating}</span></span>` +
+    `<span>${p.wins}W / ${p.losses}L</span>` +
+    `<span style="margin-left:auto">code <span class="av">${escapeHtml(p.friendCode)}</span></span>`;
+}
+
+/** Called when the player opens the online screen. Minting the account here
+ *  rather than at boot means a purely local player never gets one. */
+async function ensureAccount() {
+  await account.ensure(nameInput.value.trim() || undefined);
+  if (account.profile) {
+    // The relay is the source of truth for the display name; keep the input in
+    // step so a rename sticks rather than silently reverting on next join.
+    nameInput.value = account.profile.name;
+  }
+  renderAccountStrip();
+}
+
+async function renderBoards() {
+  boardRowsEl.innerHTML = '<div class="board-empty">Loading…</div>';
+  friendToolsEl.classList.toggle('hidden', boardTab !== 'friends');
+  const me = account.profile;
+  myCodeEl.classList.toggle('hidden', !me);
+  if (me) myCodeEl.innerHTML = `Your friend code<b>${escapeHtml(me.friendCode)}</b>`;
+
+  try {
+    const rows = boardTab === 'world' ? await account.worldBoard() : await account.friendsBoard();
+    if (rows.length === 0) {
+      boardRowsEl.innerHTML =
+        boardTab === 'world'
+          ? '<div class="board-empty">Nobody has finished a ranked match yet. Quick match games count towards the ladder; private rooms do not.</div>'
+          : '<div class="board-empty">No friends yet. Share your code below, or add someone else’s.</div>';
+      return;
+    }
+    boardRowsEl.innerHTML = rows
+      .map((r, i) => {
+        const mine = me && r.id === me.id;
+        return `<div class="board-row${mine ? ' me' : ''}">
+          <span class="bpos">${String(i + 1).padStart(2, '0')}</span>
+          <span class="bname">${escapeHtml(r.name)}</span>
+          <span class="bstat">${r.wins}W · ×${r.bestChain}</span>
+          <span class="brating">${r.rating}</span>
+        </div>`;
+      })
+      .join('');
+  } catch {
+    boardRowsEl.innerHTML = '<div class="board-empty">Could not load standings.</div>';
+  }
+}
+
+onSegmentPick(boardTabs, (el) => {
+  boardTab = el.dataset.board === 'friends' ? 'friends' : 'world';
+  void renderBoards();
+});
+
+$('leaderboard-btn').addEventListener('click', async () => {
+  sfx.buttonTap();
+  friendMsgEl.textContent = '';
+  showOverlay(screenBoards);
+  await ensureAccount();
+  void renderBoards();
+});
+
+$('boards-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenBoards);
+});
+
+$('friend-add-btn').addEventListener('click', async () => {
+  sfx.buttonTap();
+  const code = friendCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    friendMsgEl.textContent = 'Enter a friend code.';
+    return;
+  }
+  const res = await account.addFriend(code);
+  if (res.error) {
+    friendMsgEl.textContent = res.error;
+    return;
+  }
+  friendMsgEl.textContent = res.added ? `Added ${res.added.name}.` : 'Added.';
+  friendCodeInput.value = '';
+  void renderBoards();
+});
+
+// A rename has to reach the relay, or the ladder keeps showing the old name.
+nameInput.addEventListener('change', () => {
+  const name = nameInput.value.trim();
+  if (!name || !account.isSignedIn) return;
+  void account.rename(name).then(renderAccountStrip);
+});
+
 // ---------- Quick match ----------
 let quickMode: GameModeKey = DEFAULT_MODE;
 let quickBoardSize: BoardSizeKey = 'medium';
@@ -1193,6 +1304,9 @@ $('play-online-btn').addEventListener('click', () => {
   setQuickSearching(false);
   showScreen(screenOnline);
   void refreshRooms();
+  // Minting the guest account on entering the online screen, not at boot: a
+  // player who only ever plays locally never gets one.
+  void ensureAccount();
 });
 $('online-back-btn').addEventListener('click', () => {
   sfx.buttonTap();

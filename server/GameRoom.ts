@@ -4,6 +4,7 @@ import { layoutForMode, randomSeed } from '../src/game/cells';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 import { TAUNT_COOLDOWN_MS, isValidTaunt } from '../src/net/taunts';
 import type { Matchmaker } from './Matchmaker';
+import type { PlayerHub } from './PlayerHub';
 import type { EngineSnapshot, PlayerConfig } from '../src/game/types';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from '../src/net/protocol';
 import { PLAYER_THEMES } from '../src/render/theme';
@@ -18,7 +19,10 @@ const TEAM_COLOR_INDICES = [
 export interface Env {
   GAME_ROOM: DurableObjectNamespace<GameRoom>;
   MATCHMAKER: DurableObjectNamespace<Matchmaker>;
+  PLAYER_HUB: DurableObjectNamespace<PlayerHub>;
 }
+
+export const PLAYER_HUB_SINGLETON = 'global';
 
 /** Everything the public list needs is derived from the room's own state, so
  *  the listing is refreshed from here on every change rather than being kept in
@@ -42,6 +46,13 @@ interface RosterEntry {
    *  socket that owns it. */
   token: string;
   gen: number;
+  /** The guest account occupying this seat, if the player has one. Held so a
+   *  finished ranked match can be reported to the hub under a verified
+   *  identity rather than a name anyone could type. */
+  accountId?: string;
+  accountSecret?: string;
+  /** Best chain this account managed in the current match. */
+  bestChain?: number;
 }
 
 interface Meta {
@@ -133,6 +144,8 @@ export class GameRoom extends DurableObject<Env> {
     if (url.searchParams.get('public') === '1') this.isPublic = true;
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
     const token = url.searchParams.get('token');
+    const accountId = url.searchParams.get('pid') ?? undefined;
+    const accountSecret = url.searchParams.get('psec') ?? undefined;
     const returning = token ? this.findSeatByToken(token) : null;
 
     if (!returning) {
@@ -161,6 +174,8 @@ export class GameRoom extends DurableObject<Env> {
       entry.gen += 1;
       entry.connected = true;
       entry.name = name || entry.name;
+      entry.accountId = accountId;
+      entry.accountSecret = accountSecret;
     } else {
       id = this.nextPlayerId++;
       entry = {
@@ -169,6 +184,8 @@ export class GameRoom extends DurableObject<Env> {
         colorIndex: this.pickDefaultColor(),
         token: crypto.randomUUID(),
         gen: 1,
+        accountId,
+        accountSecret,
       };
       this.roster.set(id, entry);
     }
@@ -405,6 +422,9 @@ export class GameRoom extends DurableObject<Env> {
     });
     this.started = true;
     this.rematchVotes.clear();
+    // Per-match statistic, so it resets with the match rather than accumulating
+    // across a whole rematch series.
+    for (const entry of this.roster.values()) entry.bestChain = 0;
     await this.persistMeta();
     await this.persistEngine();
 
@@ -449,7 +469,11 @@ export class GameRoom extends DurableObject<Env> {
     }
     if (!this.engine.canPlay(row, col)) return;
 
-    this.engine.applyMove(row, col);
+    const result = this.engine.applyMove(row, col);
+    // Tracked here rather than trusted from the client: the best chain a player
+    // reports about themselves is not a statistic, it is a wish.
+    const entry = this.roster.get(att.id);
+    if (entry && result.chain > (entry.bestChain ?? 0)) entry.bestChain = result.chain;
     await this.persistEngine();
     this.broadcastAll({ type: 'move', row, col });
 
@@ -461,6 +485,42 @@ export class GameRoom extends DurableObject<Env> {
       this.rematchVotes.clear();
       await this.persistMeta();
       this.broadcastRoomScore();
+      await this.reportResult(winner);
+    }
+  }
+
+  /**
+   * Sends a finished match to the player hub.
+   *
+   * Only public rooms count. A private room is people who chose each other, so
+   * rating it is an open invitation to farm a ladder against a second device —
+   * and a friendly game between friends should not move anyone's rank anyway.
+   */
+  private async reportResult(winnerId: number) {
+    if (!this.isPublic || !this.engine) return;
+    const players = this.engine.players
+      .map((p) => {
+        const entry = this.roster.get(p.id);
+        if (!entry?.accountId || !entry.accountSecret) return null;
+        return {
+          id: entry.accountId,
+          secret: entry.accountSecret,
+          won: p.id === winnerId,
+          bestChain: entry.bestChain ?? 0,
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    // Every seat has to be a verified account or the result is meaningless —
+    // rating someone against an anonymous opponent rates them against nothing.
+    if (players.length < 2 || players.length !== this.engine.players.length) return;
+
+    try {
+      const stub = this.env.PLAYER_HUB.getByName(PLAYER_HUB_SINGLETON);
+      await stub.fetch('https://hub/result', { method: 'POST', body: JSON.stringify({ players }) });
+    } catch (err) {
+      // A match must never fail because the ladder was unreachable.
+      console.error('result report failed:', String(err));
     }
   }
 

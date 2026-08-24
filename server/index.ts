@@ -1,9 +1,22 @@
-import { GameRoom, MATCHMAKER_SINGLETON, type Env } from './GameRoom';
+import { GameRoom, MATCHMAKER_SINGLETON, PLAYER_HUB_SINGLETON, type Env } from './GameRoom';
 import { Matchmaker } from './Matchmaker';
+import { PlayerHub } from './PlayerHub';
 import type { BoardSizeKey } from '../src/net/protocol';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 
-export { GameRoom, Matchmaker };
+export { GameRoom, Matchmaker, PlayerHub };
+
+/** Routes the client calls directly. Everything that mutates an account is a
+ *  POST carrying the account's own secret; the hub verifies it. */
+const HUB_ROUTES = new Set([
+  'register',
+  'rename',
+  'me',
+  'addFriend',
+  'removeFriend',
+  'friends',
+  'leaderboard',
+]);
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — avoids look-alikes
 const BOARD_SIZES: BoardSizeKey[] = ['small', 'medium', 'large'];
@@ -76,6 +89,21 @@ export default {
     if (url.pathname === '/api/rooms' && request.method === 'GET') {
       const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
       const res = await stub.fetch('https://mm/rooms');
+      return Response.json(await res.json(), { headers: corsHeaders() });
+    }
+
+    // Player accounts, friends and leaderboards.
+    const hubMatch = url.pathname.match(/^\/api\/player\/([a-zA-Z]+)$/);
+    if (hubMatch && HUB_ROUTES.has(hubMatch[1])) {
+      const route = hubMatch[1];
+      // `result` is deliberately absent from HUB_ROUTES: only the relay may
+      // report a match outcome, and it reaches the hub object directly rather
+      // than over this public surface.
+      const stub = env.PLAYER_HUB.getByName(PLAYER_HUB_SINGLETON);
+      const res = await stub.fetch(`https://hub/${route}`, {
+        method: 'POST',
+        body: JSON.stringify(await request.json().catch(() => ({}))),
+      });
       return Response.json(await res.json(), { headers: corsHeaders() });
     }
 

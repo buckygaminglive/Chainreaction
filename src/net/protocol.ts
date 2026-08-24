@@ -12,6 +12,29 @@ export interface NetPlayer {
 export type BoardSizeKey = 'small' | 'medium' | 'large';
 export type OrbStyleKey = 'dots' | 'emoji';
 
+/** A guest account. The `secret` never appears here — it is held only by the
+ *  client that owns it and by the relay. */
+export interface PlayerProfile {
+  id: string;
+  name: string;
+  /** Short, shareable code someone else types to add you. */
+  friendCode: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  matches: number;
+  bestChain: number;
+}
+
+export interface LeaderboardRow {
+  id: string;
+  name: string;
+  rating: number;
+  wins: number;
+  matches: number;
+  bestChain: number;
+}
+
 /** A room advertising itself in the public list. Deliberately just a pointer —
  *  joining still goes through the normal room socket, so a listing going stale
  *  costs a failed join and nothing more. */
