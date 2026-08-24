@@ -3,8 +3,9 @@ import { GameEngine } from '../src/game/GameEngine';
 import { layoutForMode, randomSeed } from '../src/game/cells';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 import { TAUNT_COOLDOWN_MS, isValidTaunt } from '../src/net/taunts';
+import type { Matchmaker } from './Matchmaker';
 import type { EngineSnapshot, PlayerConfig } from '../src/game/types';
-import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, ServerMsg } from '../src/net/protocol';
+import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from '../src/net/protocol';
 import { PLAYER_THEMES } from '../src/render/theme';
 
 /** Team Battle pairs teammates into related emissions so a side reads as a
@@ -16,7 +17,13 @@ const TEAM_COLOR_INDICES = [
 
 export interface Env {
   GAME_ROOM: DurableObjectNamespace<GameRoom>;
+  MATCHMAKER: DurableObjectNamespace<Matchmaker>;
 }
+
+/** Everything the public list needs is derived from the room's own state, so
+ *  the listing is refreshed from here on every change rather than being kept in
+ *  sync by hand somewhere else. */
+export const MATCHMAKER_SINGLETON = 'global';
 
 interface Attachment {
   id: number;
@@ -49,6 +56,8 @@ interface Meta {
   cols?: number;
   roster: [number, RosterEntry][];
   roomScore?: [number, number][];
+  isPublic?: boolean;
+  roomCode?: string;
 }
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -75,6 +84,12 @@ export class GameRoom extends DurableObject<Env> {
   /** Last taunt timestamp per seat, for the cooldown. In memory only — losing
    *  it to a hibernation just means one taunt gets through early. */
   private lastTaunt = new Map<number, number>();
+  /** Rooms are private by default: a code you shared with a friend must never
+   *  end up on a public list because of a default. */
+  private isPublic = false;
+  /** The DO is addressed by room code but is never told what it is, so it is
+   *  captured from the first request that reaches it. */
+  private roomCode = '';
   private ready: Promise<void>;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -91,6 +106,8 @@ export class GameRoom extends DurableObject<Env> {
         this.seed = meta.seed ?? 0;
         this.roster = new Map(meta.roster);
         this.roomScore = new Map(meta.roomScore ?? []);
+        this.isPublic = meta.isPublic ?? false;
+        this.roomCode = meta.roomCode ?? '';
       }
       const snap = await ctx.storage.get<EngineSnapshot>('engineSnapshot');
       if (snap && meta?.rows && meta?.cols) {
@@ -107,6 +124,13 @@ export class GameRoom extends DurableObject<Env> {
     }
 
     const url = new URL(request.url);
+    // The object is addressed by room code but never told it, so it learns it
+    // from the path the first time anyone connects.
+    const fromPath = url.pathname.match(/\/api\/room\/([A-Z0-9]{4,8})$/i);
+    if (fromPath) this.roomCode = fromPath[1].toUpperCase();
+    // Quick match parks a room in the queue before anyone is in it, so the
+    // first arrival can be told to advertise it.
+    if (url.searchParams.get('public') === '1') this.isPublic = true;
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
     const token = url.searchParams.get('token');
     const returning = token ? this.findSeatByToken(token) : null;
@@ -230,6 +254,14 @@ export class GameRoom extends DurableObject<Env> {
       await this.handleRematchVote(att);
     } else if (msg.type === 'taunt') {
       this.handleTaunt(att, msg.emoji);
+    } else if (msg.type === 'setLobby') {
+      if (att.id !== this.hostId || this.started) return;
+      if (msg.isPublic !== undefined) this.isPublic = !!msg.isPublic;
+      // Narrowed against the mode table, since this arrives from a client.
+      if (msg.mode && GAME_MODES[msg.mode]?.online) this.mode = msg.mode;
+      if (msg.boardSize && BOARD_SIZES[msg.boardSize]) this.boardSize = msg.boardSize;
+      await this.persistMeta();
+      this.broadcastPlayers();
     } else if (msg.type === 'pickColor') {
       await this.handlePickColor(ws, att, msg.colorIndex);
     } else if (msg.type === 'ping') {
@@ -386,6 +418,8 @@ export class GameRoom extends DurableObject<Env> {
       seed: this.seed,
     });
     this.broadcastRoomScore();
+    // A room in progress is not joinable, so it comes off the public list.
+    void this.syncListing();
   }
 
   private broadcastRoomScore() {
@@ -505,7 +539,46 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private broadcastPlayers() {
-    this.broadcastAll({ type: 'players', players: this.rosterList(), hostId: this.hostId ?? -1 });
+    this.broadcastAll({
+      type: 'players',
+      players: this.rosterList(),
+      hostId: this.hostId ?? -1,
+      isPublic: this.isPublic,
+    });
+    void this.syncListing();
+  }
+
+  /** Keeps the public list honest. Driven from the room rather than from a
+   *  client heartbeat, so a listing can only be wrong for as long as it takes
+   *  this call to land — and a room that dies outright still expires on the
+   *  matchmaker's own TTL. */
+  private async syncListing() {
+    const connected = this.rosterList().filter((p) => p.connected);
+    const shouldList = this.isPublic && !this.started && connected.length > 0 && connected.length < MAX_PLAYERS;
+    const stub = this.env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+
+    try {
+      if (shouldList) {
+        const room: PublicRoom = {
+          code: this.roomCode,
+          host: connected.find((p) => p.id === this.hostId)?.name ?? connected[0].name,
+          mode: this.mode,
+          boardSize: this.boardSize,
+          players: connected.length,
+          maxPlayers: MAX_PLAYERS,
+        };
+        await stub.fetch('https://mm/publish', { method: 'POST', body: JSON.stringify(room) });
+      } else {
+        await stub.fetch('https://mm/unpublish', {
+          method: 'POST',
+          body: JSON.stringify({ code: this.roomCode }),
+        });
+      }
+    } catch (err) {
+      // The list is a convenience; a room must never fail because it could not
+      // advertise itself.
+      console.error('listing sync failed:', String(err));
+    }
   }
 
   private broadcastAll(msg: ServerMsg) {
@@ -536,6 +609,8 @@ export class GameRoom extends DurableObject<Env> {
       cols: this.engine?.cols,
       roster: Array.from(this.roster.entries()),
       roomScore: Array.from(this.roomScore.entries()),
+      isPublic: this.isPublic,
+      roomCode: this.roomCode,
     };
     await this.ctx.storage.put('meta', meta);
   }

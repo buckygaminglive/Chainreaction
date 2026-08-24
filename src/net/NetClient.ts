@@ -1,6 +1,6 @@
 import type { EngineSnapshot, PlayerConfig } from '../game/types';
 import type { GameModeKey } from '../game/modes';
-import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, ServerMsg } from './protocol';
+import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from './protocol';
 
 /** Set VITE_RELAY_URL (e.g. in a gitignored .env.local) to point the client at
  *  a local `wrangler dev` instead of production — necessary any time the
@@ -61,6 +61,7 @@ export class NetClient {
   private pongTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private token: string | null = null;
+  private publicRoom = false;
   /** Declares the live socket dead without waiting on a close handshake that
    *  a vanished peer will never finish. Rebound by every `open()`. */
   private markCurrentDown: (() => void) | null = null;
@@ -70,7 +71,7 @@ export class NetClient {
   hostId = -1;
   players: NetPlayer[] = [];
 
-  onPlayers: (players: NetPlayer[], hostId: number) => void = () => {};
+  onPlayers: (players: NetPlayer[], hostId: number, isPublic?: boolean) => void = () => {};
   onGameStarted: (
     rows: number,
     cols: number,
@@ -110,9 +111,43 @@ export class NetClient {
     return data.code;
   }
 
-  connect(code: string, name: string): Promise<void> {
+  /** Asks the matchmaker for a room. `waiting` means nobody was queued on
+   *  these settings, so this code is now the one *other* people will be
+   *  matched into — the caller sits in it until someone arrives. */
+  static async quickMatch(
+    mode: GameModeKey,
+    boardSize: BoardSizeKey
+  ): Promise<{ code: string; waiting: boolean }> {
+    const res = await fetch(`${RELAY_BASE}/api/quickmatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, boardSize }),
+    });
+    if (!res.ok) throw new Error('Matchmaking is unavailable right now. Try a private room.');
+    return (await res.json()) as { code: string; waiting: boolean };
+  }
+
+  static async cancelQuickMatch(code: string): Promise<void> {
+    await fetch(`${RELAY_BASE}/api/quickmatch/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }).catch(() => {
+      // Best effort — the queue entry expires on its own anyway.
+    });
+  }
+
+  static async listRooms(): Promise<PublicRoom[]> {
+    const res = await fetch(`${RELAY_BASE}/api/rooms`);
+    if (!res.ok) throw new Error('Could not load the room list.');
+    const data = (await res.json()) as { rooms: PublicRoom[] };
+    return data.rooms ?? [];
+  }
+
+  connect(code: string, name: string, opts: { publicRoom?: boolean } = {}): Promise<void> {
     this.roomCode = code.toUpperCase();
     this.name = name;
+    this.publicRoom = !!opts.publicRoom;
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
     // A token left over from this tab means we were in this room before — a
@@ -127,6 +162,9 @@ export class NetClient {
       const base = RELAY_BASE.replace(/^http/, 'ws');
       const params = new URLSearchParams({ name: this.name });
       if (this.token) params.set('token', this.token);
+      // A quick-match room advertises itself, so someone browsing the list can
+      // fill it too rather than everyone waiting on the queue alone.
+      if (this.publicRoom) params.set('public', '1');
       const ws = new WebSocket(`${base}/api/room/${this.roomCode}?${params}`);
       this.ws = ws;
       let settled = false;
@@ -266,7 +304,7 @@ export class NetClient {
       case 'players':
         this.players = msg.players;
         this.hostId = msg.hostId;
-        this.onPlayers(this.players, this.hostId);
+        this.onPlayers(this.players, this.hostId, msg.isPublic);
         break;
       case 'gameStarted':
         // Defaulted here rather than at the call site so every consumer sees a
@@ -322,6 +360,12 @@ export class NetClient {
 
   pickColor(colorIndex: number) {
     this.send({ type: 'pickColor', colorIndex });
+  }
+
+  /** Host-only. Keeps the relay's idea of the lobby (and therefore the public
+   *  listing) in step with what the host has selected. */
+  setLobby(settings: { isPublic?: boolean; mode?: GameModeKey; boardSize?: BoardSizeKey }) {
+    this.send({ type: 'setLobby', ...settings });
   }
 
   /** Asks for another game on the same settings. The relay starts one once

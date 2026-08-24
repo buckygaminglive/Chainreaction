@@ -12,6 +12,18 @@ export interface NetPlayer {
 export type BoardSizeKey = 'small' | 'medium' | 'large';
 export type OrbStyleKey = 'dots' | 'emoji';
 
+/** A room advertising itself in the public list. Deliberately just a pointer —
+ *  joining still goes through the normal room socket, so a listing going stale
+ *  costs a failed join and nothing more. */
+export interface PublicRoom {
+  code: string;
+  host: string;
+  mode: GameModeKey;
+  boardSize: BoardSizeKey;
+  players: number;
+  maxPlayers: number;
+}
+
 export type ClientMsg =
   // `mode` is optional on the wire only so a relay running ahead of the
   // deployed client still understands it. New clients always send it.
@@ -25,6 +37,10 @@ export type ClientMsg =
    *  connected player has asked. */
   | { type: 'rematchVote' }
   | { type: 'taunt'; emoji: number }
+  /** Host-only lobby settings. The relay needs these before the game starts,
+   *  not just at kick-off, or a public listing advertises whatever the room
+   *  defaulted to rather than what the host actually picked. */
+  | { type: 'setLobby'; isPublic?: boolean; mode?: GameModeKey; boardSize?: BoardSizeKey }
   | { type: 'ping' };
 
 export type ServerMsg =
@@ -38,7 +54,7 @@ export type ServerMsg =
        *  seat and their board would be gone. Never broadcast to the room. */
       token: string;
     }
-  | { type: 'players'; players: NetPlayer[]; hostId: number }
+  | { type: 'players'; players: NetPlayer[]; hostId: number; isPublic?: boolean }
   | {
       /** Sent to a player who reconnected into a match already in progress.
        *  Carries the whole authoritative board rather than a move log — the

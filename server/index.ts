@@ -1,8 +1,12 @@
-import { GameRoom, type Env } from './GameRoom';
+import { GameRoom, MATCHMAKER_SINGLETON, type Env } from './GameRoom';
+import { Matchmaker } from './Matchmaker';
+import type { BoardSizeKey } from '../src/net/protocol';
+import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 
-export { GameRoom };
+export { GameRoom, Matchmaker };
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — avoids look-alikes
+const BOARD_SIZES: BoardSizeKey[] = ['small', 'medium', 'large'];
 
 function generateRoomCode(): string {
   let code = '';
@@ -20,6 +24,17 @@ function corsHeaders(): HeadersInit {
   };
 }
 
+/** Quick match settings arrive from a client, so they are narrowed to known
+ *  values before they can reach the queue and sit there poisoning matches. */
+function sanitize(body: unknown): { mode: GameModeKey; boardSize: BoardSizeKey } {
+  const raw = (body ?? {}) as { mode?: string; boardSize?: string };
+  const mode = (raw.mode && GAME_MODES[raw.mode as GameModeKey]?.online ? raw.mode : 'classic') as GameModeKey;
+  const boardSize = (BOARD_SIZES.includes(raw.boardSize as BoardSizeKey)
+    ? raw.boardSize
+    : 'medium') as BoardSizeKey;
+  return { mode, boardSize };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -31,6 +46,37 @@ export default {
     if (url.pathname === '/api/create' && request.method === 'POST') {
       const code = generateRoomCode();
       return Response.json({ code }, { headers: corsHeaders() });
+    }
+
+    // Quick match brokers a room code and nothing else: the caller then joins
+    // it over the ordinary room socket. Keeping matchmaking to "which code" is
+    // what stops it needing a second connection or any game state of its own.
+    if (url.pathname === '/api/quickmatch' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const { mode, boardSize } = sanitize(body);
+      const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+      const res = await stub.fetch('https://mm/queue', {
+        method: 'POST',
+        body: JSON.stringify({ code: generateRoomCode(), mode, boardSize }),
+      });
+      const result = await res.json();
+      return Response.json(result, { headers: corsHeaders() });
+    }
+
+    // Leaving the queue without having been matched.
+    if (url.pathname === '/api/quickmatch/cancel' && request.method === 'POST') {
+      const { code } = (await request.json().catch(() => ({}))) as { code?: string };
+      if (code) {
+        const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+        await stub.fetch('https://mm/dequeue', { method: 'POST', body: JSON.stringify({ code }) });
+      }
+      return Response.json({ ok: true }, { headers: corsHeaders() });
+    }
+
+    if (url.pathname === '/api/rooms' && request.method === 'GET') {
+      const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+      const res = await stub.fetch('https://mm/rooms');
+      return Response.json(await res.json(), { headers: corsHeaders() });
     }
 
     const match = url.pathname.match(/^\/api\/room\/([A-Z0-9]{4,8})$/i);

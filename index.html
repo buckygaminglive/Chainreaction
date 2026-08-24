@@ -118,15 +118,42 @@
             </div>
           </div>
 
-          <button id="create-room-btn" class="primary-btn">Create room</button>
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Quick match <span class="field-unit">find anyone</span></div>
+              <div id="quick-mode-group" class="mode-grid"></div>
+              <div id="quick-size-group" class="segmented" style="margin-top:8px">
+                <button class="segment" data-size="small">9×5</button>
+                <button class="segment active" data-size="medium">11×6</button>
+                <button class="segment" data-size="large">13×7</button>
+              </div>
+            </div>
+            <button id="quick-match-btn" class="primary-btn">Find a match</button>
+            <div id="quick-status" class="quick-status hidden">
+              <span class="spin"></span>
+              <span id="quick-status-text">Searching…</span>
+              <button id="quick-cancel-btn" class="link-btn">Cancel</button>
+            </div>
+          </div>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Join a room</div>
-              <div class="join-row">
+              <div class="field-label">Play with a friend</div>
+              <button id="create-room-btn" class="ghost-btn wide-btn">Create a private room</button>
+              <div class="join-row" style="margin-top:8px">
                 <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" />
                 <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
               </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">
+                Open rooms
+                <button id="rooms-refresh-btn" class="link-btn" style="margin-left:auto">Refresh</button>
+              </div>
+              <div id="rooms-list" class="rooms-list"></div>
             </div>
           </div>
           <div id="online-error" class="online-error hidden"></div>
@@ -152,6 +179,15 @@
             <div class="field">
               <div class="field-label">Your emission</div>
               <div id="lobby-color-picker" class="swatch-row"></div>
+            </div>
+
+            <div class="field" id="lobby-visibility-field">
+              <div class="field-label">Visibility</div>
+              <div id="lobby-visibility-group" class="segmented">
+                <button class="segment active" data-public="0">Private</button>
+                <button class="segment" data-public="1">Listed publicly</button>
+              </div>
+              <p class="field-note">Listed rooms appear under Open rooms for anyone to join. Private rooms need the code.</p>
             </div>
 
             <div id="lobby-host-controls">

@@ -77,6 +77,10 @@ let lobbyBoardSize: BoardSizeKey = 'medium';
 let lobbyOrbStyle: OrbStyle = 'dots';
 let lobbyMode: GameModeKey = DEFAULT_MODE;
 let intentionalDisconnect = false;
+/** True between asking for a quick match and that match starting. The host's
+ *  client kicks the game off automatically once the room fills, so neither
+ *  side has to find and press Start. */
+let quickMatchPending = false;
 
 function disconnectNet() {
   intentionalDisconnect = true;
@@ -133,6 +137,16 @@ const joinCodeInput = $<HTMLInputElement>('join-code-input');
 const createRoomBtn = $('create-room-btn');
 const joinRoomBtn = $('join-room-btn');
 const onlineErrorEl = $('online-error');
+const quickModeGroup = $('quick-mode-group');
+const quickSizeGroup = $('quick-size-group');
+const quickMatchBtn = $<HTMLButtonElement>('quick-match-btn');
+const quickStatusEl = $('quick-status');
+const quickStatusText = $('quick-status-text');
+const quickCancelBtn = $('quick-cancel-btn');
+const roomsListEl = $('rooms-list');
+const roomsRefreshBtn = $('rooms-refresh-btn');
+const lobbyVisibilityGroup = $('lobby-visibility-group');
+const lobbyVisibilityField = $('lobby-visibility-field');
 const roomCodeBtn = $('room-code-btn');
 const lobbyHintEl = $('lobby-hint');
 const lobbyPlayersEl = $('lobby-players');
@@ -268,6 +282,16 @@ function selectLobbyMode(key: GameModeKey) {
   lobbyMode = key;
   lobbyModeBlurbEl.textContent = GAME_MODES[key].blurb;
   renderModeGrid(lobbyModeGroup, lobbyMode, true, selectLobbyMode);
+  // Tell the relay too, so a public listing advertises the mode people will
+  // actually be playing rather than the room's default.
+  net?.setLobby({ mode: key });
+}
+
+/** Quick match only offers modes the relay can referee — queueing for one it
+ *  would reject is a guaranteed dead end. */
+function selectQuickMode(key: GameModeKey) {
+  quickMode = key;
+  renderModeGrid(quickModeGroup, quickMode, true, selectQuickMode);
 }
 
 function stepPlayers(delta: number) {
@@ -309,10 +333,15 @@ onSegmentPick(orbStyleGroup, (el) => {
 
 onSegmentPick(lobbyBoardSizeGroup, (el) => {
   lobbyBoardSize = el.dataset.size as BoardSizeKey;
+  net?.setLobby({ boardSize: lobbyBoardSize });
 });
 
 onSegmentPick(lobbyOrbStyleGroup, (el) => {
   lobbyOrbStyle = el.dataset.style as OrbStyle;
+});
+
+onSegmentPick(lobbyVisibilityGroup, (el) => {
+  net?.setLobby({ isPublic: el.dataset.public === '1' });
 });
 
 $('howto-btn').addEventListener('click', () => {
@@ -1054,11 +1083,116 @@ function clearOnlineError() {
   onlineErrorEl.classList.add('hidden');
 }
 
+// ---------- Quick match ----------
+let quickMode: GameModeKey = DEFAULT_MODE;
+let quickBoardSize: BoardSizeKey = 'medium';
+/** The room code we parked in the matchmaker queue, if we are still waiting. */
+let queuedCode: string | null = null;
+
+function setQuickSearching(searching: boolean, text = 'Searching for an opponent…') {
+  quickStatusEl.classList.toggle('hidden', !searching);
+  quickStatusText.textContent = text;
+  quickMatchBtn.toggleAttribute('disabled', searching);
+}
+
+async function startQuickMatch() {
+  sfx.unlock();
+  sfx.buttonTap();
+  clearOnlineError();
+  if (net) disconnectNet();
+  setQuickSearching(true);
+
+  const client = new NetClient();
+  wireNetHandlers(client);
+  net = client;
+  try {
+    const { code, waiting } = await NetClient.quickMatch(quickMode, quickBoardSize);
+    queuedCode = waiting ? code : null;
+    // Quick-match rooms are listed, so a browser can fill one that is still
+    // waiting on the queue — two routes into the same room.
+    await client.connect(code, nameInput.value.trim() || randomName(), { publicRoom: true });
+    if (waiting) {
+      // We are the room now. Sit in the lobby until someone is matched in.
+      lobbyMode = quickMode;
+      lobbyBoardSize = quickBoardSize;
+      selectLobbyMode(quickMode);
+      // Publish the settings we queued on, so the listing matches the queue.
+      client.setLobby({ mode: quickMode, boardSize: quickBoardSize, isPublic: true });
+      quickMatchPending = true;
+      enterLobby();
+      setQuickSearching(false);
+    } else {
+      // Somebody was already waiting — we joined their room and the host's
+      // client starts it as soon as it sees us.
+      quickMatchPending = true;
+      enterLobby();
+      setQuickSearching(false);
+    }
+    exposeDebug();
+  } catch (err) {
+    net = null;
+    queuedCode = null;
+    setQuickSearching(false);
+    showOnlineError(err instanceof Error ? err.message : 'Matchmaking failed.');
+  }
+}
+
+async function cancelQuickMatch() {
+  sfx.buttonTap();
+  if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
+  queuedCode = null;
+  quickMatchPending = false;
+  setQuickSearching(false);
+}
+
+quickMatchBtn.addEventListener('click', () => void startQuickMatch());
+quickCancelBtn.addEventListener('click', () => void cancelQuickMatch());
+
+onSegmentPick(quickSizeGroup, (el) => {
+  quickBoardSize = el.dataset.size as BoardSizeKey;
+});
+
+// ---------- Public room browser ----------
+async function refreshRooms() {
+  roomsListEl.innerHTML = '<div class="rooms-empty">Loading…</div>';
+  try {
+    const rooms = await NetClient.listRooms();
+    if (rooms.length === 0) {
+      roomsListEl.innerHTML =
+        '<div class="rooms-empty">No open rooms right now. Start a quick match, or create a room and list it publicly.</div>';
+      return;
+    }
+    roomsListEl.innerHTML = '';
+    for (const room of rooms) {
+      const row = document.createElement('button');
+      row.className = 'room-row';
+      const size = BOARD_SIZES[room.boardSize];
+      // rows×cols, matching how the board options are labelled everywhere else.
+      const sizeLabel = size ? `${size.rows}×${size.cols}` : '';
+      row.innerHTML =
+        `<span class="rh">${escapeHtml(room.host)}</span>` +
+        `<span class="rm">${escapeHtml(GAME_MODES[room.mode]?.name ?? room.mode)} · ${sizeLabel}</span>` +
+        `<span class="rp">${room.players}/${room.maxPlayers}</span>`;
+      row.addEventListener('click', () => void joinRoomByCode(room.code));
+      roomsListEl.appendChild(row);
+    }
+  } catch {
+    roomsListEl.innerHTML = '<div class="rooms-empty">Could not load the room list.</div>';
+  }
+}
+
+roomsRefreshBtn.addEventListener('click', () => {
+  sfx.buttonTap();
+  void refreshRooms();
+});
+
 $('play-online-btn').addEventListener('click', () => {
   sfx.unlock();
   sfx.buttonTap();
   clearOnlineError();
+  setQuickSearching(false);
   showScreen(screenOnline);
+  void refreshRooms();
 });
 $('online-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
@@ -1091,15 +1225,16 @@ createRoomBtn.addEventListener('click', async () => {
   }
 });
 
-joinRoomBtn.addEventListener('click', async () => {
+/** Shared by the code box and by tapping a row in the public room list. */
+async function joinRoomByCode(code: string) {
   sfx.unlock();
   sfx.buttonTap();
   clearOnlineError();
-  const code = joinCodeInput.value.trim();
   if (!code) {
     showOnlineError('Enter a room code.');
     return;
   }
+  if (net) disconnectNet();
   setBusy(true);
   const client = new NetClient();
   wireNetHandlers(client);
@@ -1117,13 +1252,16 @@ joinRoomBtn.addEventListener('click', async () => {
   } finally {
     setBusy(false);
   }
-});
+}
+
+joinRoomBtn.addEventListener('click', () => void joinRoomByCode(joinCodeInput.value.trim()));
 
 /** Wired before `connect()` rather than after: a client reclaiming a seat gets
  *  its `resume` immediately behind the handshake, and there must be a handler
  *  in place to catch it. */
 function wireNetHandlers(client: NetClient) {
-  client.onPlayers = (players, hostId) => {
+  client.onPlayers = (players, hostId, isPublic) => {
+    if (isPublic !== undefined) syncVisibilityControl(isPublic);
     renderLobby(players, hostId);
     // The same roster message tells a live board who just dropped or returned.
     if (onlineMode && engine) {
@@ -1210,6 +1348,11 @@ lobbyStartBtn.addEventListener('click', () => {
 
 $('lobby-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
+  // Leaving the lobby also gives up any queue slot, or the next quick-matcher
+  // gets sent into an empty room.
+  if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
+  queuedCode = null;
+  quickMatchPending = false;
   disconnectNet();
   showScreen(screenMenu);
 });
@@ -1232,6 +1375,9 @@ function renderLobby(players: NetPlayer[], hostId: number) {
 
   const isHost = !!net?.isHost;
   lobbyHostControls.classList.toggle('hidden', !isHost);
+  // Only the host can change visibility (the relay enforces it), so showing
+  // the control to everyone else is just a button that does nothing.
+  lobbyVisibilityField.classList.toggle('hidden', !isHost);
   lobbyStartBtn.classList.toggle('hidden', !isHost);
   lobbyWaitMsg.classList.toggle('hidden', isHost);
 
@@ -1247,6 +1393,27 @@ function renderLobby(players: NetPlayer[], hostId: number) {
     : spec.teams
       ? 'Team Battle needs an even roster of at least 4.'
       : 'Need at least 2 players to start.';
+
+  // A quick match should never make anyone hunt for a Start button — the point
+  // of it is that you asked to play and then you are playing.
+  if (quickMatchPending) {
+    if (!enoughForMode) {
+      lobbyHintEl.textContent = 'waiting for an opponent…';
+      return;
+    }
+    quickMatchPending = false;
+    queuedCode = null;
+    if (isHost) net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode);
+  }
+}
+
+/** The relay owns visibility, so the control reflects it rather than guessing —
+ *  a room opened by quick match is already public before the host touches it. */
+function syncVisibilityControl(isPublic: boolean) {
+  lobbyVisibilityGroup.querySelectorAll('.segment').forEach((s) => {
+    const el = s as HTMLElement;
+    el.classList.toggle('active', (el.dataset.public === '1') === isPublic);
+  });
 }
 
 function renderColorPicker(players: NetPlayer[]) {
@@ -1368,6 +1535,7 @@ function checkRoomLinkParam() {
 // ---------- init ----------
 selectMode(DEFAULT_MODE);
 selectLobbyMode(DEFAULT_MODE);
+selectQuickMode(DEFAULT_MODE);
 buildTauntPalette();
 renderProfileStrip();
 updateMuteIcon();
