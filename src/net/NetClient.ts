@@ -89,6 +89,9 @@ export class NetClient {
     mode: GameModeKey,
     snapshot: EngineSnapshot
   ) => void = () => {};
+  onTaunt: (from: number, emoji: number) => void = () => {};
+  onRematch: (votes: number[], needed: number) => void = () => {};
+  onRoomScore: (score: Map<number, number>) => void = () => {};
   onError: (message: string) => void = () => {};
   onDisconnect: () => void = () => {};
   /** Fired while silently retrying after an unexpected drop, in the lobby or
@@ -271,6 +274,15 @@ export class NetClient {
         // plain lattice is exactly what such a relay is actually running.
         this.onGameStarted(msg.rows, msg.cols, msg.players, msg.orbStyle, msg.mode ?? 'classic', msg.seed ?? 0);
         break;
+      case 'taunt':
+        this.onTaunt(msg.from, msg.emoji);
+        break;
+      case 'rematch':
+        this.onRematch(msg.votes, msg.needed);
+        break;
+      case 'roomScore':
+        this.onRoomScore(new Map(msg.score));
+        break;
       case 'move':
         this.onMove(msg.row, msg.col);
         break;
@@ -312,8 +324,14 @@ export class NetClient {
     this.send({ type: 'pickColor', colorIndex });
   }
 
-  restart() {
-    this.send({ type: 'restart' });
+  /** Asks for another game on the same settings. The relay starts one once
+   *  every connected player has asked. */
+  rematch() {
+    this.send({ type: 'rematchVote' });
+  }
+
+  sendTaunt(emoji: number): boolean {
+    return this.send({ type: 'taunt', emoji });
   }
 
   disconnect() {

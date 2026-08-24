@@ -199,6 +199,11 @@
         <div id="board-host">
           <div id="chain-readout" class="chain-readout" aria-live="polite"></div>
           <div id="board-flash" class="board-flash"></div>
+          <div id="taunt-feed" class="taunt-feed" aria-live="polite"></div>
+        </div>
+        <div id="taunt-bar" class="taunt-bar hidden">
+          <button id="taunt-toggle" class="taunt-toggle" aria-label="Send a reaction" aria-expanded="false">😀</button>
+          <div id="taunt-palette" class="taunt-palette hidden"></div>
         </div>
       </section>
 
@@ -212,6 +217,7 @@
           </div>
           <div id="win-metrics" class="win-metrics"></div>
           <div id="win-leaderboard" class="win-leaderboard"></div>
+          <p id="rematch-state" class="rematch-state hidden"></p>
           <div class="win-actions">
             <button id="play-again-btn" class="primary-btn small-btn">Run again</button>
             <button id="win-menu-btn" class="ghost-btn small-btn">Menu</button>

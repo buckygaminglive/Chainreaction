@@ -24,6 +24,7 @@
     "../src/game/cells.ts",
     "../src/game/modes.ts",
     "../src/net/protocol.ts",
+    "../src/net/taunts.ts",
     "../src/render/theme.ts"
   ]
 }

@@ -18,7 +18,13 @@ export type ClientMsg =
   | { type: 'startGame'; boardSize: BoardSizeKey; orbStyle: OrbStyleKey; mode?: GameModeKey }
   | { type: 'move'; row: number; col: number }
   | { type: 'pickColor'; colorIndex: number }
+  /** Legacy immediate restart. Current clients send `rematchVote`; the relay
+   *  treats this as a vote so an older build still works in a mixed room. */
   | { type: 'restart' }
+  /** Ask for another game on the same settings. The match restarts once every
+   *  connected player has asked. */
+  | { type: 'rematchVote' }
+  | { type: 'taunt'; emoji: number }
   | { type: 'ping' };
 
 export type ServerMsg =
@@ -61,5 +67,11 @@ export type ServerMsg =
       seed?: number;
     }
   | { type: 'move'; row: number; col: number }
+  | { type: 'taunt'; from: number; emoji: number }
+  /** Who has asked for a rematch, and how many are needed. */
+  | { type: 'rematch'; votes: number[]; needed: number }
+  /** Running head-to-head across rematches in this room. Lives only as long as
+   *  the room does — persistent records are a separate, account-backed thing. */
+  | { type: 'roomScore'; score: [number, number][] }
   | { type: 'error'; message: string }
   | { type: 'pong' };

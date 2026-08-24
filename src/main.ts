@@ -15,6 +15,7 @@ import { modePreview } from './render/modePreview';
 import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
+import { TAUNTS, TAUNT_COOLDOWN_MS } from './net/taunts';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -115,6 +116,11 @@ const matchBannerEl = $('match-banner');
 const turnClockEl = $('turn-clock');
 const turnClockFill = $('turn-clock-fill');
 const turnClockValue = $('turn-clock-value');
+const tauntBarEl = $('taunt-bar');
+const tauntToggleEl = $<HTMLButtonElement>('taunt-toggle');
+const tauntPaletteEl = $('taunt-palette');
+const tauntFeedEl = $('taunt-feed');
+const rematchStateEl = $('rematch-state');
 const winTitleEl = $('win-title');
 const winEyebrowEl = document.querySelector('.win-eyebrow') as HTMLElement;
 const winMetricsEl = $('win-metrics');
@@ -341,13 +347,16 @@ $('back-btn').addEventListener('click', () => {
 
 playAgainBtn.addEventListener('click', () => {
   sfx.buttonTap();
-  hideOverlay(screenWin);
   if (onlineMode) {
-    leaveGameScreen();
-    net?.restart();
-    showScreen(screenLobby);
+    // A vote, not a command. The card stays up showing who else has agreed,
+    // and the relay starts the next game once everyone has — going back to the
+    // lobby in between is what made a rematch feel like starting over.
+    net?.rematch();
+    playAgainBtn.textContent = 'Waiting…';
+    playAgainBtn.toggleAttribute('disabled', true);
     return;
   }
+  hideOverlay(screenWin);
   const mode = GAME_MODES[modeKey];
   if (mode.seriesLength > 1 && !seriesDecided()) seriesGame++;
   else if (mode.seriesLength > 1) resetSeries();
@@ -424,6 +433,12 @@ function renderMatchBanner() {
     );
   }
   if (engine?.isTeamGame) parts.push(`${TEAM_NAMES[0]} <span class="sep">vs</span> ${TEAM_NAMES[1]}`);
+
+  // Head-to-head across rematches in this room, kept by the relay.
+  if (onlineMode && engine && roomScore.size > 0) {
+    const line = engine.players.map((p) => `<span class="bv">${roomScore.get(p.id) ?? 0}</span>`).join('–');
+    parts.push(`series ${line}`);
+  }
 
   // Turn order is authoritative on the relay, so a dropped player's turn just
   // stops the match rather than skipping. Say whose turn everyone is waiting
@@ -519,6 +534,85 @@ function hideChain() {
   if (chainHideTimer) clearTimeout(chainHideTimer);
   chainReadoutEl.classList.remove('show');
   boardFlashEl.classList.remove('pulse');
+}
+
+// ---------- Taunts ----------
+/** Room head-to-head, kept by the relay and pushed down. */
+let roomScore = new Map<number, number>();
+let lastTauntAt = 0;
+
+function buildTauntPalette() {
+  tauntPaletteEl.innerHTML = '';
+  TAUNTS.forEach((t, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = t.emoji;
+    btn.title = t.label;
+    btn.setAttribute('aria-label', t.label);
+    btn.addEventListener('click', () => sendTaunt(i));
+    tauntPaletteEl.appendChild(btn);
+  });
+}
+
+function setTauntPaletteOpen(open: boolean) {
+  tauntPaletteEl.classList.toggle('hidden', !open);
+  tauntToggleEl.setAttribute('aria-expanded', String(open));
+}
+
+function sendTaunt(index: number) {
+  if (!net || !onlineMode) return;
+  const now = performance.now();
+  // Mirrors the relay's cooldown so the button visibly goes dead rather than
+  // the taunt vanishing silently — the relay is still the one enforcing it.
+  if (now - lastTauntAt < TAUNT_COOLDOWN_MS) return;
+  if (!net.sendTaunt(index)) return;
+  lastTauntAt = now;
+  sfx.buttonTap();
+  setTauntPaletteOpen(false);
+  tauntToggleEl.disabled = true;
+  setTimeout(() => {
+    tauntToggleEl.disabled = false;
+  }, TAUNT_COOLDOWN_MS);
+}
+
+function showTaunt(fromPlayerId: number, index: number) {
+  const taunt = TAUNTS[index];
+  if (!taunt) return;
+  const who = engine?.players.find((p) => p.id === fromPlayerId);
+  const theme = colorOf(fromPlayerId);
+  const bubble = document.createElement('div');
+  bubble.className = 'taunt-bubble';
+  bubble.style.borderColor = `${theme.css}66`;
+  bubble.innerHTML =
+    `<span class="te">${taunt.emoji}</span>` +
+    `<span class="tn" style="color:${theme.css}">${escapeHtml(who?.name ?? 'Player')}</span>`;
+  tauntFeedEl.appendChild(bubble);
+  // Keep the stack shallow; a burst of taunts should not cover the board.
+  while (tauntFeedEl.childElementCount > 4) tauntFeedEl.firstElementChild?.remove();
+  setTimeout(() => bubble.remove(), 2700);
+}
+
+tauntToggleEl.addEventListener('click', () => {
+  sfx.buttonTap();
+  setTauntPaletteOpen(tauntPaletteEl.classList.contains('hidden'));
+});
+
+// Tapping the board (or anywhere else) closes the palette.
+document.addEventListener('pointerdown', (e) => {
+  if (tauntPaletteEl.classList.contains('hidden')) return;
+  if (tauntBarEl.contains(e.target as Node)) return;
+  setTauntPaletteOpen(false);
+});
+
+function renderRematchState(votes: number[], needed: number) {
+  if (!onlineMode || !engine?.gameOver || needed < 2) {
+    rematchStateEl.classList.add('hidden');
+    return;
+  }
+  rematchStateEl.classList.remove('hidden');
+  const mine = votes.includes(myPlayerId);
+  rematchStateEl.textContent = mine
+    ? `waiting for opponents · ${votes.length}/${needed} ready`
+    : `${votes.length}/${needed} want a rematch`;
 }
 
 // ---------- Blitz turn clock ----------
@@ -653,6 +747,10 @@ function leaveGameScreen() {
   stopTurnClock();
   hideChain();
   matchBannerEl.classList.add('hidden');
+  tauntBarEl.classList.add('hidden');
+  setTauntPaletteOpen(false);
+  tauntFeedEl.innerHTML = '';
+  rematchStateEl.classList.add('hidden');
   if (renderer) {
     renderer.destroy();
     renderer = null;
@@ -671,6 +769,12 @@ async function mountGame(
   soundGeneration++;
   stopTurnClock();
   hideChain();
+  // Hidden on every mount; the online paths turn it back on via
+  // enterOnlineMatchUi. Doing it here means a local game can never inherit it
+  // from a previous online one, whatever route the player took.
+  tauntBarEl.classList.add('hidden');
+  setTauntPaletteOpen(false);
+  tauntFeedEl.innerHTML = '';
   if (renderer) {
     renderer.destroy();
     renderer = null;
@@ -1036,6 +1140,12 @@ function wireNetHandlers(client: NetClient) {
   client.onResume = (rows, cols, style, mode, snapshot) => {
     void resumeOnlineGame(rows, cols, style, mode, snapshot);
   };
+  client.onTaunt = (from, emoji) => showTaunt(from, emoji);
+  client.onRematch = (votes, needed) => renderRematchState(votes, needed);
+  client.onRoomScore = (score) => {
+    roomScore = score;
+    renderMatchBanner();
+  };
   client.onDisconnect = () => {
     // Reaching here means the whole retry ladder was exhausted, not that a
     // single socket blipped.
@@ -1198,7 +1308,20 @@ async function startOnlineGame(
   if (!(await mountGame(newEngine, style))) return;
   renderer!.setCellTapHandler(onCellTapOnline);
   renderMatchBanner();
+  enterOnlineMatchUi();
   showScreen(screenGame);
+}
+
+/** Shared setup for entering (or re-entering) an online board: the social
+ *  controls only make sense with other people in the room. */
+function enterOnlineMatchUi() {
+  hideOverlay(screenWin);
+  tauntBarEl.classList.remove('hidden');
+  setTauntPaletteOpen(false);
+  tauntFeedEl.innerHTML = '';
+  rematchStateEl.classList.add('hidden');
+  playAgainBtn.textContent = 'Rematch';
+  playAgainBtn.toggleAttribute('disabled', false);
 }
 
 /** Rejoined a match that was already running. The relay sent the whole board
@@ -1222,6 +1345,7 @@ async function resumeOnlineGame(
   if (!(await mountGame(newEngine, style, { fromSnapshot: true }))) return;
   renderer!.setCellTapHandler(onCellTapOnline);
   renderMatchBanner();
+  enterOnlineMatchUi();
   showScreen(screenGame);
 }
 
@@ -1229,6 +1353,7 @@ function leaveOnlineGame() {
   disconnectNet();
   onlineMode = false;
   myPlayerId = -1;
+  roomScore = new Map();
 }
 
 // ---------- Join-via-link ----------
@@ -1243,6 +1368,7 @@ function checkRoomLinkParam() {
 // ---------- init ----------
 selectMode(DEFAULT_MODE);
 selectLobbyMode(DEFAULT_MODE);
+buildTauntPalette();
 renderProfileStrip();
 updateMuteIcon();
 checkRoomLinkParam();

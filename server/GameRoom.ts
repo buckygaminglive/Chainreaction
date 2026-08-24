@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { GameEngine } from '../src/game/GameEngine';
 import { layoutForMode, randomSeed } from '../src/game/cells';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
+import { TAUNT_COOLDOWN_MS, isValidTaunt } from '../src/net/taunts';
 import type { EngineSnapshot, PlayerConfig } from '../src/game/types';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, ServerMsg } from '../src/net/protocol';
 import { PLAYER_THEMES } from '../src/render/theme';
@@ -47,6 +48,7 @@ interface Meta {
   rows?: number;
   cols?: number;
   roster: [number, RosterEntry][];
+  roomScore?: [number, number][];
 }
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -67,6 +69,12 @@ export class GameRoom extends DurableObject<Env> {
   private mode: GameModeKey = 'classic';
   private seed = 0;
   private roster = new Map<number, RosterEntry>();
+  /** Games won per seat since this room opened, carried across rematches. */
+  private roomScore = new Map<number, number>();
+  private rematchVotes = new Set<number>();
+  /** Last taunt timestamp per seat, for the cooldown. In memory only — losing
+   *  it to a hibernation just means one taunt gets through early. */
+  private lastTaunt = new Map<number, number>();
   private ready: Promise<void>;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -82,6 +90,7 @@ export class GameRoom extends DurableObject<Env> {
         this.mode = meta.mode ?? 'classic';
         this.seed = meta.seed ?? 0;
         this.roster = new Map(meta.roster);
+        this.roomScore = new Map(meta.roomScore ?? []);
       }
       const snap = await ctx.storage.get<EngineSnapshot>('engineSnapshot');
       if (snap && meta?.rows && meta?.cols) {
@@ -166,8 +175,14 @@ export class GameRoom extends DurableObject<Env> {
         snapshot: this.engine.getSnapshot(),
       });
     }
+    // The head-to-head predates this connection, so hand it over on arrival
+    // rather than leaving a returning player showing 0-0.
+    if (this.roomScore.size > 0) {
+      this.send(server, { type: 'roomScore', score: Array.from(this.roomScore.entries()) });
+    }
 
     this.broadcastPlayers();
+    if (this.engine?.gameOver) this.broadcastRematchState();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -209,8 +224,12 @@ export class GameRoom extends DurableObject<Env> {
       await this.handleStart(ws, att, msg.boardSize, msg.orbStyle, msg.mode ?? 'classic');
     } else if (msg.type === 'move') {
       await this.handleMove(ws, att, msg.row, msg.col);
-    } else if (msg.type === 'restart') {
-      await this.handleRestart(att);
+    } else if (msg.type === 'restart' || msg.type === 'rematchVote') {
+      // An older client's `restart` counts as that player's vote, so a mixed
+      // room still works rather than silently ignoring them.
+      await this.handleRematchVote(att);
+    } else if (msg.type === 'taunt') {
+      this.handleTaunt(att, msg.emoji);
     } else if (msg.type === 'pickColor') {
       await this.handlePickColor(ws, att, msg.colorIndex);
     } else if (msg.type === 'ping') {
@@ -268,6 +287,17 @@ export class GameRoom extends DurableObject<Env> {
     }
     await this.persistMeta();
     this.broadcastPlayers();
+
+    // Someone leaving the result screen means the rematch everyone else is
+    // waiting on is never coming. Reopen the lobby so the room stays usable
+    // instead of stranding the rest on a finished board.
+    if (this.started && this.engine?.gameOver) {
+      await this.returnToLobby();
+    } else if (this.started) {
+      // Mid-match: the seat is held, but the vote tally has to shrink or a
+      // rematch could never reach unanimity.
+      this.broadcastRematchState();
+    }
   }
 
   private async handleStart(
@@ -324,28 +354,57 @@ export class GameRoom extends DurableObject<Env> {
     this.boardSize = boardSize;
     this.orbStyle = orbStyle;
     this.mode = mode;
+    await this.beginGame(size.rows, size.cols, players);
+  }
+
+  /** Builds and broadcasts a fresh board on the room's current settings. Shared
+   *  by the first game and every rematch, so a rematch cannot drift from the
+   *  configuration the players agreed to. */
+  private async beginGame(rows: number, cols: number, players: PlayerConfig[]) {
     // The relay owns the seed. Letting the host pick it would let a host
-    // re-roll the lattice until they liked it.
+    // re-roll the lattice until they liked it — and a rematch gets a genuinely
+    // new board rather than a repeat of the one just played.
     this.seed = randomSeed();
     this.engine = new GameEngine({
-      rows: size.rows,
-      cols: size.cols,
+      rows,
+      cols,
       players,
-      kinds: layoutForMode(mode, size.rows, size.cols, this.seed),
+      kinds: layoutForMode(this.mode, rows, cols, this.seed),
     });
     this.started = true;
+    this.rematchVotes.clear();
     await this.persistMeta();
     await this.persistEngine();
 
     this.broadcastAll({
       type: 'gameStarted',
-      rows: size.rows,
-      cols: size.cols,
+      rows,
+      cols,
       players,
       orbStyle: this.orbStyle,
       mode: this.mode,
       seed: this.seed,
     });
+    this.broadcastRoomScore();
+  }
+
+  private broadcastRoomScore() {
+    this.broadcastAll({ type: 'roomScore', score: Array.from(this.roomScore.entries()) });
+  }
+
+  private broadcastRematchState() {
+    this.broadcastAll({
+      type: 'rematch',
+      votes: Array.from(this.rematchVotes),
+      needed: this.connectedSeatIds().length,
+    });
+  }
+
+  private connectedSeatIds(): number[] {
+    return this.ctx
+      .getWebSockets()
+      .map((s) => (s.deserializeAttachment() as Attachment | undefined)?.id)
+      .filter((id): id is number => id !== undefined);
   }
 
   private async handleMove(ws: WebSocket, att: Attachment, row: number, col: number) {
@@ -359,6 +418,43 @@ export class GameRoom extends DurableObject<Env> {
     this.engine.applyMove(row, col);
     await this.persistEngine();
     this.broadcastAll({ type: 'move', row, col });
+
+    // The relay is the only party that knows the real result, so it is the
+    // only place a score can be kept honestly.
+    if (this.engine.gameOver && this.engine.winner !== null) {
+      const winner = this.engine.winner;
+      this.roomScore.set(winner, (this.roomScore.get(winner) ?? 0) + 1);
+      this.rematchVotes.clear();
+      await this.persistMeta();
+      this.broadcastRoomScore();
+    }
+  }
+
+  private async handleRematchVote(att: Attachment) {
+    if (!this.engine || !this.engine.gameOver) return;
+    this.rematchVotes.add(att.id);
+    this.broadcastRematchState();
+
+    const connected = this.connectedSeatIds();
+    if (connected.length < 2) return;
+    if (!connected.every((id) => this.rematchVotes.has(id))) return;
+
+    // Everyone still in the room wants another game — go straight into it
+    // rather than dropping back to the lobby, which is what made a rematch
+    // feel like starting over instead of continuing.
+    const players = this.engine.players.map((p) => ({ ...p, isAlive: true }));
+    await this.beginGame(this.engine.rows, this.engine.cols, players);
+  }
+
+  private handleTaunt(att: Attachment, emoji: number) {
+    if (!isValidTaunt(emoji)) return;
+    const now = Date.now();
+    const last = this.lastTaunt.get(att.id) ?? 0;
+    // Silently dropped rather than answered with an error: a rate-limited
+    // taunt is not a mistake worth interrupting the player about.
+    if (now - last < TAUNT_COOLDOWN_MS) return;
+    this.lastTaunt.set(att.id, now);
+    this.broadcastAll({ type: 'taunt', from: att.id, emoji });
   }
 
   private async handlePickColor(ws: WebSocket, att: Attachment, colorIndex: number) {
@@ -390,10 +486,13 @@ export class GameRoom extends DurableObject<Env> {
     return this.nextPlayerId % PLAYER_THEMES.length;
   }
 
-  private async handleRestart(att: Attachment) {
-    if (att.id !== this.hostId) return;
+  /** Tears the match down and returns everyone to the lobby. Used when a player
+   *  leaves the result screen rather than rematching, so the room can be
+   *  reconfigured instead of being stuck on the last game's settings. */
+  private async returnToLobby() {
     this.started = false;
     this.engine = null;
+    this.rematchVotes.clear();
     await this.ctx.storage.delete('engineSnapshot');
     await this.persistMeta();
     this.broadcastPlayers();
@@ -436,6 +535,7 @@ export class GameRoom extends DurableObject<Env> {
       rows: this.engine?.rows,
       cols: this.engine?.cols,
       roster: Array.from(this.roster.entries()),
+      roomScore: Array.from(this.roomScore.entries()),
     };
     await this.ctx.storage.put('meta', meta);
   }
