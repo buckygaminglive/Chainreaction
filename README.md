@@ -109,13 +109,64 @@ src/
                   glue between input, the engine, and the renderer.
 
 server/
-  GameRoom.ts     The Durable Object. One instance per room code. Runs the
-                  same GameEngine as the client to validate and apply moves
-                  authoritatively, then broadcasts them to every connected
-                  socket.
-  index.ts        Worker entry point — room-code generation and routing
-                  requests to the right Durable Object.
+  GameRoom.ts     One Durable Object per room code. Runs the same GameEngine
+                  as the client to validate and apply moves authoritatively,
+                  then broadcasts them to every connected socket. Also owns
+                  seat tokens, the room's head-to-head, taunt rate limiting,
+                  and reporting finished ranked matches to the hub.
+  Matchmaker.ts   One object for the whole game: the quick-match queue and the
+                  list of rooms that opted to be public. Holds no game state,
+                  only pointers to rooms.
+  PlayerHub.ts    One object for the whole game: guest accounts, friend codes,
+                  friendships and leaderboards.
+  index.ts        Worker entry point — room codes, matchmaking routes, the
+                  player API, and routing to the right Durable Object.
 ```
+
+### Online features
+
+**Quick match** brokers a room code and nothing else; the caller then joins over
+the ordinary room socket. Keeping matchmaking to "which code" is what stops it
+needing a second connection, its own state, or a parallel join path. Whoever
+arrives first becomes the room others are matched into, and the host's client
+starts the game the moment it fills. Matching is on mode *and* board size —
+being dropped into rules you did not pick is worse than waiting longer.
+
+**Rooms are private by default.** A code shared with a friend must never reach a
+public list because of a default. Quick-match rooms opt in, so the browser can
+fill one still sitting in the queue. Listings are pushed by the room itself on
+every roster change, so they can only be wrong for as long as one call takes to
+land, and a dead room still expires on the matchmaker's TTL.
+
+**Rematch is a vote.** Everyone connected has to ask, then the relay starts a
+fresh board on the same settings without bouncing anyone through the lobby. The
+relay keeps the head-to-head, because it is the only party that knows the real
+result.
+
+**Taunts** are a fixed palette of twelve, not free text. An open chat box in a
+game played with strangers drags in moderation, reporting and an abuse surface;
+a closed set gives the same feeling with none of that, and needs no
+localisation. The cooldown is enforced on the relay — a client-side limit is
+only a suggestion.
+
+### Identity and ranking
+
+Identity is a **guest account**: the relay mints an id and a secret the first
+time someone opens the online screen. No email, no password, no OAuth — so no
+login wall and no personal data to protect. The cost, which the UI should keep
+saying out loud: clearing browser storage loses the account. A short friend code
+makes it shareable; account linking is additive later.
+
+Ranked results come from the relay, never from a client — `result` is
+deliberately not in the hub's public route table. Seats identify themselves with
+their account secret on connect, and a result is rejected wholesale if any seat
+is unverified, or if two seats share an account.
+
+**Only public rooms are ranked.** A private room is people who chose each other,
+which is both an obvious farming vector and, between friends, something that
+should not move anyone's rank. Rating is Elo at K=24 and only applies to
+head-to-head results; a free-for-all counts towards wins and matches but leaves
+the ladder alone rather than inventing a number.
 
 ### Why the client and server share `GameEngine`
 
@@ -244,7 +295,17 @@ needs real games.
   restarts.
 - The Survival AI is 1-ply. It plays a sound game but can be baited by a
   position that looks good one move out and collapses two moves later.
-- No rate limiting on `/api/create` (room creation).
+- No rate limiting on `/api/create`, `/api/quickmatch` or `/api/player/register`.
+  Nothing stops a script minting accounts or flooding the queue.
+- Guest accounts cannot be linked or recovered. Clearing storage loses the
+  account, and there is no way to move one to a second device.
+- The matchmaker and player hub are each a single Durable Object. Fine at this
+  scale, and the escape hatch is sharding (matchmaker) or D1 (hub), but neither
+  has been load-tested.
+- Ranked play can still be farmed by two people agreeing to meet in a public
+  room. Rating only ever moves on head-to-head results, so the exposure is
+  bounded, but there is no collusion detection.
+- No moderation path for display names beyond stripping control characters.
 - Idle Durable Object rooms aren't cleaned up on a TTL.
 - A player who never returns stalls the match on their turn forever. A DO alarm
   could forfeit or auto-play a seat after a grace period — the same alarm Blitz
