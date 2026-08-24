@@ -1,8 +1,17 @@
 import { DurableObject } from 'cloudflare:workers';
 import { GameEngine } from '../src/game/GameEngine';
+import { layoutForMode, randomSeed } from '../src/game/cells';
+import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 import type { EngineSnapshot, PlayerConfig } from '../src/game/types';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, ServerMsg } from '../src/net/protocol';
 import { PLAYER_THEMES } from '../src/render/theme';
+
+/** Team Battle pairs teammates into related emissions so a side reads as a
+ *  side: cool tones against warm ones. */
+const TEAM_COLOR_INDICES = [
+  [0, 5],
+  [1, 7],
+];
 
 export interface Env {
   GAME_ROOM: DurableObjectNamespace<GameRoom>;
@@ -11,12 +20,20 @@ export interface Env {
 interface Attachment {
   id: number;
   name: string;
+  /** Bumped every time this seat opens a new socket. A close event from an
+   *  older generation is ignored, so the stale socket being torn down during a
+   *  reconnect can't mark the freshly-returned player offline again. */
+  gen: number;
 }
 
 interface RosterEntry {
   name: string;
   connected: boolean;
   colorIndex: number;
+  /** Reconnect secret for this seat. Never leaves the room except to the one
+   *  socket that owns it. */
+  token: string;
+  gen: number;
 }
 
 interface Meta {
@@ -25,6 +42,8 @@ interface Meta {
   hostId: number | null;
   boardSize: BoardSizeKey;
   orbStyle: OrbStyleKey;
+  mode: GameModeKey;
+  seed: number;
   rows?: number;
   cols?: number;
   roster: [number, RosterEntry][];
@@ -45,6 +64,8 @@ export class GameRoom extends DurableObject<Env> {
   private hostId: number | null = null;
   private boardSize: BoardSizeKey = 'medium';
   private orbStyle: OrbStyleKey = 'emoji';
+  private mode: GameModeKey = 'classic';
+  private seed = 0;
   private roster = new Map<number, RosterEntry>();
   private ready: Promise<void>;
 
@@ -58,6 +79,8 @@ export class GameRoom extends DurableObject<Env> {
         this.hostId = meta.hostId;
         this.boardSize = meta.boardSize;
         this.orbStyle = meta.orbStyle;
+        this.mode = meta.mode ?? 'classic';
+        this.seed = meta.seed ?? 0;
         this.roster = new Map(meta.roster);
       }
       const snap = await ctx.storage.get<EngineSnapshot>('engineSnapshot');
@@ -76,30 +99,96 @@ export class GameRoom extends DurableObject<Env> {
 
     const url = new URL(request.url);
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
+    const token = url.searchParams.get('token');
+    const returning = token ? this.findSeatByToken(token) : null;
 
-    const connectedCount = this.ctx.getWebSockets().length;
-    if (connectedCount >= MAX_PLAYERS) {
-      return new Response('Room is full', { status: 403 });
-    }
-    if (this.started) {
-      return new Response('Game already in progress', { status: 409 });
+    if (!returning) {
+      // Only genuinely new players are gated. A returning player already holds
+      // a seat, so they neither fill the room further nor need the game to be
+      // un-started — refusing them here is exactly the bug this fixes.
+      if (this.ctx.getWebSockets().length >= MAX_PLAYERS) {
+        return new Response('Room is full', { status: 403 });
+      }
+      if (this.started) {
+        return new Response('Game already in progress', { status: 409 });
+      }
     }
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const id = this.nextPlayerId++;
+
+    let id: number;
+    let entry: RosterEntry;
+    if (returning) {
+      id = returning.id;
+      entry = returning.entry;
+      // Drop any socket still held by this seat before the new one takes over,
+      // so a half-dead connection can't keep receiving broadcasts.
+      this.closeSocketsFor(id);
+      entry.gen += 1;
+      entry.connected = true;
+      entry.name = name || entry.name;
+    } else {
+      id = this.nextPlayerId++;
+      entry = {
+        name,
+        connected: true,
+        colorIndex: this.pickDefaultColor(),
+        token: crypto.randomUUID(),
+        gen: 1,
+      };
+      this.roster.set(id, entry);
+    }
+
     if (this.hostId === null) this.hostId = id;
     const hostId = this.hostId;
 
-    server.serializeAttachment({ id, name } satisfies Attachment);
+    server.serializeAttachment({ id, name, gen: entry.gen } satisfies Attachment);
     this.ctx.acceptWebSocket(server);
-    this.roster.set(id, { name, connected: true, colorIndex: this.pickDefaultColor() });
     await this.persistMeta();
 
-    this.send(server, { type: 'welcome', youAreId: id, hostId, players: this.rosterList() });
+    this.send(server, {
+      type: 'welcome',
+      youAreId: id,
+      hostId,
+      players: this.rosterList(),
+      token: entry.token,
+    });
+
+    // A player returning to a live match needs the board, not just the roster.
+    if (returning && this.started && this.engine) {
+      this.send(server, {
+        type: 'resume',
+        rows: this.engine.rows,
+        cols: this.engine.cols,
+        orbStyle: this.orbStyle,
+        mode: this.mode,
+        snapshot: this.engine.getSnapshot(),
+      });
+    }
+
     this.broadcastPlayers();
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private findSeatByToken(token: string): { id: number; entry: RosterEntry } | null {
+    for (const [id, entry] of this.roster) {
+      if (entry.token && entry.token === token) return { id, entry };
+    }
+    return null;
+  }
+
+  private closeSocketsFor(id: number) {
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = ws.deserializeAttachment() as Attachment | undefined;
+      if (att?.id !== id) continue;
+      try {
+        ws.close(4000, 'replaced by a newer connection');
+      } catch {
+        /* already gone */
+      }
+    }
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
@@ -114,7 +203,10 @@ export class GameRoom extends DurableObject<Env> {
     if (!att) return;
 
     if (msg.type === 'startGame') {
-      await this.handleStart(ws, att, msg.boardSize, msg.orbStyle);
+      // `mode` is newer than the deployed client. Treating its absence as
+      // Classic is what lets the relay ship before the client without
+      // breaking whoever is mid-session on the old build.
+      await this.handleStart(ws, att, msg.boardSize, msg.orbStyle, msg.mode ?? 'classic');
     } else if (msg.type === 'move') {
       await this.handleMove(ws, att, msg.row, msg.col);
     } else if (msg.type === 'restart') {
@@ -126,8 +218,18 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
-  async webSocketClose(ws: WebSocket) {
+  async webSocketClose(ws: WebSocket, code: number, reason: string) {
     await this.handleDisconnect(ws);
+    // Finish the closing handshake. Without this the peer's socket sits in
+    // CLOSING indefinitely and never fires its `close` event — which means a
+    // client that hangs up cleanly never learns it is disconnected and never
+    // starts reconnecting.
+    try {
+      // 1006 is reserved for abnormal closure and may not be sent on the wire.
+      ws.close(code === 1006 || !code ? 1000 : code, reason);
+    } catch {
+      /* already fully closed */
+    }
   }
 
   async webSocketError(ws: WebSocket, error: unknown) {
@@ -139,13 +241,20 @@ export class GameRoom extends DurableObject<Env> {
     const att = ws.deserializeAttachment() as Attachment | undefined;
     if (!att) return;
 
+    const current = this.roster.get(att.id);
+    // The seat has already moved on to a newer socket — this close is the tail
+    // end of the connection that was replaced, and acting on it would mark a
+    // player who is right here as offline.
+    if (current && att.gen !== undefined && current.gen !== att.gen) return;
+
     if (!this.started) {
       // Nothing durable depends on this slot yet — drop it cleanly so a
       // reconnect looks like a normal fresh join instead of leaving a ghost.
       this.roster.delete(att.id);
-    } else {
-      const entry = this.roster.get(att.id);
-      if (entry) entry.connected = false;
+    } else if (current) {
+      // Mid-match the seat is kept: the player owns a colour, a position on
+      // the board and a turn order, and holds a token to come back to them.
+      current.connected = false;
     }
 
     if (!this.started && this.hostId === att.id) {
@@ -161,32 +270,82 @@ export class GameRoom extends DurableObject<Env> {
     this.broadcastPlayers();
   }
 
-  private async handleStart(ws: WebSocket, att: Attachment, boardSize: BoardSizeKey, orbStyle: OrbStyleKey) {
+  private async handleStart(
+    ws: WebSocket,
+    att: Attachment,
+    boardSize: BoardSizeKey,
+    orbStyle: OrbStyleKey,
+    mode: GameModeKey
+  ) {
     if (att.id !== this.hostId || this.started) return;
+
+    // The mode arrives from a client, so it is untrusted input: reject anything
+    // that isn't a real mode, and anything the relay can't actually referee.
+    const spec = GAME_MODES[mode];
+    if (!spec || !spec.online) {
+      this.send(ws, { type: 'error', message: 'That mode is local-only for now.' });
+      return;
+    }
+
     const sockets = this.ctx.getWebSockets();
     if (sockets.length < 2) {
       this.send(ws, { type: 'error', message: 'Need at least 2 players to start.' });
       return;
     }
+    if (spec.teams && (sockets.length < 4 || sockets.length % 2 !== 0)) {
+      this.send(ws, { type: 'error', message: 'Team Battle needs an even roster of at least 4.' });
+      return;
+    }
 
     const size = BOARD_SIZES[boardSize];
-    const players: PlayerConfig[] = sockets
+    const ordered = sockets
       .map((s) => s.deserializeAttachment() as Attachment)
-      .sort((a, b) => a.id - b.id)
-      .map((a) => {
-        const colorIndex = this.roster.get(a.id)?.colorIndex ?? a.id % PLAYER_THEMES.length;
-        const theme = PLAYER_THEMES[colorIndex];
-        return { id: a.id, name: a.name, color: theme.base, colorLight: theme.light, isAlive: true };
-      });
+      .sort((a, b) => a.id - b.id);
+
+    const players: PlayerConfig[] = ordered.map((a, seat) => {
+      // In Team Battle the roster's own colour picks are overridden: sides have
+      // to be readable at a glance, which a free-for-all colour choice can't
+      // guarantee. Alternating seats also makes turn order alternate sides
+      // without the engine needing a special rule.
+      const colorIndex = spec.teams
+        ? TEAM_COLOR_INDICES[seat % 2][Math.floor(seat / 2) % TEAM_COLOR_INDICES[0].length]
+        : this.roster.get(a.id)?.colorIndex ?? a.id % PLAYER_THEMES.length;
+      const theme = PLAYER_THEMES[colorIndex];
+      return {
+        id: a.id,
+        name: a.name,
+        color: theme.base,
+        colorLight: theme.light,
+        isAlive: true,
+        ...(spec.teams ? { team: seat % 2 } : {}),
+      };
+    });
 
     this.boardSize = boardSize;
     this.orbStyle = orbStyle;
-    this.engine = new GameEngine({ rows: size.rows, cols: size.cols, players });
+    this.mode = mode;
+    // The relay owns the seed. Letting the host pick it would let a host
+    // re-roll the lattice until they liked it.
+    this.seed = randomSeed();
+    this.engine = new GameEngine({
+      rows: size.rows,
+      cols: size.cols,
+      players,
+      kinds: layoutForMode(mode, size.rows, size.cols, this.seed),
+    });
     this.started = true;
     await this.persistMeta();
     await this.persistEngine();
 
-    this.broadcastAll({ type: 'gameStarted', rows: size.rows, cols: size.cols, players, orbStyle: this.orbStyle });
+    this.broadcastAll({
+      type: 'gameStarted',
+      rows: size.rows,
+      cols: size.cols,
+      players,
+      orbStyle: this.orbStyle,
+      mode: this.mode,
+      seed: this.seed,
+    });
   }
 
   private async handleMove(ws: WebSocket, att: Attachment, row: number, col: number) {
@@ -272,6 +431,8 @@ export class GameRoom extends DurableObject<Env> {
       hostId: this.hostId,
       boardSize: this.boardSize,
       orbStyle: this.orbStyle,
+      mode: this.mode,
+      seed: this.seed,
       rows: this.engine?.rows,
       cols: this.engine?.cols,
       roster: Array.from(this.roster.entries()),

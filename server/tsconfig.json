@@ -5,11 +5,25 @@
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"],
     "moduleResolution": "bundler",
+    // src/game imports each other with explicit .ts extensions so the layer
+    // resolves under bare Node too (see the note in src/game/ai.ts).
+    "allowImportingTsExtensions": true,
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["./**/*.ts", "../src/game/**/*.ts", "../src/net/protocol.ts", "../src/render/theme.ts"]
+  // Listed file by file rather than globbing src/game: the relay shares only
+  // the pure rules engine, and a glob would drag browser-only modules (which
+  // reach for localStorage/DOM) into the Worker's type environment.
+  "include": [
+    "./**/*.ts",
+    "../src/game/GameEngine.ts",
+    "../src/game/types.ts",
+    "../src/game/cells.ts",
+    "../src/game/modes.ts",
+    "../src/net/protocol.ts",
+    "../src/render/theme.ts"
+  ]
 }

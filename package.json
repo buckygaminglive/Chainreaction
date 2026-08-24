@@ -6,18 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test src/game/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p server/tsconfig.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260818.1",
+    "@types/node": "^24.13.3",
     "@types/three": "^0.185.4",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
     "wrangler": "^4.124.0"
   },
   "dependencies": {
-    "@fontsource/baloo-2": "^5.3.0",
-    "@fontsource/nunito": "^5.3.0",
     "gsap": "^3.15.0",
     "three": "^0.185.1"
   }

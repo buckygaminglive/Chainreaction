@@ -16,9 +16,10 @@ export class Haptics {
     this.fire(25);
   }
 
-  /** One buzz per explosion wave — a multi-wave cascade naturally rumbles. */
-  explode() {
-    this.fire(40);
+  /** One buzz per explosion wave — a multi-wave cascade naturally rumbles.
+   *  Deeper waves hit harder so a long chain builds rather than drones. */
+  explode(depth = 0) {
+    this.fire(Math.min(70, 34 + depth * 5));
   }
 
   /** A player is knocked out. */

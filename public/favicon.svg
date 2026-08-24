@@ -1,12 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- REACTON mark: one charged cell driving a cascade into its four neighbours. -->
   <defs>
-    <radialGradient id="g" cx="35%" cy="30%" r="70%">
-      <stop offset="0%" stop-color="#ffd0da"/>
-      <stop offset="45%" stop-color="#ff5b7a"/>
-      <stop offset="100%" stop-color="#b3123a"/>
+    <radialGradient id="core" cx="38%" cy="32%" r="70%">
+      <stop offset="0%" stop-color="#e8fbff"/>
+      <stop offset="40%" stop-color="#6ee6ff"/>
+      <stop offset="100%" stop-color="#12a8d4"/>
     </radialGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="#120c24"/>
-  <circle cx="32" cy="32" r="21" fill="url(#g)"/>
-  <circle cx="24" cy="24" r="6" fill="#ffffff" opacity="0.55"/>
+  <rect width="64" height="64" rx="14" fill="#0b0e13"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="11" fill="none" stroke="#232b36" stroke-width="1"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#3ad9ff" stroke-width="1" opacity="0.28"/>
+  <g stroke="#3ad9ff" stroke-width="2" stroke-linecap="round" opacity="0.6">
+    <path d="M32 23 V15"/>
+    <path d="M32 41 V49"/>
+    <path d="M23 32 H15"/>
+    <path d="M41 32 H49"/>
+  </g>
+  <g fill="#3ad9ff">
+    <circle cx="32" cy="12" r="3.4"/>
+    <circle cx="32" cy="52" r="3.4"/>
+    <circle cx="12" cy="32" r="3.4"/>
+    <circle cx="52" cy="32" r="3.4"/>
+  </g>
+  <circle cx="32" cy="32" r="10" fill="url(#core)"/>
 </svg>

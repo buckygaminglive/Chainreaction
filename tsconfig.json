@@ -20,5 +20,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  // Tests are checked separately (tsconfig.test.json) so that Node's globals
+  // stay out of the app's type environment — app code has no business
+  // reaching for them.
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -1,4 +1,5 @@
-import type { Cell, EngineSnapshot, GameConfig, MoveEvent, MoveResult, PlayerConfig } from './types';
+import type { CellKind, CellKindGrid } from './cells.ts';
+import type { Cell, EngineSnapshot, GameConfig, MoveEvent, MoveResult, PlayerConfig } from './types.ts';
 
 const MAX_WAVES = 400;
 
@@ -7,16 +8,35 @@ export class GameEngine {
   cols: number;
   players: PlayerConfig[];
   grid: Cell[][];
+  kinds: CellKindGrid;
   currentPlayerIndex = 0;
   gameOver = false;
   winner: number | null = null;
+  /** Set in Team Battle: the side that took the match, rather than a player. */
+  winningTeam: number | null = null;
   private hasMoved = new Set<number>();
 
   constructor(config: GameConfig) {
     this.rows = config.rows;
     this.cols = config.cols;
     this.players = config.players.map((p) => ({ ...p, isAlive: true }));
+    this.kinds =
+      config.kinds ??
+      Array.from({ length: config.rows }, () =>
+        Array.from({ length: config.cols }, () => 'normal' as CellKind)
+      );
     this.grid = this.buildGrid();
+  }
+
+  kindAt(r: number, c: number): CellKind {
+    return this.kinds[r]?.[c] ?? 'normal';
+  }
+
+  /** A dead site. It holds nothing, can't be played, and is skipped by
+   *  `neighborsOf` — which is the whole implementation of it: adjacent cells
+   *  lose a neighbour and therefore a point of critical mass automatically. */
+  isVoid(r: number, c: number): boolean {
+    return this.kindAt(r, c) === 'void';
   }
 
   private buildGrid(): Cell[][] {
@@ -50,13 +70,25 @@ export class GameEngine {
     for (const [dr, dc] of deltas) {
       const nr = r + dr;
       const nc = c + dc;
-      if (this.inBounds(nr, nc)) result.push({ row: nr, col: nc });
+      if (this.inBounds(nr, nc) && !this.isVoid(nr, nc)) result.push({ row: nr, col: nc });
     }
     return result;
   }
 
   criticalMass(r: number, c: number): number {
-    return this.neighborsOf(r, c).length;
+    const neighbours = this.neighborsOf(r, c).length;
+    switch (this.kindAt(r, c)) {
+      // Floored at 2 on purpose. A catalyst corner would otherwise go critical
+      // at a single orb, and a site that ejects the instant it is touched can
+      // never be held — it stops being a position you play around and becomes
+      // one you avoid.
+      case 'catalyst':
+        return Math.max(2, neighbours - 1);
+      case 'damper':
+        return neighbours + 1;
+      default:
+        return neighbours;
+    }
   }
 
   currentPlayer(): PlayerConfig {
@@ -66,13 +98,46 @@ export class GameEngine {
   canPlay(r: number, c: number): boolean {
     if (this.gameOver) return false;
     if (!this.inBounds(r, c)) return false;
+    if (this.isVoid(r, c)) return false;
     const cell = this.getCell(r, c);
     const player = this.currentPlayer();
+    if (!player.isAlive) return false;
     return cell.owner === null || cell.owner === player.id;
   }
 
   aliveCount(): number {
     return this.players.filter((p) => p.isAlive).length;
+  }
+
+  /** True when the roster is split into sides. */
+  get isTeamGame(): boolean {
+    return this.players.some((p) => p.team !== undefined);
+  }
+
+  teamOf(playerId: number): number | undefined {
+    return this.players.find((p) => p.id === playerId)?.team;
+  }
+
+  /** Sides with at least one player still standing. */
+  private aliveTeams(): number[] {
+    const teams = new Set<number>();
+    for (const p of this.players) {
+      if (p.isAlive && p.team !== undefined) teams.add(p.team);
+    }
+    return Array.from(teams);
+  }
+
+  /** Every legal cell for the player to move in right now. Used by Blitz's
+   *  turn timer to auto-play rather than skip — skipping a turn would leave a
+   *  player who has never placed an orb un-eliminable and stall the match. */
+  legalMoves(): { row: number; col: number }[] {
+    const moves: { row: number; col: number }[] = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.canPlay(r, c)) moves.push({ row: r, col: c });
+      }
+    }
+    return moves;
   }
 
   private playerOrbTotal(playerId: number): number {
@@ -85,38 +150,78 @@ export class GameEngine {
     return total;
   }
 
+  /** The single side that owns every orb currently on the board, or null if
+   *  the board is empty or contested. A "side" is a team where there are
+   *  teams and a player everywhere else, so the cascade guard below works
+   *  unchanged in Team Battle — a board held entirely by one team is just as
+   *  decided as one held by a single player. */
+  private soleSideOwner(): number | null {
+    let side: number | null = null;
+    for (const row of this.grid) {
+      for (const cell of row) {
+        if (cell.owner === null || cell.orbs <= 0) continue;
+        const s = this.isTeamGame ? this.teamOf(cell.owner) ?? cell.owner : cell.owner;
+        if (side === null) side = s;
+        else if (side !== s) return null;
+      }
+    }
+    return side;
+  }
+
   applyMove(r: number, c: number): MoveResult {
     const events: MoveEvent[] = [];
     if (!this.canPlay(r, c)) {
-      return { events, gameOver: this.gameOver, winner: this.winner };
+      return { events, gameOver: this.gameOver, winner: this.winner, chain: 0, captured: 0 };
     }
 
     const player = this.currentPlayer();
+    const enemyCellsBefore = this.enemyCellCount(player.id);
     const cell = this.getCell(r, c);
     cell.owner = player.id;
     cell.orbs += 1;
     this.hasMoved.add(player.id);
     events.push({ type: 'place', row: r, col: c, player: player.id, orbs: cell.orbs });
 
-    this.resolveExplosions(player.id, events);
+    const chain = this.resolveExplosions(player.id, events);
     this.checkEliminations(events);
+    // Cells taken off opponents. A cell can only stop belonging to an opponent
+    // by being converted to the mover — an ejection claims the neighbour before
+    // it can ever go critical itself — so the drop is exactly the capture count.
+    const captured = Math.max(0, enemyCellsBefore - this.enemyCellCount(player.id));
 
-    if (this.aliveCount() <= 1 && this.hasMoved.size > 1) {
+    // A side is out only when every player on it is — that is the whole of
+    // Team Battle's win condition.
+    const decided = this.isTeamGame ? this.aliveTeams().length <= 1 : this.aliveCount() <= 1;
+    if (decided && this.hasMoved.size > 1) {
       this.gameOver = true;
-      const winner = this.players.find((p) => p.isAlive);
-      this.winner = winner ? winner.id : player.id;
+      const survivor = this.players.find((p) => p.isAlive);
+      this.winner = survivor ? survivor.id : player.id;
+      this.winningTeam = this.isTeamGame ? this.teamOf(this.winner) ?? null : null;
       events.push({ type: 'win', player: this.winner });
     } else {
       this.advanceTurn();
       events.push({ type: 'turnChange', player: this.currentPlayer().id });
     }
 
-    return { events, gameOver: this.gameOver, winner: this.winner };
+    return { events, gameOver: this.gameOver, winner: this.winner, chain, captured };
   }
 
-  private resolveExplosions(playerId: number, events: MoveEvent[]) {
+  /** Resolves the cascade this move set off, wave by wave. Returns the number
+   *  of waves it took. */
+  private resolveExplosions(playerId: number, events: MoveEvent[]): number {
+    // Everyone having placed at least once is what makes an all-one-colour
+    // board terminal — until then a player with no orbs yet is still in the
+    // game, so the cascade has to be played out in full.
+    const allHaveMoved = this.players.every((p) => this.hasMoved.has(p.id));
     let wave = 0;
     while (wave < MAX_WAVES) {
+      // A board where one player owns every orb is already decided, and once
+      // it is also saturated the cascade genuinely never ends — each cell
+      // keeps being pushed back over critical mass by its neighbours, forever.
+      // Cutting out here is what stops a winning move from spinning through
+      // hundreds of pointless waves; no further wave could change the outcome.
+      if (allHaveMoved && this.soleSideOwner() !== null) break;
+
       const exploding: Cell[] = [];
       for (const row of this.grid) {
         for (const cell of row) {
@@ -144,6 +249,22 @@ export class GameEngine {
       }
       wave++;
     }
+    return wave;
+  }
+
+  /** Cells held by someone actually opposing this player — a teammate's cells
+   *  are not a capture target, so taking one would not count as a capture. */
+  private enemyCellCount(playerId: number): number {
+    const myTeam = this.teamOf(playerId);
+    let total = 0;
+    for (const row of this.grid) {
+      for (const cell of row) {
+        if (cell.owner === null || cell.owner === playerId) continue;
+        if (this.isTeamGame && myTeam !== undefined && this.teamOf(cell.owner) === myTeam) continue;
+        total++;
+      }
+    }
+    return total;
   }
 
   private checkEliminations(events: MoveEvent[]) {
@@ -165,6 +286,7 @@ export class GameEngine {
       winner: this.winner,
       players: this.players.map((p) => ({ ...p })),
       hasMoved: Array.from(this.hasMoved),
+      kinds: this.kinds.map((row) => [...row]),
     };
   }
 
@@ -175,6 +297,11 @@ export class GameEngine {
     this.winner = snap.winner;
     this.players = snap.players;
     this.hasMoved = new Set(snap.hasMoved);
+    // A room restored from hibernation has to come back with the same lattice
+    // it went down with, or the relay starts validating against a board the
+    // clients aren't playing on.
+    if (snap.kinds) this.kinds = snap.kinds;
+    this.winningTeam = this.isTeamGame && this.winner !== null ? this.teamOf(this.winner) ?? null : null;
   }
 
   private advanceTurn() {

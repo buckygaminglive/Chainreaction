@@ -1,13 +1,13 @@
 {
-  "name": "Chain Reaction — Orb Wars",
-  "short_name": "Orb Wars",
-  "description": "A 3D chain-reaction strategy game — play locally or online with friends.",
+  "name": "REACTON",
+  "short_name": "REACTON",
+  "description": "Drive cells past critical mass, propagate the cascade, capture the field. Local pass-and-play or online with a room code.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0a0718",
-  "theme_color": "#0a0718",
+  "orientation": "any",
+  "background_color": "#07090c",
+  "theme_color": "#07090c",
   "icons": [
     {
       "src": "/favicon.svg",

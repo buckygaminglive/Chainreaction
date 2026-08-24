@@ -6,76 +6,99 @@
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0a0718" />
+    <meta name="theme-color" content="#07090c" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="A 3D chain-reaction strategy game. Trigger cascading explosions to capture the board — play locally with friends on one device, or online with a room code." />
+    <meta name="description" content="REACTON — a multiplayer orb-reaction strategy game. Drive cells past critical mass, propagate the cascade, capture the field. Local pass-and-play or online with a room code." />
 
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Chain Reaction — Orb Wars" />
-    <meta property="og:description" content="Trigger cascading explosions to capture the board. Play locally or online with a room code." />
+    <meta property="og:title" content="REACTON" />
+    <meta property="og:description" content="Drive cells past critical mass. Propagate the cascade. Capture the field." />
     <meta property="og:image" content="/favicon.svg" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Chain Reaction — Orb Wars" />
-    <meta name="twitter:description" content="Trigger cascading explosions to capture the board. Play locally or online with a room code." />
+    <meta name="twitter:title" content="REACTON" />
+    <meta name="twitter:description" content="Drive cells past critical mass. Propagate the cascade. Capture the field." />
 
-    <title>Chain Reaction — Orb Wars</title>
+    <title>REACTON — chain reaction strategy</title>
   </head>
   <body>
     <div id="app">
+      <!-- CONNECTION STATUS — a direct child of #app so it is visible on the
+           lobby *and* over a live board; a drop mid-match is the case that
+           most needs to be visible. -->
+      <div id="conn-status" class="conn-status hidden"></div>
+
       <!-- MENU SCREEN -->
       <section id="screen-menu" class="screen">
         <button id="mute-btn-menu" class="icon-btn corner-btn" aria-label="Toggle sound">🔊</button>
         <div class="menu-inner">
           <div class="logo-wrap">
-            <h1 class="logo">
-              <span class="logo-chain">CHAIN</span>
-              <span class="logo-reaction">REACTION</span>
-            </h1>
-            <p class="tagline">tap • chain • dominate the grid</p>
+            <div class="mark" aria-hidden="true">
+              <span class="mark-core"></span>
+              <span class="mark-ring"></span>
+              <span class="mark-ring mark-ring-2"></span>
+            </div>
+            <h1 class="logo">REACTON</h1>
+            <p class="tagline">critical mass · propagation · capture</p>
           </div>
+
+          <div id="profile-strip" class="profile-strip"></div>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Players</div>
+              <div class="field-label">Mode</div>
+              <div id="mode-group" class="mode-grid"></div>
+              <p id="mode-blurb" class="field-note"></p>
+              <div class="preview-row">
+                <div id="mode-preview" class="mode-preview"></div>
+                <div class="preview-side">
+                  <p id="mode-caption" class="preview-caption"></p>
+                  <ul id="mode-legend" class="preview-legend hidden">
+                    <li><span class="key key-catalyst"></span>catalyst — goes critical a particle early</li>
+                    <li><span class="key key-damper"></span>damper — holds one particle more</li>
+                    <li><span class="key key-void"></span>dead site — off the lattice entirely</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" id="players-field">
+              <div class="field-label">Reagents <span class="field-unit">players</span></div>
               <div class="stepper">
                 <button id="players-minus" class="stepper-btn" aria-label="Fewer players">−</button>
                 <div id="players-count" class="stepper-value">2</div>
                 <button id="players-plus" class="stepper-btn" aria-label="More players">+</button>
               </div>
+              <p id="players-note" class="field-note hidden"></p>
             </div>
 
             <div class="field">
-              <div class="field-label">Board Size</div>
+              <div class="field-label">Lattice <span class="field-unit">board</span></div>
               <div id="board-size-group" class="segmented">
-                <button class="segment" data-size="small">Small</button>
-                <button class="segment active" data-size="medium">Medium</button>
-                <button class="segment" data-size="large">Large</button>
+                <button class="segment" data-size="small">9×5</button>
+                <button class="segment active" data-size="medium">11×6</button>
+                <button class="segment" data-size="large">13×7</button>
               </div>
             </div>
 
             <div class="field">
-              <div class="field-label">Orb Style</div>
+              <div class="field-label">Particle</div>
               <div id="orb-style-group" class="segmented">
-                <button class="segment active" data-style="dots">Dots</button>
-                <button class="segment" data-style="emoji">Emoji 🤯</button>
+                <button class="segment active" data-style="dots">Standard</button>
+                <button class="segment" data-style="emoji">Reactive 🤯</button>
               </div>
             </div>
 
             <div class="field">
-              <div class="field-label">Colors</div>
+              <div class="field-label">Emission</div>
               <div id="player-swatches" class="swatch-row"></div>
             </div>
           </div>
 
-          <button id="play-btn" class="primary-btn">
-            <span>PLAY</span>
-          </button>
-          <button id="play-online-btn" class="primary-btn primary-btn-blue">
-            <span>🌐 PLAY ONLINE</span>
-          </button>
-          <button id="howto-btn" class="ghost-btn">How to Play</button>
+          <button id="play-btn" class="primary-btn">Start reaction</button>
+          <button id="play-online-btn" class="ghost-btn wide-btn">Play online</button>
+          <button id="howto-btn" class="link-btn">How to play</button>
         </div>
       </section>
 
@@ -84,25 +107,25 @@
         <button id="online-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Back to menu">←</button>
         <div class="menu-inner">
           <div class="logo-wrap">
-            <h1 class="logo"><span class="logo-reaction">PLAY ONLINE</span></h1>
-            <p class="tagline">invite friends with a room code</p>
+            <h1 class="logo logo-sm">PLAY ONLINE</h1>
+            <p class="tagline">private room · server authoritative</p>
           </div>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Your Name</div>
+              <div class="field-label">Callsign</div>
               <input id="name-input" class="text-input" maxlength="16" placeholder="Player" />
             </div>
           </div>
 
-          <button id="create-room-btn" class="primary-btn"><span>CREATE ROOM</span></button>
+          <button id="create-room-btn" class="primary-btn">Create room</button>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Join a Room</div>
+              <div class="field-label">Join a room</div>
               <div class="join-row">
                 <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" />
-                <button id="join-room-btn" class="primary-btn small-btn">JOIN</button>
+                <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
               </div>
             </div>
           </div>
@@ -113,46 +136,51 @@
       <!-- ONLINE: LOBBY -->
       <section id="screen-lobby" class="screen hidden">
         <button id="lobby-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Leave room">←</button>
-        <div id="lobby-status" class="lobby-status hidden"></div>
         <div class="menu-inner">
           <div class="logo-wrap">
             <p class="tagline">room code</p>
             <button id="room-code-btn" class="room-code" title="Tap to copy invite link">-----</button>
-            <p id="lobby-hint" class="tagline lobby-hint">share this code with friends</p>
+            <p id="lobby-hint" class="tagline lobby-hint">tap to copy the invite link</p>
           </div>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Players</div>
+              <div class="field-label">Participants</div>
               <div id="lobby-players" class="lobby-players"></div>
             </div>
 
             <div class="field">
-              <div class="field-label">Your Color</div>
+              <div class="field-label">Your emission</div>
               <div id="lobby-color-picker" class="swatch-row"></div>
             </div>
 
             <div id="lobby-host-controls">
               <div class="field">
-                <div class="field-label">Board Size</div>
+                <div class="field-label">Mode</div>
+                <div id="lobby-mode-group" class="mode-grid"></div>
+                <p id="lobby-mode-blurb" class="field-note"></p>
+              </div>
+              <div class="field">
+                <div class="field-label">Lattice <span class="field-unit">board</span></div>
                 <div id="lobby-board-size-group" class="segmented">
-                  <button class="segment" data-size="small">Small</button>
-                  <button class="segment active" data-size="medium">Medium</button>
-                  <button class="segment" data-size="large">Large</button>
+                  <button class="segment" data-size="small">9×5</button>
+                  <button class="segment active" data-size="medium">11×6</button>
+                  <button class="segment" data-size="large">13×7</button>
                 </div>
               </div>
               <div class="field">
-                <div class="field-label">Orb Style</div>
+                <div class="field-label">Particle</div>
                 <div id="lobby-orb-style-group" class="segmented">
-                  <button class="segment active" data-style="dots">Dots</button>
-                  <button class="segment" data-style="emoji">Emoji 🤯</button>
+                  <button class="segment active" data-style="dots">Standard</button>
+                  <button class="segment" data-style="emoji">Reactive 🤯</button>
                 </div>
               </div>
+              <p class="field-note">Blitz, Tournament and Survival are local-only for now — they need a server-side clock, series state or an AI that the relay doesn't run yet.</p>
             </div>
           </div>
 
-          <button id="lobby-start-btn" class="primary-btn"><span>START GAME</span></button>
-          <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host to start…</p>
+          <button id="lobby-start-btn" class="primary-btn">Start reaction</button>
+          <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host…</p>
         </div>
       </section>
 
@@ -163,21 +191,30 @@
           <div id="player-pills" class="player-pills"></div>
           <button id="mute-btn-game" class="icon-btn" aria-label="Toggle sound">🔊</button>
         </div>
-        <div id="board-host"></div>
+        <div id="match-banner" class="match-banner hidden"></div>
+        <div id="turn-clock" class="turn-clock hidden">
+          <div class="turn-clock-bar"><span id="turn-clock-fill"></span></div>
+          <div id="turn-clock-value" class="turn-clock-value">10.0</div>
+        </div>
+        <div id="board-host">
+          <div id="chain-readout" class="chain-readout" aria-live="polite"></div>
+          <div id="board-flash" class="board-flash"></div>
+        </div>
       </section>
 
-      <!-- WIN CORNER CARD (board stays fully visible behind it) -->
+      <!-- RESULT CARD (board stays fully visible behind it) -->
       <section id="screen-win" class="screen hidden win-host">
         <div id="confetti-layer" class="confetti-layer"></div>
         <div class="win-card">
           <div class="win-card-head">
-            <span class="win-crown">👑</span>
-            <div id="win-title" class="win-title">Player 1 Wins!</div>
+            <div class="win-eyebrow">reaction complete</div>
+            <div id="win-title" class="win-title">Player 1 Wins</div>
           </div>
+          <div id="win-metrics" class="win-metrics"></div>
           <div id="win-leaderboard" class="win-leaderboard"></div>
           <div class="win-actions">
-            <button id="play-again-btn" class="primary-btn small-btn">Play Again</button>
-            <button id="win-menu-btn" class="ghost-btn small-btn">Main Menu</button>
+            <button id="play-again-btn" class="primary-btn small-btn">Run again</button>
+            <button id="win-menu-btn" class="ghost-btn small-btn">Menu</button>
           </div>
         </div>
       </section>
@@ -185,14 +222,15 @@
       <!-- HOW TO PLAY OVERLAY -->
       <section id="screen-howto" class="screen hidden overlay">
         <div class="howto-card">
-          <h2>How to Play</h2>
-          <ul class="howto-list">
-            <li>Tap any empty cell, or a cell you already own, to add an orb.</li>
-            <li>When a cell reaches its <b>critical mass</b> — 2 orbs in a corner, 3 on an edge, 4 in the middle — it explodes.</li>
-            <li>Exploding orbs shoot into neighboring cells, capturing them for you and possibly triggering more explosions.</li>
-            <li>Capture every orb on the board to eliminate opponents. Last player standing wins!</li>
-          </ul>
-          <button id="howto-close-btn" class="primary-btn">Got it</button>
+          <div class="win-eyebrow">protocol</div>
+          <h2>How to play</h2>
+          <ol class="howto-list">
+            <li><b>Charge a cell.</b> Tap any empty cell, or one you already hold, to add a particle.</li>
+            <li><b>Reach critical mass.</b> A cell goes critical at 2 particles in a corner, 3 on an edge, 4 in the interior. Cells one particle short pulse — that's your warning.</li>
+            <li><b>Propagate.</b> A critical cell ejects one particle into each neighbour, converting them to your emission and possibly driving them critical too. That's the chain.</li>
+            <li><b>Capture the field.</b> Strip an opponent of every particle to eliminate them. Last emission standing wins.</li>
+          </ol>
+          <button id="howto-close-btn" class="primary-btn">Understood</button>
         </div>
       </section>
     </div>

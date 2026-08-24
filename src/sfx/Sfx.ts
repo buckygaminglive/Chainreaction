@@ -86,17 +86,28 @@ export class Sfx {
     this.tone(820, 0.1, 'sine', 0.1, 0.035);
   }
 
-  /** Rising whir during the pre-blast spin-up — plays *before* explode(). */
-  chargeUp() {
-    this.curveTone([260, 520, 780], 0.19, 'sawtooth', 0.09);
+  /** Rising whir during the pre-blast spin-up — plays *before* explode().
+   *  Starts higher the deeper into a chain it is, so the cascade audibly
+   *  climbs instead of repeating one note. */
+  chargeUp(depth = 0) {
+    const lift = 1 + Math.min(depth, 10) * 0.07;
+    this.curveTone([260 * lift, 520 * lift, 780 * lift], 0.19, 'sawtooth', 0.09);
   }
 
-  explode(strength = 1) {
+  explode(strength = 1, depth = 0) {
     // Slight random pitch variance so a long cascade of hits doesn't sound
-    // like the same sample looping.
-    const pitch = 0.88 + Math.random() * 0.24;
+    // like the same sample looping, over a floor that rises with chain depth.
+    const lift = 1 + Math.min(depth, 10) * 0.05;
+    const pitch = (0.88 + Math.random() * 0.24) * lift;
     this.curveTone([220 * pitch, 95 * pitch], 0.3, 'sine', 0.24 * strength);
     this.noiseBurst(0.2, 0.14 * strength, 0, 800 * pitch);
+  }
+
+  /** Short bright ping layered on top of a blast once a chain gets long
+   *  enough to be worth calling out — the audio half of the chain counter. */
+  chainTick(depth: number) {
+    const step = Math.min(depth, 12);
+    this.tone(660 * Math.pow(1.06, step), 0.1, 'triangle', 0.13);
   }
 
   eliminate() {
@@ -105,6 +116,11 @@ export class Sfx {
 
   turnChange() {
     this.tone(460, 0.09, 'sine', 0.1);
+  }
+
+  /** One clock tick per second in the last few seconds of a Blitz turn. */
+  clockTick(urgent = false) {
+    this.tone(urgent ? 980 : 700, 0.05, 'square', urgent ? 0.09 : 0.05);
   }
 
   win() {

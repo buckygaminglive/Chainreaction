@@ -1,10 +1,16 @@
-# Chain Reaction — Orb Wars
+# REACTON
 
-A 3D take on the classic *Chain Reaction* strategy game. Place orbs, trigger
-cascading chain-reaction explosions, and capture the whole board. Play locally
-on one device (pass-and-play) or online with friends via a room code.
+A multiplayer orb-reaction strategy game. Charge cells past **critical mass**,
+propagate the cascade, capture the field. Play locally on one device
+(pass-and-play) or online with friends via a room code.
 
 **Live:** https://chainreaction-sooty.vercel.app
+
+The product direction — art direction, modes, platform plan, naming — lives in
+[Chain_Reaction_Game_Product_Roadmap.md](Chain_Reaction_Game_Product_Roadmap.md).
+REACTON is the shortlisted name from §17; the name is **not yet cleared** for
+trademark, app store, domain or social handles, so treat it as a working brand
+until that check is done (roadmap §15).
 
 ## Tech stack
 
@@ -15,31 +21,52 @@ on one device (pass-and-play) or online with friends via a room code.
   instance per game room, holding the authoritative game state and relaying
   moves over WebSockets.
 
-No backend database, no build-time asset pipeline beyond Vite — everything
-(sound, particle effects, emoji textures) is generated at runtime.
+No backend database, no webfonts, no build-time asset pipeline beyond Vite —
+everything (sound, particle effects, emoji textures, the type stack) is either
+generated at runtime or already on the device.
 
 ## Getting started
 
 ```bash
 npm install
-npm run dev      # client dev server (Vite)
+```
+
+```bash
+npm run dev
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run typecheck
 ```
 
 To work on the online relay locally:
 
 ```bash
-npx wrangler dev  # runs the Worker + Durable Object locally
+npx wrangler dev
 ```
 
-The deployed client currently points at a fixed production relay URL
-(`src/net/NetClient.ts`). Point it at your local `wrangler dev` instance if
-you need to test protocol changes end-to-end before deploying.
+The client defaults to the production relay. To work against a local one, put
+this in a `.env.local` (gitignored) and restart the dev server:
+
+```bash
+echo "VITE_RELAY_URL=http://127.0.0.1:8787" > .env.local
+```
+
+Do that any time you change `src/net/protocol.ts` or the engine — client and
+relay run the same rules and have to move together.
 
 ### Build & deploy
 
 ```bash
-npm run build            # client → dist/
-npx wrangler deploy      # relay server → Cloudflare
+npm run build
+```
+
+```bash
+npx wrangler deploy
 ```
 
 The client (`dist/`) is deployed to Vercel; the relay is deployed to
@@ -56,14 +83,22 @@ src/
                   tracks eliminations/win condition. Fully deterministic:
                   same starting state + same move sequence → same result.
                   This determinism is what lets the client and the relay
-                  server run the *identical* engine and stay in sync.
+                  server run the *identical* engine and stay in sync — and it
+                  is also what lets ai.ts search by simply playing moves on a
+                  clone. Also holds the mode table, the seeded special-cell
+                  lattice generator, and the local player record.
+
+                  Imports inside this folder carry explicit .ts extensions:
+                  it is the one layer that has to resolve with no bundler in
+                  front of it, since `node --test` runs it directly.
 
   render3d/       Three.js rendering layer. ThreeRenderer owns the scene,
                   camera, lighting, and per-cell meshes; it mirrors the
                   engine's state independently (renderState) so animations
                   can play out wave-by-wave without depending on the engine's
                   already-final post-move state. fx3d.ts holds the particle/
-                  ring/camera-shake helpers.
+                  ring/camera-shake helpers. timing.ts exists so callers can
+                  sync audio to the blast without importing Three.
 
   net/            NetClient (WebSocket client with heartbeat + auto-reconnect)
                   and the shared protocol.ts message types.
@@ -92,11 +127,134 @@ client computes the identical result independently. This keeps the protocol
 tiny and makes "what should this look like" entirely the renderer's problem,
 not the network layer's.
 
+The consequence: **any change to the engine's rules is a protocol change.**
+Client and relay must be redeployed together, or they will silently disagree
+about the board. `GameEngine.test.ts` has a determinism test guarding this.
+
+### Cascade termination
+
+A board where one player owns every orb and every cell is loaded is a genuine
+non-terminating cascade — each cell keeps being pushed back over critical mass
+by its neighbours forever. The engine cuts out as soon as one player owns every
+orb *and* every player has placed at least once, which is exactly the point
+after which no further wave can change the outcome. The "everyone has moved"
+half matters: a player who has not placed yet is still alive with zero orbs,
+so the cascade has to be played out in full until they have had a turn.
+
+### Modes
+
+All seven from roadmap §5. They are not seven separate systems — they are four
+shared capabilities:
+
+| Capability | Where | Unlocks |
+| --- | --- | --- |
+| Special cells (`game/cells.ts`) | Engine | Chaos, Power Cells, Survival |
+| Teams (`PlayerConfig.team`) | Engine | Team Battle |
+| Series wrapper (`main.ts`) | UI only — no engine change | Tournament |
+| Opponent AI (`game/ai.ts`) | Above the engine | Survival |
+
+**Special cells.** A `void` is simply absent from the lattice: it drops out of
+`neighborsOf`, so every adjacent cell's critical mass falls by one on its own.
+No new explosion rule and orb conservation is untouched — it just reshapes the
+board. `catalyst` and `damper` shift critical mass by ±1, which *does* break
+conservation (a catalyst ejects one more orb than it consumes). That is
+bounded: catalysts drive the board towards saturation, which the cascade guard
+above already terminates, and dampers only ever remove orbs. A catalyst's
+critical mass is floored at 2, because a corner site that pops the instant you
+touch it can never be held and stops being a position you can play around.
+
+Chaos and Power Cells are the same layer tuned differently: Chaos re-rolls a
+random scatter every match, Power Cells is one designed arrangement you can
+actually learn. Both are 180°-rotationally symmetric — in a game where anyone
+may play anywhere, that is what stops a "random" board handing one player a
+better half.
+
+**Teams.** Seats alternate sides (`team = seat % 2`), so turn order alternates
+between sides without the engine needing a rule for it. A side is out only when
+every player on it is.
+
+**Blitz** auto-plays a legal move on expiry rather than skipping — skipping
+would leave a player who has never placed a particle un-eliminable and stall
+the win condition.
+
+**Survival** is the only mode needing an AI. Because the engine is pure, cheap
+and deterministic, the AI doesn't estimate: it plays every legal move on a
+throwaway clone and scores the result (material, board control, and how much of
+its own position is exposed to an enemy cell that is one orb from critical).
+Difficulty narrows how far down the ranked list it will pick rather than
+degrading the evaluation — a weak opponent that evaluates badly plays
+*strangely*, which reads as broken rather than as easy.
+
+### Disconnect recovery
+
+A player who drops mid-match keeps their seat and comes back to the board.
+
+- **Seat tokens.** The relay issues a secret per seat on join and keeps it in
+  the roster. A returning socket presents it and reclaims the same player id,
+  colour, turn order and position. Without one, a rejoin is refused while a
+  game is running, exactly as before — the token is what distinguishes "I am
+  player 2 coming back" from "I am a stranger trying to join a live match".
+- **Resume by snapshot, not by replay.** The relay sends the whole
+  `EngineSnapshot`. There is no move log to reconcile and no chance of a
+  partial replay diverging.
+- **Connection generations.** Reclaiming a seat closes the socket that held it,
+  and that stale socket's `close` arrives *after* the new one is live. Each
+  connection carries a generation number and the relay ignores a close from a
+  superseded one, or the returning player would be marked offline again
+  immediately.
+- **Never trusting `close`.** A socket whose peer stops answering can sit in
+  `CLOSING` indefinitely and never fire `close` at all — observed in local dev,
+  where the relay saw the disconnect and updated the roster while the client
+  still believed it was connected. The client therefore polls its own
+  `readyState` once a second rather than waiting for an event, which is what
+  takes detection from "never" to about 600 ms.
+
+While someone is away their pill is marked offline and the HUD names who the
+match is waiting on. Turn order stays authoritative on the relay, so a dropped
+player's turn pauses the game rather than being skipped or auto-played.
+
+### What's local-only, and why
+
+Chaos, Power Cells and Team Battle run online: they are deterministic and the
+relay validates them like any other match. The relay generates the lattice
+**seed** and every client rebuilds the identical board from it, so the protocol
+stays a bare `{row, col}` per move and the host can't re-roll until they like
+the board.
+
+Blitz, Tournament and Survival are local-only. A turn clock has to be enforced
+by the relay to stay server-authoritative (client-side, every client gets its
+own idea of when a turn expired), Tournament needs series state the room
+doesn't persist, and Survival's AI has no opponent to be.
+
+### On "carefully balanced"
+
+The roadmap asks for carefully balanced special cells. The numbers here are
+defensible defaults, not playtested ones — special-site density, the ±1
+critical-mass shift, the catalyst floor and the Survival difficulty curve all
+live in `game/cells.ts` and `game/ai.ts` so they are tunable in one place. A
+test asserts special sites stay under 35% of any generated lattice, which
+catches density drift but says nothing about whether the modes are *fun*. That
+needs real games.
+
 ## Known follow-ups
 
-- No automated tests yet — `GameEngine` is pure logic and a good first
-  target.
-- No code-splitting — Three.js loads on initial page load rather than only
-  when entering the game screen.
+- Blitz online, via a Durable Object alarm that plays the timed-out turn
+  server-side.
+- Tournament online — the relay would need to hold series score across
+  restarts.
+- The Survival AI is 1-ply. It plays a sound game but can be baited by a
+  position that looks good one move out and collapses two moves later.
 - No rate limiting on `/api/create` (room creation).
 - Idle Durable Object rooms aren't cleaned up on a TTL.
+- A player who never returns stalls the match on their turn forever. A DO alarm
+  could forfeit or auto-play a seat after a grace period — the same alarm Blitz
+  online needs.
+- Host migration only happens pre-game. If the host drops mid-match and never
+  returns, nobody can trigger a rematch.
+- Seat tokens live in `sessionStorage`, so a reconnect survives a refresh but
+  not a new tab.
+- Player stats are device-local (`localStorage`); the roadmap puts profiles and
+  match history on the server only after the multiplayer loop is reliable.
+- Board sizes are all portrait-shaped, so a landscape screen letterboxes
+  heavily. A landscape-oriented lattice would suit wide ratios better.
+- No error/crash monitoring or analytics yet (launch quality bar, roadmap §14).

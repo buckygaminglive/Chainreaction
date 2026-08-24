@@ -1,21 +1,69 @@
-import type { PlayerConfig } from '../game/types';
+import type { EngineSnapshot, PlayerConfig } from '../game/types';
+import type { GameModeKey } from '../game/modes';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, ServerMsg } from './protocol';
 
-const RELAY_BASE = 'https://chain-reaction-relay.buckygaminglive.workers.dev';
-const PING_INTERVAL_MS = 15000;
-const PONG_TIMEOUT_MS = 8000;
+/** Set VITE_RELAY_URL (e.g. in a gitignored .env.local) to point the client at
+ *  a local `wrangler dev` instead of production — necessary any time the
+ *  protocol changes, since client and relay have to move together. */
+const RELAY_BASE =
+  import.meta.env.VITE_RELAY_URL ?? 'https://chain-reaction-relay.buckygaminglive.workers.dev';
+// How often the socket's own state is inspected. Purely local, so it can be
+// frequent — this is what makes a dropped connection visible to the player
+// almost immediately rather than at the next ping.
+const WATCHDOG_INTERVAL_MS = 1000;
+// Tight enough that a turn-based match notices a silently dead link in about
+// ten seconds rather than half a minute. The traffic is a few bytes either way.
+const PING_INTERVAL_MS = 5000;
+const PONG_TIMEOUT_MS = 6000;
 // Mobile networks and backgrounded tabs can kill a WebSocket without ever firing
 // a close event promptly — a heartbeat plus these retries recover from that.
-const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 8000];
+// The ladder runs about a minute: a phone coming back from a tunnel or a
+// screen lock is worth waiting out rather than dropping someone from a match
+// they are winning.
+const RECONNECT_DELAYS_MS = [800, 1500, 3000, 5000, 8000, 8000, 8000, 8000, 8000];
+
+/** Seat tokens are scoped to the tab and to the room. sessionStorage (not
+ *  local) because two rooms in two tabs must not share a seat, and a token is
+ *  worthless once the tab is gone. */
+function tokenKey(code: string) {
+  return `reacton.seat.${code}`;
+}
+
+function readToken(code: string): string | null {
+  try {
+    return sessionStorage.getItem(tokenKey(code));
+  } catch {
+    return null; // private browsing — reconnect still works in-memory
+  }
+}
+
+function writeToken(code: string, token: string) {
+  try {
+    sessionStorage.setItem(tokenKey(code), token);
+  } catch {
+    /* storage unavailable; the in-memory copy still covers a network drop */
+  }
+}
+
+function clearToken(code: string) {
+  try {
+    sessionStorage.removeItem(tokenKey(code));
+  } catch {
+    /* nothing to clear */
+  }
+}
 
 export class NetClient {
   private ws: WebSocket | null = null;
   private name = '';
-  private gameHasStarted = false;
   private intentionalClose = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  private token: string | null = null;
+  /** Declares the live socket dead without waiting on a close handshake that
+   *  a vanished peer will never finish. Rebound by every `open()`. */
+  private markCurrentDown: (() => void) | null = null;
 
   roomCode = '';
   myId = -1;
@@ -23,11 +71,28 @@ export class NetClient {
   players: NetPlayer[] = [];
 
   onPlayers: (players: NetPlayer[], hostId: number) => void = () => {};
-  onGameStarted: (rows: number, cols: number, players: PlayerConfig[], orbStyle: OrbStyleKey) => void = () => {};
+  onGameStarted: (
+    rows: number,
+    cols: number,
+    players: PlayerConfig[],
+    orbStyle: OrbStyleKey,
+    mode: GameModeKey,
+    seed: number
+  ) => void = () => {};
   onMove: (row: number, col: number) => void = () => {};
+  /** Fired when the relay hands back a match already in progress, after this
+   *  client reconnected into it. */
+  onResume: (
+    rows: number,
+    cols: number,
+    orbStyle: OrbStyleKey,
+    mode: GameModeKey,
+    snapshot: EngineSnapshot
+  ) => void = () => {};
   onError: (message: string) => void = () => {};
   onDisconnect: () => void = () => {};
-  /** Fired while silently retrying after an unexpected drop, before the game has started. */
+  /** Fired while silently retrying after an unexpected drop, in the lobby or
+   *  mid-match. */
   onReconnecting: (attempt: number, maxAttempts: number) => void = () => {};
   onReconnected: () => void = () => {};
 
@@ -46,17 +111,46 @@ export class NetClient {
     this.roomCode = code.toUpperCase();
     this.name = name;
     this.intentionalClose = false;
-    this.gameHasStarted = false;
     this.reconnectAttempt = 0;
+    // A token left over from this tab means we were in this room before — a
+    // refresh mid-match, most likely. Offer it so the relay hands the seat
+    // back instead of treating this as a brand new player.
+    this.token = readToken(this.roomCode);
     return this.open(false);
   }
 
   private open(isReconnect: boolean): Promise<void> {
     return new Promise((resolve, reject) => {
       const base = RELAY_BASE.replace(/^http/, 'ws');
-      const ws = new WebSocket(`${base}/api/room/${this.roomCode}?name=${encodeURIComponent(this.name)}`);
+      const params = new URLSearchParams({ name: this.name });
+      if (this.token) params.set('token', this.token);
+      const ws = new WebSocket(`${base}/api/room/${this.roomCode}?${params}`);
       this.ws = ws;
       let settled = false;
+      let downHandled = false;
+
+      /** This connection is finished, however we found out.
+       *
+       *  Deliberately not driven by `close` alone: a socket whose peer has
+       *  vanished can sit in CLOSING indefinitely and never fire `close` at
+       *  all, which would leave the client believing it is still online. The
+       *  heartbeat calls this directly when a pong goes missing. */
+      const markDown = () => {
+        if (downHandled) return;
+        downHandled = true;
+        if (this.ws !== ws) return; // a newer socket has already taken over
+        this.stopHeartbeat();
+        if (!settled) return; // handshake never completed — reject() covered it
+        if (this.intentionalClose) {
+          this.onDisconnect();
+          return;
+        }
+        // A drop mid-match used to end the game for this player outright. With
+        // a seat token the relay can hand the board back, so a match is
+        // exactly the situation most worth retrying through.
+        this.tryReconnect();
+      };
+      this.markCurrentDown = markDown;
 
       ws.onopen = () => {
         this.startHeartbeat();
@@ -76,22 +170,16 @@ export class NetClient {
         if (!settled) {
           settled = true;
           reject(new Error('Could not connect to that room.'));
-        }
-      };
-      ws.onclose = () => {
-        this.stopHeartbeat();
-        if (!settled) return; // initial handshake failed — the reject() above already surfaced it
-        if (this.intentionalClose || this.gameHasStarted) {
-          this.onDisconnect();
           return;
         }
-        this.tryReconnect();
+        markDown();
       };
+      ws.onclose = markDown;
     });
   }
 
   private tryReconnect() {
-    if (this.intentionalClose || this.gameHasStarted) return;
+    if (this.intentionalClose) return;
     if (this.reconnectAttempt >= RECONNECT_DELAYS_MS.length) {
       this.onDisconnect();
       return;
@@ -100,7 +188,7 @@ export class NetClient {
     this.reconnectAttempt++;
     this.onReconnecting(this.reconnectAttempt, RECONNECT_DELAYS_MS.length);
     setTimeout(() => {
-      if (this.intentionalClose || this.gameHasStarted) return;
+      if (this.intentionalClose) return;
       this.open(true).catch(() => {
         this.tryReconnect();
       });
@@ -109,16 +197,41 @@ export class NetClient {
 
   private startHeartbeat() {
     this.stopHeartbeat();
+    let tick = 0;
+    // One timer doing two jobs at different rates: the socket's state is
+    // checked every second because that costs nothing, while an actual ping
+    // only goes out every PING_INTERVAL_MS. A visibly-dead socket therefore
+    // surfaces to the player in about a second instead of five.
     this.pingTimer = setInterval(() => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      const ws = this.ws;
+      if (!ws) return;
+      // A socket whose peer never returns a close frame sits in CLOSING for as
+      // long as the browser feels like it, and delivers no `close` event the
+      // whole time. Anything that isn't OPEN is down — waiting for an event
+      // that may never arrive is how a dropped player used to get stranded.
+      if (ws.readyState !== WebSocket.OPEN) {
+        this.markCurrentDown?.();
+        return;
+      }
+
+      tick += WATCHDOG_INTERVAL_MS;
+      if (tick < PING_INTERVAL_MS) return;
+      tick = 0;
+
       this.send({ type: 'ping' });
       if (this.pongTimeout) clearTimeout(this.pongTimeout);
       this.pongTimeout = setTimeout(() => {
-        // No pong in time — the connection is likely dead even though it
-        // hasn't fired a close event yet. Force it closed so reconnect kicks in.
-        this.ws?.close();
+        // No pong in time — the connection is dead even though it hasn't fired
+        // a close event. Ask it to close, but don't wait for a handshake the
+        // other end is in no position to complete: declare it down now.
+        try {
+          this.ws?.close();
+        } catch {
+          /* already closing */
+        }
+        this.markCurrentDown?.();
       }, PONG_TIMEOUT_MS);
-    }, PING_INTERVAL_MS);
+    }, WATCHDOG_INTERVAL_MS);
   }
 
   private stopHeartbeat() {
@@ -138,7 +251,14 @@ export class NetClient {
         this.myId = msg.youAreId;
         this.hostId = msg.hostId;
         this.players = msg.players;
+        this.token = msg.token;
+        writeToken(this.roomCode, msg.token);
         this.onPlayers(this.players, this.hostId);
+        break;
+      case 'resume':
+        // The relay only sends this when it recognised our seat in a live
+        // match, so reaching here means the reconnect actually worked.
+        this.onResume(msg.rows, msg.cols, msg.orbStyle, msg.mode, msg.snapshot);
         break;
       case 'players':
         this.players = msg.players;
@@ -146,8 +266,7 @@ export class NetClient {
         this.onPlayers(this.players, this.hostId);
         break;
       case 'gameStarted':
-        this.gameHasStarted = true;
-        this.onGameStarted(msg.rows, msg.cols, msg.players, msg.orbStyle);
+        this.onGameStarted(msg.rows, msg.cols, msg.players, msg.orbStyle, msg.mode, msg.seed);
         break;
       case 'move':
         this.onMove(msg.row, msg.col);
@@ -164,16 +283,26 @@ export class NetClient {
     }
   }
 
-  private send(msg: ClientMsg) {
-    this.ws?.send(JSON.stringify(msg));
+  /** Returns whether the message actually went out. Sending on a socket that
+   *  is closing throws, and during a blip that is a normal thing to happen —
+   *  callers need to know it didn't land rather than get an exception. */
+  private send(msg: ClientMsg): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      this.ws.send(JSON.stringify(msg));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
-  startGame(boardSize: BoardSizeKey, orbStyle: OrbStyleKey) {
-    this.send({ type: 'startGame', boardSize, orbStyle });
+  startGame(boardSize: BoardSizeKey, orbStyle: OrbStyleKey, mode: GameModeKey) {
+    this.send({ type: 'startGame', boardSize, orbStyle, mode });
   }
 
-  sendMove(row: number, col: number) {
-    this.send({ type: 'move', row, col });
+  /** False when the socket wasn't up, so the caller can leave input unlocked. */
+  sendMove(row: number, col: number): boolean {
+    return this.send({ type: 'move', row, col });
   }
 
   pickColor(colorIndex: number) {
@@ -187,6 +316,11 @@ export class NetClient {
   disconnect() {
     this.intentionalClose = true;
     this.stopHeartbeat();
+    // Leaving on purpose gives up the seat, so the token must go too —
+    // otherwise the next join in this tab would try to reclaim a seat the
+    // player deliberately walked away from.
+    clearToken(this.roomCode);
+    this.token = null;
     this.ws?.close();
     this.ws = null;
     this.myId = -1;
