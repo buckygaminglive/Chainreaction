@@ -224,6 +224,15 @@ better half.
 between sides without the engine needing a rule for it. A side is out only when
 every player on it is.
 
+**Whose turn it is lives on the board**, not only in the HUD: the substrate's
+corner brackets, edge ticks and a faint wash under the lattice carry the active
+player's emission, easing across on each hand-off and settling on the winner at
+the end. The frame is the right surface for it because nothing is ever played
+there — it stays legible in peripheral vision while you are looking at the
+middle of the board. The plate glow is much lower than it looks like it should
+be (0.014): it shows through every gap in the lattice, so it covers far more
+screen than its area suggests.
+
 **Blitz** auto-plays a legal move on expiry rather than skipping — skipping
 would leave a player who has never placed a particle un-eliminable and stall
 the win condition.

@@ -481,6 +481,15 @@ function renderMatchBanner() {
   matchBannerEl.innerHTML = parts.join(' <span class="sep">·</span> ');
 }
 
+/** Pushes the current turn onto the board itself. Once a match is over the
+ *  board holds the winner's colour rather than reverting — the finished board
+ *  is the result, and blanking it would take that away. */
+function syncBoardTurnColor(immediate = false) {
+  if (!engine || !renderer) return;
+  const owner = engine.gameOver && engine.winner !== null ? engine.winner : engine.currentPlayer().id;
+  renderer.setTurnColor(colorOf(owner).base, immediate);
+}
+
 // ---------- HUD ----------
 function renderPills() {
   if (!engine) return;
@@ -826,6 +835,8 @@ async function mountGame(
   // the live position instead of starting from an empty lattice.
   if (opts.fromSnapshot) renderer.syncToEngine();
   renderPills();
+  // Snapped, not eased: there is no previous turn to hand off from.
+  syncBoardTurnColor(true);
   animating = false;
 
   exposeDebug();
@@ -941,6 +952,10 @@ async function applyAndAnimateMove(row: number, col: number) {
   }
 
   renderPills();
+  // Deliberately here and not when the engine advanced the turn: the engine
+  // resolves the whole move up front, so tinting then would hand the board to
+  // the next player while the current player's cascade was still going off.
+  syncBoardTurnColor();
 
   if (!result.gameOver) {
     sfx.turnChange();
@@ -998,6 +1013,9 @@ function showWin(winnerId: number) {
   sfx.win();
   haptics.win();
   const theme = colorOf(winnerId);
+  // The board settles on the winner at the moment the win is revealed, rather
+  // than waiting for the rest of the cascade to finish animating.
+  renderer?.setTurnColor(theme.base);
 
   // Series bookkeeping has to land before the card is composed, so the score
   // it prints includes the game that just finished.

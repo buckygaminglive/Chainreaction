@@ -81,6 +81,14 @@ const ORB_SPREAD = 0.52;
 /** World-space breathing room kept around the lattice so the substrate's
  *  corner brackets and edge tick marks are never cropped by the camera fit. */
 const BOARD_MARGIN = 0.3;
+/** How hard the substrate plate glows in the active player's colour.
+ *
+ *  Very low, and lower than it looks like it should be: the plate shows through
+ *  every gap in the lattice, so it covers far more screen than its area
+ *  suggests, and tone mapping lifts a saturated emissive hard against a
+ *  near-black board. At 0.05 it washed the whole board and competed with the
+ *  particles; this is a tint you notice without looking at it. */
+const PLATE_TURN_GLOW = 0.014;
 
 export { EXPLOSION_SPIN_UP_MS } from './timing';
 
@@ -121,6 +129,10 @@ export class ThreeRenderer {
   private ringMatCache = new Map<number, MeshBasicMaterial>();
   /** Substrate plate + etched frame/tick marks, disposed together on teardown. */
   private substrateParts: { geo: BufferGeometry; mat: MeshBasicMaterial | LineBasicMaterial | MeshStandardMaterial }[] = [];
+  /** The two surfaces that carry the active player's colour. Held separately
+   *  from substrateParts, which exists only for disposal. */
+  private frameMat: LineBasicMaterial | null = null;
+  private plateMat: MeshStandardMaterial | null = null;
   // Reused every frame by updateOrbits so per-orb motion allocates nothing.
   private scratchCenter = new Vector3();
   private scratchRel = new Vector3();
@@ -419,6 +431,56 @@ export class ThreeRenderer {
     const lineMat = new LineBasicMaterial({ color: GRID_LINE, transparent: true, opacity: 0.85 });
     this.boardGroup.add(new LineSegments(lineGeo, lineMat));
     this.substrateParts.push({ geo: lineGeo, mat: lineMat });
+    // Held so the frame can carry the active player's emission — see
+    // setTurnColor.
+    this.frameMat = lineMat;
+    this.plateMat = plateMat;
+  }
+
+  /**
+   * Tints the substrate — the corner brackets, edge ticks and the plate itself —
+   * towards whoever is to move.
+   *
+   * The frame is the right surface for this precisely because nothing is played
+   * on it: whose turn it is stays legible in peripheral vision while you are
+   * looking at the middle of the board, without competing with the particles
+   * for the space that actually carries the game state.
+   *
+   * Blended rather than replaced. Full saturation would read as a neon border
+   * and undo the etched, instrument-panel look the whole art direction rests
+   * on; this keeps it graphite that has been *charged* by someone.
+   */
+  setTurnColor(colorHex: number, immediate = false) {
+    if (!this.frameMat || !this.plateMat) return;
+    // The frame carries most of the signal, so it takes most of the colour.
+    const frameTarget = new Color(GRID_LINE).lerp(new Color(colorHex), 0.9);
+    const plateTarget = new Color(colorHex);
+
+    gsap.killTweensOf([this.frameMat.color, this.plateMat.emissive]);
+    if (immediate) {
+      this.frameMat.color.copy(frameTarget);
+      this.plateMat.emissive.copy(plateTarget);
+      this.plateMat.emissiveIntensity = PLATE_TURN_GLOW;
+      return;
+    }
+    // Eased rather than snapped: a turn change is a hand-off, and the board
+    // reading as though the charge flows across it sells that better than a
+    // hard cut would.
+    gsap.to(this.frameMat.color, {
+      r: frameTarget.r,
+      g: frameTarget.g,
+      b: frameTarget.b,
+      duration: 0.45,
+      ease: 'power2.out',
+    });
+    this.plateMat.emissiveIntensity = PLATE_TURN_GLOW;
+    gsap.to(this.plateMat.emissive, {
+      r: plateTarget.r,
+      g: plateTarget.g,
+      b: plateTarget.b,
+      duration: 0.45,
+      ease: 'power2.out',
+    });
   }
 
   /** Straight-down orthographic camera, exact-fit to the board so the grid fills the screen. */
