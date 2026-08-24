@@ -124,7 +124,10 @@ export class NetClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode, boardSize }),
     });
-    if (!res.ok) throw new Error('Matchmaking is unavailable right now. Try a private room.');
+    // 404 specifically means the relay predates matchmaking — worth telling
+    // apart from an outage, because the fix is a deploy, not a retry.
+    if (res.status === 404) throw new Error('This server does not have matchmaking yet.');
+    if (!res.ok) throw new Error('Matchmaking is unavailable right now.');
     return (await res.json()) as { code: string; waiting: boolean };
   }
 
@@ -148,6 +151,7 @@ export class NetClient {
 
   static async listRooms(): Promise<PublicRoom[]> {
     const res = await fetch(`${RELAY_BASE}/api/rooms`);
+    if (res.status === 404) throw new Error('This server does not have the room list yet.');
     if (!res.ok) throw new Error('Could not load the room list.');
     const data = (await res.json()) as { rooms: PublicRoom[] };
     return data.rooms ?? [];

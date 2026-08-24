@@ -1452,6 +1452,21 @@ body {
   color: var(--text-dim);
 }
 
+/* Shown when matchmaking can't be reached at all. Never a bare error — the
+   player pressed a button meaning "give me a game", and there is one available. */
+.quick-fallback {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 176, 32, 0.3);
+  border-radius: var(--r-sm);
+  background: rgba(255, 176, 32, 0.07);
+}
+
+.quick-fallback .field-note {
+  margin: 0 0 9px;
+  color: #ffd9a0;
+}
+
 .presence-strip {
   display: flex;
   align-items: center;

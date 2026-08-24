@@ -149,6 +149,9 @@ const roomsListEl = $('rooms-list');
 const roomsRefreshBtn = $('rooms-refresh-btn');
 const botsListEl = $('bots-list');
 const presenceStripEl = $('presence-strip');
+const quickFallbackEl = $('quick-fallback');
+const quickFallbackMsg = $('quick-fallback-msg');
+const quickFallbackBtn = $<HTMLButtonElement>('quick-fallback-btn');
 const lobbyBotOfferEl = $('lobby-bot-offer');
 const lobbyBotOfferBtn = $<HTMLButtonElement>('lobby-bot-offer-btn');
 const lobbyVisibilityGroup = $('lobby-visibility-group');
@@ -1256,6 +1259,7 @@ async function startQuickMatch() {
   sfx.unlock();
   sfx.buttonTap();
   clearOnlineError();
+  hideQuickFallback();
   if (net) disconnectNet();
   setQuickSearching(true);
 
@@ -1291,8 +1295,27 @@ async function startQuickMatch() {
     net = null;
     queuedCode = null;
     setQuickSearching(false);
-    showOnlineError(err instanceof Error ? err.message : 'Matchmaking failed.');
+    // The player pressed a button meaning "give me a game". Leaving them with
+    // only an error is a dead end when a playable opponent is right there —
+    // whether matchmaking is missing, down, or just unreachable from here.
+    offerBotInstead(err instanceof Error ? err.message : 'Matchmaking failed.');
   }
+}
+
+/** Turns a matchmaking failure into a choice rather than a full stop. */
+function offerBotInstead(reason: string) {
+  const bot = pickBot(account.profile?.rating ?? null);
+  quickFallbackMsg.textContent = `${reason} You can still play ${bot.name}, or open a private room and share the code.`;
+  quickFallbackBtn.textContent = `Play ${bot.name} (bot)`;
+  quickFallbackBtn.onclick = () => {
+    hideQuickFallback();
+    void startBotMatch(bot);
+  };
+  quickFallbackEl.classList.remove('hidden');
+}
+
+function hideQuickFallback() {
+  quickFallbackEl.classList.add('hidden');
 }
 
 /** How long to hold out for a person before offering the roster. Long enough
@@ -1453,8 +1476,11 @@ async function refreshRooms() {
       row.addEventListener('click', () => void joinRoomByCode(room.code));
       roomsListEl.appendChild(row);
     }
-  } catch {
-    roomsListEl.innerHTML = '<div class="rooms-empty">Could not load the room list.</div>';
+  } catch (err) {
+    // Says which of the two it is. "No rooms" and "can't ask about rooms" look
+    // identical to a player otherwise, and only one of them is worth waiting out.
+    const msg = err instanceof Error ? err.message : 'Could not load the room list.';
+    roomsListEl.innerHTML = `<div class="rooms-empty">${escapeHtml(msg)} Practice opponents below still work.</div>`;
   }
 }
 
@@ -1470,6 +1496,7 @@ $('play-online-btn').addEventListener('click', () => {
   clearOnlineError();
   setQuickSearching(false);
   showScreen(screenOnline);
+  hideQuickFallback();
   void refreshRooms();
   void renderPresence();
   renderBotList();
