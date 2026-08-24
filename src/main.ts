@@ -1183,7 +1183,9 @@ async function startOnlineGame(
   onlineMode = true;
   myPlayerId = net.myId;
   orbStyle = style;
-  modeKey = mode;
+  // A relay older than this build, or a mode this build doesn't know, must not
+  // leave modeKey pointing at nothing — every HUD read would throw.
+  modeKey = GAME_MODES[mode] ? mode : DEFAULT_MODE;
   resetSeries();
   // Same generator, same seed as the relay used — so every client is playing
   // on the board the server is validating against.
@@ -1213,7 +1215,7 @@ async function resumeOnlineGame(
   onlineMode = true;
   myPlayerId = net.myId;
   orbStyle = style;
-  modeKey = mode;
+  modeKey = GAME_MODES[mode] ? mode : DEFAULT_MODE;
   resetSeries();
   const newEngine = new GameEngine({ rows, cols, players: snapshot.players, kinds: snapshot.kinds });
   newEngine.loadSnapshot(snapshot);

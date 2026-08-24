@@ -266,7 +266,10 @@ export class NetClient {
         this.onPlayers(this.players, this.hostId);
         break;
       case 'gameStarted':
-        this.onGameStarted(msg.rows, msg.cols, msg.players, msg.orbStyle, msg.mode, msg.seed);
+        // Defaulted here rather than at the call site so every consumer sees a
+        // real mode. An older relay sends neither field, and Classic with a
+        // plain lattice is exactly what such a relay is actually running.
+        this.onGameStarted(msg.rows, msg.cols, msg.players, msg.orbStyle, msg.mode ?? 'classic', msg.seed ?? 0);
         break;
       case 'move':
         this.onMove(msg.row, msg.col);

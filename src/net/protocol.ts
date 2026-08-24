@@ -51,11 +51,14 @@ export type ServerMsg =
       cols: number;
       players: PlayerConfig[];
       orbStyle: OrbStyleKey;
-      mode: GameModeKey;
+      /** Optional on the wire only, so a client running ahead of the deployed
+       *  relay still works instead of crashing on an undefined mode. A current
+       *  relay always sends both. */
+      mode?: GameModeKey;
       /** Every client rebuilds the special-cell lattice from this rather than
        *  receiving it cell by cell — same generator, same seed, same board,
        *  and the message stays small. */
-      seed: number;
+      seed?: number;
     }
   | { type: 'move'; row: number; col: number }
   | { type: 'error'; message: string }
