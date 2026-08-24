@@ -8,13 +8,15 @@
     "bindings": [
       { "name": "GAME_ROOM", "class_name": "GameRoom" },
       { "name": "MATCHMAKER", "class_name": "Matchmaker" },
-      { "name": "PLAYER_HUB", "class_name": "PlayerHub" }
+      { "name": "PLAYER_HUB", "class_name": "PlayerHub" },
+      { "name": "RATE_LIMITER", "class_name": "RateLimiter" }
     ]
   },
 
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
     { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] },
-    { "tag": "v3", "new_sqlite_classes": ["PlayerHub"] }
+    { "tag": "v3", "new_sqlite_classes": ["PlayerHub"] },
+    { "tag": "v4", "new_sqlite_classes": ["RateLimiter"] }
   ]
 }

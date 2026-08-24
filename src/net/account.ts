@@ -46,6 +46,16 @@ async function post<T>(route: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
   });
+  // A throttled call is not a broken one, and the difference matters: the
+  // caller can tell the player to wait rather than that something failed.
+  if (res.status === 429) {
+    const seconds = Number(res.headers.get('Retry-After')) || 0;
+    throw new Error(
+      seconds >= 60
+        ? `Too many attempts. Try again in about ${Math.ceil(seconds / 60)} minutes.`
+        : `Too many attempts. Try again in ${seconds || 30} seconds.`
+    );
+  }
   if (!res.ok) throw new Error('Could not reach the player service.');
   return (await res.json()) as T;
 }

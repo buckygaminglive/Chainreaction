@@ -23,6 +23,19 @@ const PONG_TIMEOUT_MS = 6000;
 // they are winning.
 const RECONNECT_DELAYS_MS = [800, 1500, 3000, 5000, 8000, 8000, 8000, 8000, 8000];
 
+/** Turns a 429 into something a player can act on: how long, in plain words,
+ *  rather than a status code. */
+async function throttleMessage(res: Response, prefix: string): Promise<string> {
+  let seconds = Number(res.headers.get('Retry-After')) || 0;
+  if (!seconds) {
+    const body = (await res.json().catch(() => ({}))) as { retryAfter?: number };
+    seconds = body.retryAfter ?? 0;
+  }
+  if (seconds >= 60) return `${prefix} Try again in about ${Math.ceil(seconds / 60)} minutes.`;
+  if (seconds > 0) return `${prefix} Try again in ${seconds} seconds.`;
+  return `${prefix} Try again shortly.`;
+}
+
 /** Seat tokens are scoped to the tab and to the room. sessionStorage (not
  *  local) because two rooms in two tabs must not share a seat, and a token is
  *  worthless once the tab is gone. */
@@ -107,6 +120,7 @@ export class NetClient {
 
   async createRoom(): Promise<string> {
     const res = await fetch(`${RELAY_BASE}/api/create`, { method: 'POST' });
+    if (res.status === 429) throw new Error(await throttleMessage(res, 'Too many rooms created.'));
     if (!res.ok) throw new Error('Could not reach the server. Check your connection and try again.');
     const data = (await res.json()) as { code: string };
     return data.code;
@@ -127,6 +141,7 @@ export class NetClient {
     // 404 specifically means the relay predates matchmaking — worth telling
     // apart from an outage, because the fix is a deploy, not a retry.
     if (res.status === 404) throw new Error('This server does not have matchmaking yet.');
+    if (res.status === 429) throw new Error(await throttleMessage(res, 'Searching too often.'));
     if (!res.ok) throw new Error('Matchmaking is unavailable right now.');
     return (await res.json()) as { code: string; waiting: boolean };
   }

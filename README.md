@@ -165,6 +165,31 @@ a closed set gives the same feeling with none of that, and needs no
 localisation. The cooldown is enforced on the relay — a client-side limit is
 only a suggestion.
 
+### Rate limiting
+
+One `RateLimiter` object **per client IP** rather than one global object — a
+single limiter would put every request in the game through one lock, which is a
+worse bottleneck than the abuse it prevents.
+
+Budgets are per IP per window and only cover routes that *create or mutate*
+something (`register`, `create`, `quickmatch`, `addFriend`, `rename`, plus
+socket upgrades). Reading a profile or a leaderboard is unbudgeted — those
+happen on every visit. Limits are deliberately loose: carrier-grade NAT and
+school networks put many genuine players behind one address, so every limit
+sits far above what a person can produce and far below what a script does in a
+second. Account creation is the one that really matters, since unbounded
+registration grows storage forever and floods the ladder with rows nobody
+played.
+
+It **fails open**. A limiter that takes the whole game down when it has a bad
+day is a worse outage than the abuse it exists to prevent, so an error in the
+check allows the request and logs it.
+
+Moves are never rate limited — they travel over the already-open WebSocket, and
+only the upgrade is budgeted. That budget is generous on purpose, because the
+reconnect ladder makes up to nine attempts on a bad connection and cutting
+someone off mid-match for having poor wifi would be a far worse bug.
+
 ### Identity and ranking
 
 Identity is a **guest account**: the relay mints an id and a secret the first
@@ -320,8 +345,6 @@ needs real games.
   restarts.
 - The Survival AI is 1-ply. It plays a sound game but can be baited by a
   position that looks good one move out and collapses two moves later.
-- No rate limiting on `/api/create`, `/api/quickmatch` or `/api/player/register`.
-  Nothing stops a script minting accounts or flooding the queue.
 - Guest accounts cannot be linked or recovered. Clearing storage loses the
   account, and there is no way to move one to a second device.
 - The matchmaker and player hub are each a single Durable Object. Fine at this

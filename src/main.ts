@@ -1226,7 +1226,13 @@ $('friend-add-btn').addEventListener('click', async () => {
     friendMsgEl.textContent = 'Enter a friend code.';
     return;
   }
-  const res = await account.addFriend(code);
+  let res: Awaited<ReturnType<typeof account.addFriend>>;
+  try {
+    res = await account.addFriend(code);
+  } catch (err) {
+    friendMsgEl.textContent = err instanceof Error ? err.message : 'Could not add that friend.';
+    return;
+  }
   if (res.error) {
     friendMsgEl.textContent = res.error;
     return;

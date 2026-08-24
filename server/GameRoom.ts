@@ -5,6 +5,7 @@ import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 import { TAUNT_COOLDOWN_MS, isValidTaunt } from '../src/net/taunts';
 import type { Matchmaker } from './Matchmaker';
 import type { PlayerHub } from './PlayerHub';
+import type { RateLimiter } from './RateLimiter';
 import type { EngineSnapshot, PlayerConfig } from '../src/game/types';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from '../src/net/protocol';
 import { PLAYER_THEMES } from '../src/render/theme';
@@ -20,6 +21,7 @@ export interface Env {
   GAME_ROOM: DurableObjectNamespace<GameRoom>;
   MATCHMAKER: DurableObjectNamespace<Matchmaker>;
   PLAYER_HUB: DurableObjectNamespace<PlayerHub>;
+  RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
 }
 
 export const PLAYER_HUB_SINGLETON = 'global';
