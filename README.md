@@ -132,6 +132,22 @@ arrives first becomes the room others are matched into, and the host's client
 starts the game the moment it fills. Matching is on mode *and* board size —
 being dropped into rules you did not pick is worse than waiting longer.
 
+**Bots solve the cold start, honestly.** A new player who opens quick match and
+finds an empty queue does not come back, so there is a standing roster of 18 AI
+opponents (`game/bots.ts`) rated on the same scale as human accounts. Quick
+match holds out for a person for twelve seconds, then *offers* a bot near the
+player's rating — it does not silently substitute one, because a player who is
+unsure whether the opponent they just beat was real has been cheated of the
+win. Bots are labelled everywhere they appear, the match banner says
+`bot · unranked` for the whole game, and bot matches never touch the ladder.
+
+The players-online figure is the real count of people queued or in listed
+rooms, and is allowed to read zero. Inflating it is tempting and worse than
+useless: someone shown "18 online" who then waits two minutes without a match
+learns the number was invented and stops believing anything else the game says.
+Eighteen *actually playable* opponents solve the same problem and survive
+contact with the player.
+
 **Rooms are private by default.** A code shared with a friend must never reach a
 public list because of a default. Quick-match rooms opt in, so the browser can
 fill one still sitting in the queue. Listings are pushed by the room itself on

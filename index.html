@@ -136,6 +136,18 @@
               <span id="quick-status-text">Searching…</span>
               <button id="quick-cancel-btn" class="link-btn">Cancel</button>
             </div>
+            <div id="presence-strip" class="presence-strip"></div>
+          </div>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">
+                Practice opponents
+                <span class="field-unit">play instantly</span>
+              </div>
+              <div id="bots-list" class="rooms-list"></div>
+              <p class="field-note">Bots play the real game and never affect your rating. Quick match falls back to one if nobody is around.</p>
+            </div>
           </div>
 
           <div class="panel">
@@ -217,6 +229,9 @@
             </div>
           </div>
 
+          <div id="lobby-bot-offer" class="hidden">
+            <button id="lobby-bot-offer-btn" class="ghost-btn wide-btn">Play a bot</button>
+          </div>
           <button id="lobby-start-btn" class="primary-btn">Start reaction</button>
           <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host…</p>
         </div>

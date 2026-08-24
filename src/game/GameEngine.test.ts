@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GameEngine } from './GameEngine.ts';
 import { chooseMove } from './ai.ts';
+import { BOTS, pickBot } from './bots.ts';
 import { layoutForMode, makeRng } from './cells.ts';
 import type { CellKind, CellKindGrid, PlayerConfig } from './types.ts';
 
@@ -345,6 +346,43 @@ test('the AI only ever returns a legal move, at any skill', () => {
     assert.equal(g.canPlay(move!.row, move!.col), true, `move ${i} is legal`);
     g.applyMove(move!.row, move!.col);
   }
+});
+
+// ---------- Bot roster ----------
+
+test('every bot has a rating consistent with its skill', () => {
+  const sorted = [...BOTS].sort((a, b) => a.skill - b.skill);
+  for (let i = 1; i < sorted.length; i++) {
+    assert.ok(
+      sorted[i].rating >= sorted[i - 1].rating,
+      `${sorted[i].name} is more skilled than ${sorted[i - 1].name} but rated lower`
+    );
+  }
+  assert.ok(BOTS.every((b) => b.skill >= 0 && b.skill <= 1));
+  assert.ok(new Set(BOTS.map((b) => b.id)).size === BOTS.length, 'ids are unique');
+  assert.ok(new Set(BOTS.map((b) => b.name)).size === BOTS.length, 'names are unique');
+});
+
+test('bot matchmaking picks opponents near the player', () => {
+  const rng = makeRng(11);
+  for (const rating of [820, 1000, 1400]) {
+    // Sampled, because the pick is from the closest few rather than the single
+    // closest — one draw says nothing about the distribution.
+    const picks = Array.from({ length: 30 }, () => pickBot(rating, rng));
+    for (const p of picks) {
+      assert.ok(
+        Math.abs(p.rating - rating) < 400,
+        `picked ${p.name} (${p.rating}) for a ${rating} player`
+      );
+    }
+    assert.ok(new Set(picks.map((p) => p.id)).size > 1, 'does not always pick the same bot');
+  }
+});
+
+test('an unrated player still gets a sensible opponent', () => {
+  const rng = makeRng(3);
+  const picks = Array.from({ length: 20 }, () => pickBot(null, rng));
+  assert.ok(picks.every((p) => Math.abs(p.rating - 1000) < 400));
 });
 
 test('the AI returns null when the board offers nothing', () => {

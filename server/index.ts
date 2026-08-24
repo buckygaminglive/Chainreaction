@@ -86,6 +86,12 @@ export default {
       return Response.json({ ok: true }, { headers: corsHeaders() });
     }
 
+    if (url.pathname === '/api/presence' && request.method === 'GET') {
+      const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+      const res = await stub.fetch('https://mm/presence');
+      return Response.json(await res.json(), { headers: corsHeaders() });
+    }
+
     if (url.pathname === '/api/rooms' && request.method === 'GET') {
       const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
       const res = await stub.fetch('https://mm/rooms');

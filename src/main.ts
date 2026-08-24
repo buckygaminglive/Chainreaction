@@ -4,6 +4,7 @@ import type { EngineSnapshot, PlayerConfig, MoveEvent } from './game/types';
 import { DEFAULT_MODE, GAME_MODES, MODE_ORDER, type GameModeKey } from './game/modes';
 import { layoutForMode, randomSeed } from './game/cells';
 import { chooseMove, skillForRound } from './game/ai';
+import { BOTS, pickBot, type Bot } from './game/bots';
 import { stats } from './game/stats';
 // Three.js is the bulk of the bundle and nothing outside the board needs it,
 // so the renderer is pulled in on demand when a match actually starts — the
@@ -146,6 +147,10 @@ const quickStatusText = $('quick-status-text');
 const quickCancelBtn = $('quick-cancel-btn');
 const roomsListEl = $('rooms-list');
 const roomsRefreshBtn = $('rooms-refresh-btn');
+const botsListEl = $('bots-list');
+const presenceStripEl = $('presence-strip');
+const lobbyBotOfferEl = $('lobby-bot-offer');
+const lobbyBotOfferBtn = $<HTMLButtonElement>('lobby-bot-offer-btn');
 const lobbyVisibilityGroup = $('lobby-visibility-group');
 const lobbyVisibilityField = $('lobby-visibility-field');
 const roomCodeBtn = $('room-code-btn');
@@ -387,6 +392,12 @@ playAgainBtn.addEventListener('click', () => {
     return;
   }
   hideOverlay(screenWin);
+  // A rematch against a bot is another game against *that* bot — falling
+  // through to startLocalGame would silently turn it into pass-and-play.
+  if (activeBot) {
+    void startBotMatch(activeBot);
+    return;
+  }
   const mode = GAME_MODES[modeKey];
   if (mode.seriesLength > 1 && !seriesDecided()) seriesGame++;
   else if (mode.seriesLength > 1) resetSeries();
@@ -463,6 +474,12 @@ function renderMatchBanner() {
     );
   }
   if (engine?.isTeamGame) parts.push(`${TEAM_NAMES[0]} <span class="sep">vs</span> ${TEAM_NAMES[1]}`);
+
+  // Never left implicit: you should always be able to see that the opponent is
+  // a bot without having to remember how the match started.
+  if (activeBot) {
+    parts.push(`vs <span class="bv">${escapeHtml(activeBot.name)}</span> · bot · unranked`);
+  }
 
   // Head-to-head across rematches in this room, kept by the relay.
   if (onlineMode && engine && roomScore.size > 0) {
@@ -717,12 +734,21 @@ async function autoPlayTurn() {
   await applyAndAnimateMove(pick.row, pick.col);
 }
 
-/** Survival's opponent. The short delay is deliberate: an instant reply reads
- *  as the board glitching rather than as someone taking their turn. */
+/** Drives the AI seat, for both Survival and a match against the bot roster.
+ *  The delay is deliberate: an instant reply reads as the board glitching
+ *  rather than as an opponent taking their turn. */
 function maybeRunAiTurn() {
-  if (onlineMode || !GAME_MODES[modeKey].solo) return;
+  if (onlineMode) return;
+  if (!activeBot && !GAME_MODES[modeKey].solo) return;
   if (!engine || renderer === null || engine.gameOver || animating) return;
   if (engine.currentPlayer().id !== AI_PLAYER_ID) return;
+
+  const skill = activeBot ? activeBot.skill : skillForRound(survivalRound);
+  // A roster bot varies its pace; Survival's system is steady, which suits
+  // something that is meant to feel like a mechanism rather than a person.
+  const think = activeBot
+    ? activeBot.thinkMs[0] + Math.random() * (activeBot.thinkMs[1] - activeBot.thinkMs[0])
+    : 420;
 
   const generation = soundGeneration;
   animating = true;
@@ -731,13 +757,13 @@ function maybeRunAiTurn() {
       animating = false;
       return;
     }
-    const move = chooseMove(engine, AI_PLAYER_ID, skillForRound(survivalRound));
+    const move = chooseMove(engine, AI_PLAYER_ID, skill);
     if (!move) {
       animating = false;
       return;
     }
     void applyAndAnimateMove(move.row, move.col);
-  }, 420);
+  }, think);
 }
 
 // ---------- Local game lifecycle ----------
@@ -760,6 +786,8 @@ function buildLocalPlayers(): PlayerConfig[] {
 }
 
 async function startLocalGame() {
+  // A pass-and-play game has no bot opponent, whatever the last match was.
+  activeBot = null;
   const size = BOARD_SIZES[boardSizeKey];
   // A fresh seed per game, so Chaos re-rolls and a Tournament plays every game
   // on a different lattice. Power Cells ignores it by design.
@@ -1250,6 +1278,7 @@ async function startQuickMatch() {
       quickMatchPending = true;
       enterLobby();
       setQuickSearching(false);
+      startBotFallbackTimer();
     } else {
       // Somebody was already waiting — we joined their room and the host's
       // client starts it as soon as it sees us.
@@ -1266,8 +1295,44 @@ async function startQuickMatch() {
   }
 }
 
+/** How long to hold out for a person before offering the roster. Long enough
+ *  that a real opponent who is mid-join still wins the race, short enough that
+ *  waiting never feels like the game is broken. */
+const BOT_FALLBACK_MS = 12000;
+let botFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopBotFallbackTimer() {
+  if (botFallbackTimer) clearTimeout(botFallbackTimer);
+  botFallbackTimer = null;
+}
+
+/** Nobody queued on these settings, so after a wait the player is offered a
+ *  game instead of more waiting. They still choose — being dropped into a bot
+ *  match you did not ask for is how a player ends up unsure whether the
+ *  opponent they just beat was a person. */
+function startBotFallbackTimer() {
+  stopBotFallbackTimer();
+  botFallbackTimer = setTimeout(() => {
+    if (!quickMatchPending) return;
+    const bot = pickBot(account.profile?.rating ?? null);
+    lobbyHintEl.textContent = `no one around — ${bot.name} (bot) is ready`;
+    lobbyBotOfferEl.classList.remove('hidden');
+    lobbyBotOfferBtn.textContent = `Play ${bot.name} (bot)`;
+    lobbyBotOfferBtn.onclick = () => {
+      stopBotFallbackTimer();
+      if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
+      queuedCode = null;
+      disconnectNet();
+      lobbyBotOfferEl.classList.add('hidden');
+      void startBotMatch(bot);
+    };
+  }, BOT_FALLBACK_MS);
+}
+
 async function cancelQuickMatch() {
   sfx.buttonTap();
+  stopBotFallbackTimer();
+  lobbyBotOfferEl.classList.add('hidden');
   if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
   queuedCode = null;
   quickMatchPending = false;
@@ -1280,6 +1345,89 @@ quickCancelBtn.addEventListener('click', () => void cancelQuickMatch());
 onSegmentPick(quickSizeGroup, (el) => {
   quickBoardSize = el.dataset.size as BoardSizeKey;
 });
+
+// ---------- Bot matches ----------
+/** The opponent when the current game is against the roster, else null. */
+let activeBot: Bot | null = null;
+
+function renderBotList() {
+  botsListEl.innerHTML = '';
+  const myRating = account.profile?.rating ?? null;
+  // Nearest first, so the top of the list is the fairest fight available.
+  const ordered = [...BOTS].sort(
+    (a, b) => Math.abs(a.rating - (myRating ?? 1000)) - Math.abs(b.rating - (myRating ?? 1000))
+  );
+  for (const bot of ordered) {
+    const row = document.createElement('button');
+    row.className = 'room-row';
+    row.innerHTML =
+      `<span class="rh">${escapeHtml(bot.name)}</span>` +
+      `<span class="bot-tag">BOT</span>` +
+      `<span class="rp">${bot.rating}</span>`;
+    row.addEventListener('click', () => void startBotMatch(bot));
+    botsListEl.appendChild(row);
+  }
+}
+
+async function renderPresence() {
+  let live = '—';
+  try {
+    const p = await NetClient.presence();
+    live = String(p.queued + p.inRooms);
+  } catch {
+    // Relay unreachable: say so rather than inventing a number.
+    live = '—';
+  }
+  presenceStripEl.innerHTML =
+    `<span class="dot-live"></span><span><span class="pv">${live}</span> players online</span>` +
+    `<span style="margin-left:auto"><span class="pv">${BOTS.length}</span> bots ready</span>`;
+}
+
+/**
+ * Starts a 1v1 against the roster. Runs entirely on this device — there is no
+ * relay round trip and nothing is reported to the ladder, which is exactly why
+ * a bot match can never move anyone's rating.
+ */
+async function startBotMatch(bot: Bot) {
+  sfx.unlock();
+  sfx.buttonTap();
+  if (net) disconnectNet();
+  onlineMode = false;
+  activeBot = bot;
+  quickMatchPending = false;
+  setQuickSearching(false);
+  resetSeries();
+
+  const size = BOARD_SIZES[quickBoardSize];
+  const myTheme = themeForSeat(0, quickMode);
+  const botTheme = themeForSeat(1, quickMode);
+  const players: PlayerConfig[] = [
+    {
+      id: 0,
+      name: account.profile?.name || nameInput.value.trim() || 'You',
+      color: myTheme.base,
+      colorLight: myTheme.light,
+      isAlive: true,
+    },
+    { id: 1, name: bot.name, color: botTheme.base, colorLight: botTheme.light, isAlive: true },
+  ];
+
+  // Bot matches use the mode picked for quick match, so practising is
+  // practising the thing you are about to queue for.
+  modeKey = GAME_MODES[quickMode].teams ? DEFAULT_MODE : quickMode;
+  const seed = randomSeed();
+  const newEngine = new GameEngine({
+    rows: size.rows,
+    cols: size.cols,
+    players,
+    kinds: layoutForMode(modeKey, size.rows, size.cols, seed),
+  });
+  if (!(await mountGame(newEngine, orbStyle))) return;
+  renderer!.setCellTapHandler(onCellTapLocal);
+  renderMatchBanner();
+  showScreen(screenGame);
+  maybeRunAiTurn();
+}
 
 // ---------- Public room browser ----------
 async function refreshRooms() {
@@ -1313,6 +1461,7 @@ async function refreshRooms() {
 roomsRefreshBtn.addEventListener('click', () => {
   sfx.buttonTap();
   void refreshRooms();
+  void renderPresence();
 });
 
 $('play-online-btn').addEventListener('click', () => {
@@ -1322,9 +1471,11 @@ $('play-online-btn').addEventListener('click', () => {
   setQuickSearching(false);
   showScreen(screenOnline);
   void refreshRooms();
+  void renderPresence();
+  renderBotList();
   // Minting the guest account on entering the online screen, not at boot: a
   // player who only ever plays locally never gets one.
-  void ensureAccount();
+  void ensureAccount().then(renderBotList);
 });
 $('online-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
@@ -1480,6 +1631,8 @@ lobbyStartBtn.addEventListener('click', () => {
 
 $('lobby-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
+  stopBotFallbackTimer();
+  lobbyBotOfferEl.classList.add('hidden');
   // Leaving the lobby also gives up any queue slot, or the next quick-matcher
   // gets sent into an empty room.
   if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
@@ -1589,6 +1742,10 @@ async function startOnlineGame(
   seed: number
 ) {
   if (!net) return;
+  stopBotFallbackTimer();
+  lobbyBotOfferEl.classList.add('hidden');
+  // A real opponent turned up, so nothing here is a bot match any more.
+  activeBot = null;
   onlineMode = true;
   myPlayerId = net.myId;
   orbStyle = style;

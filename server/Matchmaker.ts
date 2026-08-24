@@ -92,6 +92,13 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
       await this.persist();
       return Response.json({ ok: true });
     }
+    if (url.pathname.endsWith('/presence')) {
+      // Genuinely counted, not estimated: people sitting in the queue plus
+      // people sitting in listed rooms. It is allowed to be a small number.
+      const inRooms = Array.from(this.listings.values()).reduce((n, r) => n + r.players, 0);
+      await this.persist();
+      return Response.json({ queued: this.queue.length, inRooms });
+    }
     if (url.pathname.endsWith('/rooms')) {
       const rooms = Array.from(this.listings.values())
         .sort((a, b) => b.at - a.at)

@@ -138,6 +138,14 @@ export class NetClient {
     });
   }
 
+  /** Real people currently queued or sitting in listed rooms. Allowed to be
+   *  zero — the bot roster is what keeps the screen from being a dead end. */
+  static async presence(): Promise<{ queued: number; inRooms: number }> {
+    const res = await fetch(`${RELAY_BASE}/api/presence`);
+    if (!res.ok) throw new Error('presence unavailable');
+    return (await res.json()) as { queued: number; inRooms: number };
+  }
+
   static async listRooms(): Promise<PublicRoom[]> {
     const res = await fetch(`${RELAY_BASE}/api/rooms`);
     if (!res.ok) throw new Error('Could not load the room list.');

@@ -1452,6 +1452,42 @@ body {
   color: var(--text-dim);
 }
 
+.presence-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.presence-strip .dot-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5df08a;
+  box-shadow: 0 0 8px #5df08a;
+}
+
+.presence-strip .pv {
+  color: var(--text-dim);
+}
+
+/* Marks a row as an AI opponent. Never omitted — a bot that reads as a person
+   is the whole thing this is meant to avoid. */
+.bot-tag {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  padding: 2px 5px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  color: var(--text-faint);
+}
+
 .rooms-list {
   display: flex;
   flex-direction: column;
