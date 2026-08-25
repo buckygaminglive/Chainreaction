@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Privacy — REACTON</title>
+    <style>
+      :root {
+        --bg: #07090c;
+        --panel: rgba(255, 255, 255, 0.028);
+        --hairline: rgba(255, 255, 255, 0.075);
+        --text: #e8edf4;
+        --dim: #7d8899;
+        --faint: #4c5665;
+        --accent: #3ad9ff;
+        --warn: #ffb020;
+        --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 0 20px 80px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.68;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 660px; margin: 0 auto; }
+      header { padding: 56px 0 26px; border-bottom: 1px solid var(--hairline); margin-bottom: 30px; }
+      .brand {
+        font-size: 15px;
+        font-weight: 200;
+        letter-spacing: 0.34em;
+        text-indent: 0.34em;
+        text-decoration: none;
+        color: var(--text);
+      }
+      h1 { margin: 22px 0 6px; font-size: clamp(28px, 6vw, 38px); font-weight: 300; letter-spacing: 0.01em; }
+      .updated { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
+      h2 { margin: 40px 0 10px; font-size: 19px; font-weight: 500; letter-spacing: 0.01em; }
+      p, li { color: var(--dim); }
+      p { margin: 0 0 14px; }
+      ul { margin: 0 0 14px; padding-left: 22px; }
+      li { margin-bottom: 8px; }
+      li::marker { color: var(--accent); }
+      b, strong { color: var(--text); font-weight: 600; }
+      a { color: var(--accent); text-underline-offset: 3px; }
+      code { font-family: var(--mono); font-size: 0.88em; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px; color: #b9c6d6; }
+      .draft {
+        border: 1px solid rgba(255, 176, 32, 0.35);
+        background: rgba(255, 176, 32, 0.07);
+        border-radius: 10px;
+        padding: 16px 18px;
+        margin-bottom: 30px;
+      }
+      .draft p { color: var(--warn); margin: 0; font-size: 14.5px; }
+      .fill { color: var(--warn); font-family: var(--mono); font-size: 0.9em; }
+      footer { margin-top: 54px; padding-top: 22px; border-top: 1px solid var(--hairline); font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">REACTON</a>
+        <h1>Privacy</h1>
+        <p class="updated">Last updated 25 August 2026</p>
+      </header>
+
+      <div class="draft">
+        <p><b>Draft.</b> This describes accurately what the game does today, but it has not been reviewed by a lawyer and is not legal advice. Fill in every <span class="fill">[BRACKETED]</span> value and have it reviewed before launch or store submission.</p>
+      </div>
+
+      <p>REACTON is a browser game. It is designed to need as little about you as possible: there is no sign-up, no email address, no password, and no advertising or third-party tracking of any kind.</p>
+
+      <h2>What is stored on your device</h2>
+      <p>The game keeps a small amount of data in your browser's own storage. It never leaves your device unless a section below says otherwise.</p>
+      <ul>
+        <li><b>Your settings</b> — game mode, board size, player count, particle style, volume, haptics and motion preferences.</li>
+        <li><b>Your local record</b> — matches played, wins, best chain and best capture, used for the level shown on the title screen.</li>
+        <li><b>Your guest account</b> — an identifier and a secret, if you have used the online screen (see below).</li>
+        <li><b>A seat token</b> — held for the current browser tab only, so that a dropped connection can put you back in the same seat.</li>
+      </ul>
+      <p>Clearing your browser's storage for this site erases all of it, including your guest account. There is currently no way to recover an account that has been cleared, and no way to move one to another device.</p>
+
+      <h2>Guest accounts and online play</h2>
+      <p>The first time you open the online screen, the game's relay server creates a <b>guest account</b>: a random identifier, a secret held only by your browser and the server, and a short friend code. There is no email address, no password and no profile.</p>
+      <p>If you play online, the relay holds:</p>
+      <ul>
+        <li>the <b>display name</b> you choose, which other players in your room and anyone viewing a leaderboard can see;</li>
+        <li>your <b>friend code</b>, and the list of people you have added as friends;</li>
+        <li>your <b>competitive record</b> — rating, wins, losses, matches played and best chain;</li>
+        <li>the <b>state of a room</b> you are in while the match is running.</li>
+      </ul>
+      <p>Choose a display name you are comfortable with strangers seeing. It appears on public leaderboards.</p>
+
+      <h2>Technical logs</h2>
+      <p>The relay runs on Cloudflare Workers. Like any web service, incoming requests carry an IP address, which is used to apply rate limits and may appear in the hosting provider's operational logs. The game does not store IP addresses itself, and does not associate them with your guest account.</p>
+      <p>Cloudflare processes this data as our hosting provider. Their privacy documentation is at <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">cloudflare.com/privacypolicy</a>.</p>
+
+      <h2>Diagnostics</h2>
+      <p>The game can report anonymous diagnostics — how long a session lasted, which modes are played, whether matches are finished or abandoned, how often connections drop, and technical errors. These are counts, durations and fixed labels. They <b>never</b> include your display name, room codes, account secrets or board positions.</p>
+      <p>Diagnostics are sent only when a collection endpoint is configured for the build you are using. You can switch them off at any time under <b>Settings → Diagnostics</b>, and the game honours your browser's "Do Not Track" setting automatically.</p>
+
+      <h2>Cookies</h2>
+      <p>The game sets no cookies. It uses your browser's local storage, described above, for settings and your account — not for tracking, and not shared with anyone.</p>
+
+      <h2>Children</h2>
+      <p>REACTON is a general-audience game and is not directed at children under 13. We do not knowingly collect personal information from children. Because there is no sign-up, we do not ask for an age. If you believe a child has provided a display name or other information you want removed, contact us at <span class="fill">[CONTACT EMAIL]</span>.</p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li><b>Play entirely locally.</b> Pass-and-play and the single-player modes create no account and contact no server.</li>
+        <li><b>Turn diagnostics off</b> in Settings.</li>
+        <li><b>Delete everything</b> by clearing site data in your browser.</li>
+        <li><b>Ask for server-side deletion</b> of a guest account and its record by writing to <span class="fill">[CONTACT EMAIL]</span> with your friend code.</li>
+      </ul>
+
+      <h2>Changes</h2>
+      <p>If this policy changes materially, the date at the top of this page changes with it.</p>
+
+      <h2>Contact</h2>
+      <p><span class="fill">[CONTACT EMAIL]</span> · <span class="fill">[LEGAL ENTITY / TRADING NAME]</span> · <span class="fill">[POSTAL ADDRESS, IF REQUIRED BY YOUR JURISDICTION]</span></p>
+
+      <footer>
+        <a href="/">Back to the game</a> · <a href="/terms.html">Terms</a>
+      </footer>
+    </main>
+  </body>
+</html>

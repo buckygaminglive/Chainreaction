@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "node --test src/game/*.test.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p server/tsconfig.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p server/tsconfig.json",
+    "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260818.1",
