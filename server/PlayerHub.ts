@@ -56,6 +56,25 @@ function cleanName(raw: unknown, fallback: string): string {
   return out.trim().slice(0, 16) || fallback;
 }
 
+/**
+ * Compares two secrets without leaking their contents through how long the
+ * comparison takes.
+ *
+ * `===` on strings returns at the first differing byte, so the time it takes
+ * is a function of how much of the secret the caller guessed correctly. Over
+ * the open internet the jitter dwarfs that signal, which is why this is a
+ * hardening measure rather than a fix for a live hole — but the cost here is a
+ * few microseconds and the failure mode is somebody's account.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  // Length is not secret; the contents are. Comparing different lengths byte
+  // by byte would read past the end of the shorter one.
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function expectedScore(a: number, b: number): number {
   return 1 / (1 + 10 ** ((b - a) / 400));
 }
@@ -69,8 +88,11 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
    *  route goes through this — an id alone is public information. */
   private async authed(id: unknown, secret: unknown): Promise<StoredPlayer | null> {
     if (typeof id !== 'string' || typeof secret !== 'string') return null;
+    // Bounded before touching storage: an unbounded id is a lookup key an
+    // attacker controls the size of.
+    if (id.length > 64 || secret.length > 64) return null;
     const player = await this.getPlayer(id);
-    if (!player || player.secret !== secret) return null;
+    if (!player || !timingSafeEqual(player.secret, secret)) return null;
     return player;
   }
 

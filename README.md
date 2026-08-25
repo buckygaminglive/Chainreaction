@@ -368,6 +368,30 @@ a closed set gives the same feeling with none of that, and needs no
 localisation. The cooldown is enforced on the relay — a client-side limit is
 only a suggestion.
 
+### Credentials never travel in a URL
+
+The account secret is sent as an `auth` **message** over the open socket, not
+as a query parameter on the socket URL. A URL is not a secret: it lands in the
+edge provider's access logs, in browser history, and in any error report that
+captures the request — and this credential is permanent, so losing it means
+losing the account. A message body is inside the TLS session and is not logged
+by default.
+
+The seat token is the deliberate exception and stays in the URL. It has to be
+read during the HTTP upgrade, before a socket exists, because it is what
+decides whether a rejoin mid-match is allowed at all. It is also worth far
+less: room-scoped, and dead when the room is.
+
+Secrets are compared with a constant-time helper. `===` on strings returns at
+the first differing byte, so how long it takes is a function of how much of the
+secret the caller guessed. Over the open internet, jitter dwarfs that signal —
+this is hardening, not a fix for a live hole — but it costs microseconds and
+the failure mode is somebody's account.
+
+The room also refuses to seat one account twice. That is the cheap half of
+collusion prevention, and it has to happen in the room because only the room
+knows who else is sitting down.
+
 ### Rate limiting
 
 One `RateLimiter` object **per client IP** rather than one global object — a
@@ -553,7 +577,11 @@ needs real games.
 - Ranked play can still be farmed by two people agreeing to meet in a public
   room. Rating only ever moves on head-to-head results, so the exposure is
   bounded, but there is no collusion detection.
-- No moderation path for display names beyond stripping control characters.
+- No moderation path for display names beyond stripping control characters,
+  zero-width characters and bidi overrides.
+- The Content-Security-Policy in `vercel.json` hard-codes the relay origin in
+  `connect-src`. Moving or renaming the relay means editing it there too, or
+  online play breaks with no console error the player can act on.
 - Host migration only happens pre-game. If the host drops mid-match and never
   returns, nobody can trigger a rematch.
 - Seat tokens live in `sessionStorage`, so a reconnect survives a refresh but

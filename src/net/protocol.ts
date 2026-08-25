@@ -64,6 +64,14 @@ export type ClientMsg =
    *  not just at kick-off, or a public listing advertises whatever the room
    *  defaulted to rather than what the host actually picked. */
   | { type: 'setLobby'; isPublic?: boolean; mode?: GameModeKey; boardSize?: BoardSizeKey }
+  /** Attaches a verified account to this seat.
+   *
+   *  Sent as a message rather than as a query parameter on the socket URL.
+   *  A URL is not a secret: it lands in the edge provider's access logs, in
+   *  browser history and in any error report that captures the request, and
+   *  this credential is permanent — losing it means losing the account. The
+   *  message body is inside the TLS session and is never logged by default. */
+  | { type: 'auth'; id: string; secret: string }
   | { type: 'ping' };
 
 export type ServerMsg =

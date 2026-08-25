@@ -199,13 +199,8 @@ export class NetClient {
       // A quick-match room advertises itself, so someone browsing the list can
       // fill it too rather than everyone waiting on the queue alone.
       if (this.publicRoom) params.set('public', '1');
-      // Identifies the seat to the relay so a ranked result can be attributed
-      // to a verified account rather than to a name anyone could type.
-      const creds = account.credentials;
-      if (creds) {
-        params.set('pid', creds.id);
-        params.set('psec', creds.secret);
-      }
+      // The account credential is deliberately *not* a query parameter — see
+      // the 'auth' message in protocol.ts. It goes over the open socket below.
       const ws = new WebSocket(`${base}/api/room/${this.roomCode}?${params}`);
       this.ws = ws;
       let settled = false;
@@ -235,6 +230,19 @@ export class NetClient {
       this.markCurrentDown = markDown;
 
       ws.onopen = () => {
+        // Sent over the open socket rather than as a query parameter: a URL
+        // ends up in access logs and browser history, and this credential is
+        // permanent. Sent on every (re)connect, including reconnects, because
+        // the relay holds it per socket generation, not per account.
+        const creds = account.credentials;
+        if (creds) {
+          try {
+            ws.send(JSON.stringify({ type: 'auth', id: creds.id, secret: creds.secret }));
+          } catch {
+            // A socket that died between open and here is handled by the
+            // reconnect ladder; an unranked match is better than a failed one.
+          }
+        }
         this.startHeartbeat();
       };
 

@@ -179,8 +179,6 @@ export class GameRoom extends DurableObject<Env> {
     if (url.searchParams.get('public') === '1') this.isPublic = true;
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
     const token = url.searchParams.get('token');
-    const accountId = url.searchParams.get('pid') ?? undefined;
-    const accountSecret = url.searchParams.get('psec') ?? undefined;
     const returning = token ? this.findSeatByToken(token) : null;
 
     if (!returning) {
@@ -209,8 +207,6 @@ export class GameRoom extends DurableObject<Env> {
       entry.gen += 1;
       entry.connected = true;
       entry.name = name || entry.name;
-      entry.accountId = accountId;
-      entry.accountSecret = accountSecret;
     } else {
       id = this.nextPlayerId++;
       entry = {
@@ -219,8 +215,6 @@ export class GameRoom extends DurableObject<Env> {
         colorIndex: this.pickDefaultColor(),
         token: crypto.randomUUID(),
         gen: 1,
-        accountId,
-        accountSecret,
       };
       this.roster.set(id, entry);
     }
@@ -321,6 +315,8 @@ export class GameRoom extends DurableObject<Env> {
       this.broadcastPlayers();
     } else if (msg.type === 'pickColor') {
       await this.handlePickColor(ws, att, msg.colorIndex);
+    } else if (msg.type === 'auth') {
+      this.handleAuth(att, msg.id, msg.secret);
     } else if (msg.type === 'ping') {
       this.send(ws, { type: 'pong' });
     }
@@ -764,6 +760,38 @@ export class GameRoom extends DurableObject<Env> {
     if (now - last < TAUNT_COOLDOWN_MS) return;
     this.lastTaunt.set(att.id, now);
     this.broadcastAll({ type: 'taunt', from: att.id, emoji });
+  }
+
+  /**
+   * Attaches an account to this seat, so a finished ranked match can be
+   * reported under a verified identity.
+   *
+   * The relay does not check the secret here — the hub does, when the result
+   * is submitted, and it rejects the whole match if any seat fails. Verifying
+   * twice would mean a hub round trip on every join for no extra safety.
+   * What this *does* enforce is that one account cannot occupy two seats in
+   * the same room, which is the cheap half of collusion prevention and has to
+   * happen here because only the room knows who else is sitting down.
+   */
+  private handleAuth(att: Attachment, id: unknown, secret: unknown) {
+    if (typeof id !== 'string' || typeof secret !== 'string') return;
+    if (id.length > 64 || secret.length > 64) return;
+    const entry = this.roster.get(att.id);
+    if (!entry) return;
+
+    for (const [seatId, other] of this.roster) {
+      if (seatId !== att.id && other.accountId === id) {
+        this.send(this.ctx.getWebSockets()[0], {
+          type: 'error',
+          message: 'That account is already in this room.',
+        });
+        return;
+      }
+    }
+
+    entry.accountId = id;
+    entry.accountSecret = secret;
+    void this.persistMeta();
   }
 
   private async handlePickColor(ws: WebSocket, att: Attachment, colorIndex: number) {
