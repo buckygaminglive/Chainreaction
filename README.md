@@ -16,7 +16,8 @@ until that check is done (roadmap §15).
 
 - **Client:** TypeScript + Vite, [Three.js](https://threejs.org/) for the 3D
   board/orbs, [GSAP](https://gsap.com/) for animation, Web Audio API for
-  synthesized sound effects (no audio assets), Vibration API for haptics.
+  synthesized sound effects, a licensed background track, Vibration API for
+  haptics.
 - **Online relay:** Cloudflare Workers + Durable Objects — one Durable Object
   instance per game room, holding the authoritative game state and relaying
   moves over WebSockets.
@@ -107,7 +108,8 @@ src/
                   the shared protocol.ts message types, the guest account, and
                   telemetry.ts — instrumentation with no vendor attached.
 
-  sfx/            Sfx (synthesized sound) and Haptics (Vibration API).
+  sfx/            Sfx (synthesized effects + the background track) and
+                  Haptics (Vibration API).
 
   main.ts         Screen state machine (title → lobby → game → win) and the
                   glue between input, the engine, and the renderer. Also
@@ -200,13 +202,19 @@ bed have to be mixable against each other: a player who wants the room tone
 without the explosions, or the reverse, has no way to say so if they share a
 fader.
 
-The **bed** is three oscillators — A1, its fifth, and a barely-there octave —
-under a lowpass on a ~40 second sweep. No asset, no bundle cost, and nothing
-to loop-seam. It ducks to 45% over a live board, because it exists to keep a
-screen from being silent, not to play over the game. It is never started
-before a user gesture: building an `AudioContext` earlier only earns an
-autoplay warning and a suspended context, so `startBed()` sets a flag and the
-first `unlock()` brings it up.
+The **background track** is `public/audio/quantum-lab-protocol.mp3`, streamed
+through a `MediaElementAudioSourceNode` into the same graph as the effects
+rather than played from a bare `<audio>` tag — that's what lets one mute
+switch and one duck apply to both. It ducks to 45% over a live board, because
+it exists to keep a screen from being silent, not to play over the game.
+`preload="none"` keeps the ~5MB file off the critical path entirely until a
+match is actually wanted; it is never started before a user gesture either —
+building an `AudioContext` earlier only earns an autoplay warning and a
+suspended context, so `startBed()` sets a flag and the first `unlock()`
+brings it up. The graph (element, gain node) is built once and reused —
+`createMediaElementSource` throws if called twice on the same element, so
+starting and stopping the track from then on is `play()`/`pause()`, not a
+rebuild.
 
 **Settings** live behind the gear on the title screen: master level, ambience,
 haptics and motion. Haptics used to fire unconditionally, which left the
@@ -253,6 +261,23 @@ roster spans 780–1500) so every tier is reachable and a new account starts
 The tier colours are metals rather than hues. §18 rules out a rainbow, and
 six new accent colours is exactly that; bronze through diamond reads as a
 progression on its own.
+
+The **emblems** (`render/rankBadge.ts`) are drawn in code for the same reason
+the app icons are: one definition that scales to any size and recolours from
+the tier's own metal. They escalate on a single visual axis rather than being
+six unrelated shapes — a charged core, then orbital rings, then emission
+nodes, then a corona. That is the game’s own subject matter climbing, so a
+Diamond badge reads as *more of the same thing* as a Silver one, which is
+what makes a ladder legible at a glance. A shield, a crown and a star would
+each be prettier alone and meaningless as a sequence.
+
+**A rating that only ever shows a total is one nobody can feel themselves
+climbing.** The hub returns the *delta* alongside the new rating — captured
+before the Elo update, because recomputing it on the client would mean
+trusting a client to remember what its own rating used to be — and the room
+maps account ids back to seat ids and broadcasts a `rated` message. The
+result card shows the emblem, the tier and what the match just did to get you
+there. Only public rooms send it; a private game has nothing to report.
 
 ### Telemetry
 

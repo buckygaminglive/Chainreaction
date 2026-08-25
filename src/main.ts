@@ -4,10 +4,11 @@ import type { EngineSnapshot, PlayerConfig, MoveEvent } from './game/types';
 import { DEFAULT_MODE, GAME_MODES, MODE_ORDER, type GameModeKey } from './game/modes';
 import { layoutForMode, randomSeed } from './game/cells';
 import { chooseMove, skillForRound } from './game/ai';
-import { BOTS, pickBot, type Bot } from './game/bots';
+import { pickBot, type Bot } from './game/bots';
 import { stats } from './game/stats';
 import { rankFor, rankProgress, nextRankAt } from './game/rank';
-import { prefs, type MotionPref } from './game/prefs';
+import { rankBadgeSvg } from './render/rankBadge';
+import { prefs, MAX_NAME_LENGTH, MAX_CALLSIGN_LENGTH, type MotionPref } from './game/prefs';
 // Three.js is the bulk of the bundle and nothing outside the board needs it,
 // so the renderer is pulled in on demand when a match actually starts — the
 // menu, the online screens and the join-by-link flow all load without it.
@@ -76,6 +77,12 @@ let renderer: ThreeRenderer | null = null;
 let animating = false;
 let muted = false;
 let motionPref: MotionPref = 'auto';
+/** Names for local seats, indexed by seat. Empty means "not named", which
+ *  falls back to Player N rather than storing the fallback as if it were a
+ *  choice somebody made. */
+let localNames: string[] = [];
+/** The name this device plays online under. */
+let callsign = '';
 // Bumped whenever the current game is torn down (leaving to the menu,
 // starting a new game). A cascade's explode sound is scheduled via
 // setTimeout to land on the real blast moment, which can still be pending
@@ -145,7 +152,7 @@ const ALL_SCREENS = [screenMenu, screenGame, screenOnline, screenLobby];
 const playersCountEl = $('players-count');
 const playersFieldEl = $('players-field');
 const playersNoteEl = $('players-note');
-const playerSwatchesEl = $('player-swatches');
+const playerRosterEl = $('player-roster');
 const boardSizeGroup = $('board-size-group');
 const orbStyleGroup = $('orb-style-group');
 const modeGroup = $('mode-group');
@@ -153,9 +160,9 @@ const modeBlurbEl = $('mode-blurb');
 const modePreviewEl = $('mode-preview');
 const modeCaptionEl = $('mode-caption');
 const modeLegendEl = $('mode-legend');
-const profileStripEl = $('profile-strip');
+
 const levelChipEl = $('level-chip');
-const setupSummaryEl = $('setup-summary');
+
 const playPillsEl = $('player-pills');
 const boardHost = $('board-host');
 const chainReadoutEl = $('chain-readout');
@@ -175,10 +182,13 @@ const winVerbEl = $('win-verb');
 const winEyebrowEl = screenWin.querySelector('.win-eyebrow') as HTMLElement;
 const winMetricsEl = $('win-metrics');
 const winLeaderboardEl = $('win-leaderboard');
+const winRankEl = $('win-rank');
 const playAgainBtn = $('play-again-btn');
 const confettiLayer = $('confetti-layer');
 
 const nameInput = $<HTMLInputElement>('name-input');
+const nameSaveBtn = $('name-save-btn');
+const nameNoteEl = $('name-note');
 const joinCodeInput = $<HTMLInputElement>('join-code-input');
 const createRoomBtn = $('create-room-btn');
 const joinRoomBtn = $('join-room-btn');
@@ -191,7 +201,7 @@ const quickStatusText = $('quick-status-text');
 const quickCancelBtn = $('quick-cancel-btn');
 const roomsListEl = $('rooms-list');
 const roomsRefreshBtn = $('rooms-refresh-btn');
-const botsListEl = $('bots-list');
+
 const presenceStripEl = $('presence-strip');
 const quickFallbackEl = $('quick-fallback');
 const quickFallbackMsg = $('quick-fallback-msg');
@@ -236,6 +246,40 @@ function themeForSeat(seat: number, mode = modeKey) {
   return PLAYER_THEMES[seat % PLAYER_THEMES.length];
 }
 
+/** How the last ranked match moved this device's rating, or null if the
+ *  match was not ranked. Held until the next one starts rather than shown and
+ *  forgotten — the result card is composed before the relay has finished
+ *  talking to the ladder, so the number arrives after the card is already up. */
+let lastRated: { rating: number; delta: number } | null = null;
+
+/**
+ * The ranked readout on the result card: the tier you are now, and what this
+ * match did to get you there. A ladder that only ever shows a total is a
+ * ladder nobody can feel themselves climbing.
+ */
+function renderWinRank() {
+  if (!lastRated) {
+    winRankEl.classList.add('hidden');
+    winRankEl.innerHTML = '';
+    return;
+  }
+  const rank = rankFor(lastRated.rating);
+  const { delta } = lastRated;
+  // Zero is a real outcome in a free-for-all, where only head-to-head results
+  // move the ladder — saying "+0" would imply the match was rated and worth
+  // nothing, which is the wrong story.
+  const sign = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+  const label = delta === 0 ? 'no change' : `${delta > 0 ? '+' : ''}${delta}`;
+  winRankEl.classList.remove('hidden');
+  winRankEl.innerHTML =
+    `<div class="win-rank-badge">${rankBadgeSvg(rank, 40)}</div>` +
+    `<div class="win-rank-meta">` +
+    `<span class="win-rank-name" style="color:${rank.css}">${rank.name}</span>` +
+    `<span class="win-rank-rating">${lastRated.rating} rating</span>` +
+    `</div>` +
+    `<span class="win-rank-delta is-${sign}">${label}</span>`;
+}
+
 /** The seat whose results count towards this device's record. Online that's
  *  the socket's own player; in pass-and-play there is no "you", so the first
  *  seat stands in for the device owner. */
@@ -244,18 +288,67 @@ function localSeatId(): number {
 }
 
 // ---------- Menu setup ----------
-function renderSwatches() {
+/** What a seat is actually called. Survival's two seats are the player and
+ *  the system and are not up for naming; everywhere else an unnamed seat is
+ *  Player N. */
+function seatName(seat: number): string {
+  if (GAME_MODES[modeKey].solo) return seat === 0 ? 'You' : 'System';
+  return localNames[seat]?.trim() || `Player ${seat + 1}`;
+}
+
+/** One row per seat: its emission, and the name it plays under. Naming the
+ *  seats is what turns pass-and-play from "Player 1 wins" into something with
+ *  the people in the room in it — the result card, the HUD pills and the
+ *  standings all read from here. */
+function renderRoster() {
   const mode = GAME_MODES[modeKey];
-  playerSwatchesEl.innerHTML = '';
+  playerRosterEl.innerHTML = '';
+
   for (let i = 0; i < numPlayers; i++) {
     const theme = themeForSeat(i);
-    const el = document.createElement('div');
-    el.className = 'swatch';
-    el.style.background = `radial-gradient(circle at 35% 30%, ${theme.css}, ${theme.css}cc)`;
-    el.style.boxShadow = `0 0 12px ${theme.css}66`;
-    el.title = mode.teams ? `${theme.name} — ${TEAM_NAMES[i % 2]}` : theme.name;
-    el.textContent = mode.solo ? (i === 0 ? 'YOU' : 'SYS') : mode.teams ? TEAM_NAMES[i % 2].slice(-1) : `P${i + 1}`;
-    playerSwatchesEl.appendChild(el);
+    const row = document.createElement('div');
+    row.className = 'roster-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'roster-dot';
+    dot.style.background = `radial-gradient(circle at 35% 30%, ${theme.css}, ${theme.css}cc)`;
+    dot.style.boxShadow = `0 0 10px ${theme.css}66`;
+    dot.title = mode.teams ? `${theme.name} — ${TEAM_NAMES[i % 2]}` : theme.name;
+    row.appendChild(dot);
+
+    const input = document.createElement('input');
+    input.className = 'roster-name';
+    input.type = 'text';
+    input.maxLength = MAX_NAME_LENGTH;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.setAttribute('aria-label', `Name for seat ${i + 1}`);
+    if (mode.solo) {
+      // The roster still shows both seats, but neither is yours to rename.
+      input.value = seatName(i);
+      input.disabled = true;
+    } else {
+      // The stored name, not the fallback: the placeholder carries "Player N"
+      // so an empty box reads as unnamed rather than as a name to delete.
+      input.value = localNames[i] ?? '';
+      input.placeholder = `Player ${i + 1}`;
+      input.addEventListener('input', () => {
+        localNames[i] = input.value;
+        persistPrefs();
+      });
+      // Tapping the dot is the affordance the row advertises, so make it work.
+      dot.addEventListener('click', () => input.focus());
+    }
+    row.appendChild(input);
+
+    if (mode.teams) {
+      const tag = document.createElement('span');
+      tag.className = 'roster-team';
+      tag.textContent = TEAM_NAMES[i % 2].slice(-1);
+      row.appendChild(tag);
+    }
+
+    playerRosterEl.appendChild(row);
   }
 }
 
@@ -278,6 +371,12 @@ function applyStoredPrefs() {
   orbStyle = stored.orbStyle;
   muted = stored.muted;
   motionPref = stored.motion;
+  localNames = stored.names;
+  callsign = stored.callsign;
+  // Set here rather than at module load: prefs are not read until this runs,
+  // so anywhere earlier the stored callsign is still empty and the random
+  // fallback wins every time.
+  nameInput.value = callsign || randomName();
   sfx.muted = muted;
   sfx.volume = stored.volume;
   sfx.musicVolume = stored.music;
@@ -301,6 +400,8 @@ function persistPrefs() {
     music: sfx.musicVolume,
     haptics: haptics.enabled,
     motion: motionPref,
+    names: localNames,
+    callsign,
   });
 }
 
@@ -349,29 +450,16 @@ musicRange.addEventListener('input', () => {
   persistPrefs();
 });
 
-/** The one line on the title screen that says what Play will actually start. */
-function renderSetupSummary() {
-  const mode = GAME_MODES[modeKey];
-  const size = BOARD_SIZES[boardSizeKey];
-  const seats = mode.solo ? 'solo' : mode.teams ? '2v2' : `${numPlayers} players`;
-  setupSummaryEl.textContent = `${mode.name} · ${size.rows}×${size.cols} · ${seats}`;
-}
-
 function renderProfileStrip() {
   const s = stats.get();
-  levelChipEl.innerHTML = `<span class="lv">${stats.level(s)}</span>level`;
-  const cells: [string, string, boolean][] = [
-    [String(stats.level(s)), 'level', true],
-    [String(s.matches), 'runs', false],
-    [String(s.wins), 'wins', false],
-    [s.bestChain > 0 ? `×${s.bestChain}` : '—', 'best chain', true],
-  ];
-  profileStripEl.innerHTML = cells
-    .map(
-      ([value, key, accent]) =>
-        `<div class="profile-cell${accent ? ' is-accent' : ''}"><span class="pv">${value}</span><span class="pk">${key}</span></div>`
-    )
-    .join('');
+  // Reads as one quiet line rather than a badge: level first, then whatever
+  // there is to show. A brand new player has no runs and no best chain, and
+  // printing "0 runs · 0 wins" is a worse greeting than printing nothing.
+  const parts = [`<span class="lv">level ${stats.level(s)}</span>`];
+  if (s.matches > 0) parts.push(`${s.matches} ${s.matches === 1 ? 'run' : 'runs'}`);
+  if (s.wins > 0) parts.push(`${s.wins} ${s.wins === 1 ? 'win' : 'wins'}`);
+  if (s.bestChain > 0) parts.push(`best ×${s.bestChain}`);
+  levelChipEl.innerHTML = parts.join(' · ');
 }
 
 /** Builds one of the two mode pickers. `onlineOnly` hides modes the relay
@@ -417,9 +505,8 @@ function selectMode(key: GameModeKey) {
   }
   modeBlurbEl.textContent = mode.blurb;
   renderModeGrid(modeGroup, modeKey, false, selectMode);
-  renderSwatches();
+  renderRoster();
   renderModePreview();
-  renderSetupSummary();
   persistPrefs();
 }
 
@@ -454,8 +541,7 @@ function stepPlayers(delta: number) {
   sfx.buttonTap();
   numPlayers = Math.min(6, Math.max(2, numPlayers + delta));
   playersCountEl.textContent = String(numPlayers);
-  renderSwatches();
-  renderSetupSummary();
+  renderRoster();
   persistPrefs();
 }
 
@@ -480,7 +566,6 @@ onSegmentPick(boardSizeGroup, (el) => {
   boardSizeKey = el.dataset.size as BoardSizeKey;
   // The preview is the real lattice, so it has to follow the board size too.
   renderModePreview();
-  renderSetupSummary();
   persistPrefs();
 });
 
@@ -664,14 +749,17 @@ function startLocalRun() {
   showScreen(screenGame);
 }
 
-$('play-btn').addEventListener('click', startLocalRun);
-$('setup-start-btn').addEventListener('click', startLocalRun);
-
-$('setup-btn').addEventListener('click', () => {
+/** Play local opens the setup rather than starting straight away. Choosing to
+ *  play locally is exactly the moment you want to say who is playing and on
+ *  what — asking beforehand, on the title screen, is asking too early. */
+$('play-btn').addEventListener('click', () => {
   sfx.unlock();
   sfx.buttonTap();
+  renderRoster();
   showOverlay(screenSetup);
 });
+
+$('setup-start-btn').addEventListener('click', startLocalRun);
 
 $('setup-close-btn').addEventListener('click', () => {
   sfx.buttonTap();
@@ -705,7 +793,6 @@ function showScreen(el: HTMLElement) {
   sfx.setBedMood(el === screenGame ? 'match' : 'menu');
   if (el === screenMenu) {
     renderProfileStrip();
-    renderSetupSummary();
     void startAttract();
   } else {
     stopAttract();
@@ -1186,7 +1273,7 @@ function buildLocalPlayers(): PlayerConfig[] {
   const players: PlayerConfig[] = [];
   for (let i = 0; i < numPlayers; i++) {
     const theme = themeForSeat(i);
-    const name = mode.solo ? (i === 0 ? 'You' : 'System') : `Player ${i + 1}`;
+    const name = seatName(i);
     players.push({
       id: i,
       name,
@@ -1295,6 +1382,8 @@ async function mountGame(
   syncBoardTurnColor(true);
   animating = false;
   matchStartedAt = Date.now();
+  lastRated = null;
+  renderWinRank();
   telemetry.event('match_start', {
     mode: modeKey,
     size: boardSizeKey,
@@ -1636,7 +1725,7 @@ function launchTraces(winnerCss: string) {
 function randomName() {
   return `Player${Math.floor(100 + Math.random() * 900)}`;
 }
-nameInput.value = randomName();
+
 
 function showOnlineError(message: string) {
   onlineErrorEl.textContent = message;
@@ -1649,6 +1738,7 @@ function clearOnlineError() {
 // ---------- Account, leaderboards, friends ----------
 const screenBoards = $('screen-boards');
 const accountStripEl = $('account-strip');
+const accountOfflineEl = $('account-offline');
 const boardTabs = $('board-tabs');
 const boardRowsEl = $('board-rows');
 const friendToolsEl = $('friend-tools');
@@ -1657,31 +1747,40 @@ const friendMsgEl = $('friend-msg');
 const myCodeEl = $('my-code');
 let boardTab: 'world' | 'friends' = 'world';
 
-/** Name of the tier above this rating, for the "N to Gold" hint. */
-function RANK_NEXT_NAME(rating: number): string {
-  const at = nextRankAt(rating);
-  return at === null ? '' : rankFor(at).name;
-}
-
+/**
+ * The rank card: emblem, tier, record, and how far through the tier you are.
+ *
+ * A rating on its own says nothing — "1043" is not information a player can
+ * act on. The tier gives the number a meaning, the bar gives it a direction,
+ * and the emblem gives it something to want.
+ */
 function renderAccountStrip() {
   const p = account.profile;
+  // An empty panel reads as a missing feature rather than a missing server,
+  // which is exactly the wrong conclusion for a player to draw.
+  accountOfflineEl.classList.toggle('hidden', Boolean(p));
   if (!p) {
     accountStripEl.classList.add('hidden');
     return;
   }
   accountStripEl.classList.remove('hidden');
-  // The rating was always here and always meaningless on its own: "1043" says
-  // nothing about whether you are doing well. The tier is the same number with
-  // a meaning, and the bar says how far through it you are.
+
   const rank = rankFor(p.rating);
   const next = nextRankAt(p.rating);
+  const toNext = next === null ? null : next - p.rating;
+  const progress = Math.round(rankProgress(p.rating) * 100);
+
   accountStripEl.innerHTML =
-    `<span class="brank" style="color:${rank.css}">${rank.name}</span>` +
-    `<span>rating <span class="av">${p.rating}</span></span>` +
-    `<span>${p.wins}W / ${p.losses}L</span>` +
-    `<span style="margin-left:auto">code <span class="av">${escapeHtml(p.friendCode)}</span></span>` +
-    `<div class="rank-bar" title="${next ? `${next - p.rating} to ${RANK_NEXT_NAME(p.rating)}` : 'Top tier'}">` +
-    `<span style="width:${Math.round(rankProgress(p.rating) * 100)}%;background:${rank.css}"></span></div>`;
+    `<div class="rank-emblem">${rankBadgeSvg(rank, 62)}</div>` +
+    `<div class="rank-meta">` +
+    `<div class="rank-name" style="color:${rank.css}">${rank.name}</div>` +
+    `<div class="rank-stats"><span class="av">${p.rating}</span> rating · ${p.wins}W / ${p.losses}L</div>` +
+    `<div class="rank-bar"><span style="width:${progress}%;background:${rank.css}"></span></div>` +
+    `<div class="rank-next">${
+      toNext === null ? 'Top tier' : `${toNext} rating to ${rankFor(next!).name}`
+    }</div>` +
+    `</div>` +
+    `<div class="rank-code">friend code<b>${escapeHtml(p.friendCode)}</b></div>`;
 }
 
 /** Called when the player opens the online screen. Minting the account here
@@ -1692,6 +1791,12 @@ async function ensureAccount() {
     // The relay is the source of truth for the display name; keep the input in
     // step so a rename sticks rather than silently reverting on next join.
     nameInput.value = account.profile.name;
+    // And keep the device's copy in step with it, so the two cannot drift into
+    // disagreeing about who this player is.
+    if (account.profile.name !== callsign) {
+      callsign = account.profile.name;
+      persistPrefs();
+    }
   }
   renderAccountStrip();
 }
@@ -1718,6 +1823,7 @@ async function renderBoards() {
         const rank = rankFor(r.rating);
         return `<div class="board-row${mine ? ' me' : ''}">
           <span class="bpos">${String(i + 1).padStart(2, '0')}</span>
+          <span class="bbadge">${rankBadgeSvg(rank, 26)}</span>
           <span class="bname">${escapeHtml(r.name)}</span>
           <span class="bstat"><span class="brank" style="color:${rank.css}">${rank.name}</span> · ${r.wins}W · ×${r.bestChain}</span>
           <span class="brating">${r.rating}</span>
@@ -1770,11 +1876,61 @@ $('friend-add-btn').addEventListener('click', async () => {
   void renderBoards();
 });
 
-// A rename has to reach the relay, or the ladder keeps showing the old name.
-nameInput.addEventListener('change', () => {
-  const name = nameInput.value.trim();
-  if (!name || !account.isSignedIn) return;
-  void account.rename(name).then(renderAccountStrip);
+/**
+ * Saves the callsign in both places it has to live: on this device, so a
+ * returning player is not handed a fresh random name, and on the relay, so the
+ * ladder stops showing the old one. Silence is the enemy here — a name field
+ * that saves invisibly is one people re-type every visit to be sure.
+ */
+async function saveCallsign(announce: boolean) {
+  const name = nameInput.value.trim().slice(0, MAX_CALLSIGN_LENGTH);
+  if (!name) {
+    nameInput.value = callsign;
+    return;
+  }
+  if (name === callsign && !announce) return;
+  callsign = name;
+  persistPrefs();
+
+  if (!account.isSignedIn) {
+    // No account yet — it will be minted under this name the first time the
+    // player does something online.
+    if (announce) flashNameNote('Saved on this device.');
+    return;
+  }
+  try {
+    await account.rename(name);
+    renderAccountStrip();
+    if (announce) flashNameNote('Saved.');
+  } catch (err) {
+    // The local half already succeeded, so say what is actually true rather
+    // than implying nothing was kept.
+    flashNameNote(err instanceof Error ? err.message : 'Saved here, but the ladder could not be reached.');
+  }
+}
+
+let nameNoteTimer = 0;
+function flashNameNote(message: string) {
+  nameNoteEl.textContent = message;
+  clearTimeout(nameNoteTimer);
+  nameNoteTimer = window.setTimeout(() => {
+    nameNoteEl.textContent = '';
+  }, 2600);
+}
+
+nameSaveBtn.addEventListener('click', () => {
+  sfx.buttonTap();
+  void saveCallsign(true);
+});
+
+// Blurring the field saves too — the button is reassurance, not the only way.
+nameInput.addEventListener('change', () => void saveCallsign(false));
+
+nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    nameInput.blur();
+    void saveCallsign(true);
+  }
 });
 
 // ---------- Quick match ----------
@@ -1907,24 +2063,13 @@ onSegmentPick(quickSizeGroup, (el) => {
 /** The opponent when the current game is against the roster, else null. */
 let activeBot: Bot | null = null;
 
-function renderBotList() {
-  botsListEl.innerHTML = '';
-  const myRating = account.profile?.rating ?? null;
-  // Nearest first, so the top of the list is the fairest fight available.
-  const ordered = [...BOTS].sort(
-    (a, b) => Math.abs(a.rating - (myRating ?? 1000)) - Math.abs(b.rating - (myRating ?? 1000))
-  );
-  for (const bot of ordered) {
-    const row = document.createElement('button');
-    row.className = 'room-row';
-    row.innerHTML =
-      `<span class="rh">${escapeHtml(bot.name)}</span>` +
-      `<span class="bot-tag">BOT</span>` +
-      `<span class="rp">${bot.rating}</span>`;
-    row.addEventListener('click', () => void startBotMatch(bot));
-    botsListEl.appendChild(row);
-  }
-}
+/* The roster used to be browsable here. It is not any more: picking your own
+ * opponent off a list is not matchmaking, and a screen that leads with rows of
+ * bots reads as a game with nobody in it. Quick match still falls back to one
+ * — see offerBotInstead — because the alternative for a player who finds an
+ * empty queue is nothing at all. It still *offers* rather than substituting
+ * silently, so a win is never ambiguous about who it was against.
+ */
 
 async function renderPresence() {
   let live = '—';
@@ -1935,9 +2080,11 @@ async function renderPresence() {
     // Relay unreachable: say so rather than inventing a number.
     live = '—';
   }
+  // The real count, allowed to read zero. Inflating it is worse than useless:
+  // someone shown a busy lobby who then waits without a match learns the
+  // number was invented and stops believing anything else on the screen.
   presenceStripEl.innerHTML =
-    `<span class="dot-live"></span><span><span class="pv">${live}</span> players online</span>` +
-    `<span style="margin-left:auto"><span class="pv">${BOTS.length}</span> bots ready</span>`;
+    `<span class="dot-live"></span><span><span class="pv">${live}</span> players online</span>`;
 }
 
 /**
@@ -2014,7 +2161,7 @@ async function refreshRooms() {
     // Says which of the two it is. "No rooms" and "can't ask about rooms" look
     // identical to a player otherwise, and only one of them is worth waiting out.
     const msg = err instanceof Error ? err.message : 'Could not load the room list.';
-    roomsListEl.innerHTML = `<div class="rooms-empty">${escapeHtml(msg)} Practice opponents below still work.</div>`;
+    roomsListEl.innerHTML = `<div class="rooms-empty">${escapeHtml(msg)} Quick match and private rooms still work.</div>`;
   }
 }
 
@@ -2033,10 +2180,9 @@ $('play-online-btn').addEventListener('click', () => {
   hideQuickFallback();
   void refreshRooms();
   void renderPresence();
-  renderBotList();
   // Minting the guest account on entering the online screen, not at boot: a
   // player who only ever plays locally never gets one.
-  void ensureAccount().then(renderBotList);
+  void ensureAccount();
 });
 $('online-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
@@ -2150,6 +2296,16 @@ function wireNetHandlers(client: NetClient) {
   };
   client.onTurnClock = (_player, ms) => {
     runTurnClock(ms, false);
+  };
+  client.onRated = (results) => {
+    const mine = results.find((r) => r.player === myPlayerId);
+    if (!mine) return;
+    lastRated = { rating: mine.rating, delta: mine.delta };
+    renderWinRank();
+    // Re-read the profile so the panel behind the card agrees with the number
+    // on it — wins and losses moved too, not just the rating. ensure() re-reads
+    // an existing account rather than minting a second one.
+    void account.ensure().then(renderAccountStrip);
   };
   client.onReconnecting = (attempt, max) => {
     // Only the first attempt: the ladder makes up to nine, and nine events per
@@ -2398,7 +2554,6 @@ selectQuickMode(DEFAULT_MODE);
 buildTauntPalette();
 showHowtoPage(0);
 renderProfileStrip();
-renderSetupSummary();
 updateMuteIcon();
 // showScreen does more than reveal a section now — it starts and stops attract
 // mode — so the title screen has to be entered through it like any other.

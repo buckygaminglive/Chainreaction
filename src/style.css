@@ -105,16 +105,25 @@ body.board-showing {
 }
 
 .attract-host.live {
-  opacity: 0.44;
+  opacity: 0.28;
 }
 
+/* The scrim has to cover the whole menu column, not just its middle: the
+   wordmark is the widest thing on the screen and the one that suffers most
+   from a cell burning through behind it. */
 .attract-host::after {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(56% 40% at 50% 46%, rgba(7, 9, 12, 0.95), rgba(7, 9, 12, 0.5) 60%, transparent 86%),
-    linear-gradient(rgba(7, 9, 12, 0.7), transparent 20%, transparent 76%, rgba(7, 9, 12, 0.85));
+    radial-gradient(
+      68% 52% at 50% 50%,
+      rgba(7, 9, 12, 0.97),
+      rgba(7, 9, 12, 0.9) 45%,
+      rgba(7, 9, 12, 0.4) 72%,
+      transparent 96%
+    ),
+    linear-gradient(rgba(7, 9, 12, 0.78), transparent 16%, transparent 80%, rgba(7, 9, 12, 0.9));
 }
 
 .hidden {
@@ -188,10 +197,6 @@ body.board-showing {
   left: 14px;
 }
 
-/* Second corner control, inboard of the first. */
-.corner-btn-2 {
-  right: 62px;
-}
 
 .primary-btn {
   position: relative;
@@ -319,9 +324,11 @@ body.board-showing {
   margin-bottom: 2px;
 }
 
-.title-inner {
-  max-width: 340px;
-  gap: 32px;
+/* Qualified with .menu-inner so it outranks the generic width further down
+   rather than depending on which rule happens to come last. */
+.menu-inner.title-inner {
+  max-width: 320px;
+  gap: 26px;
   justify-content: center;
 }
 
@@ -331,95 +338,30 @@ body.board-showing {
   gap: 9px;
 }
 
-/* The settings that used to fill the title screen, reduced to the one line
-   that says what pressing Play will actually start — and doubling as the way
-   in to change it. */
-.setup-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+/* Every option the same width and the same weight apart from the primary, so
+   the column reads as one list rather than as a button and some links. */
+.title-actions .ghost-btn {
   width: 100%;
-  padding: 13px 15px;
-  text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  padding: 14px 18px;
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
 }
 
-.setup-btn:hover {
-  border-color: var(--accent-line);
-  background: var(--panel-2);
-}
-
-.setup-btn:active {
-  transform: scale(0.99);
-}
-
-.setup-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* The one progression cue the title screen keeps, centred under the menu.
+   The full record lives in the setup sheet — it is a thing to check, not a
+   thing to read before playing — but a returning player should see at a
+   glance that they have one. */
+.profile-line {
+  margin: 0;
+  text-align: center;
   font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.05em;
-  color: var(--text);
-}
-
-.setup-cue {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.setup-cue::after {
-  content: ' \25B8';
-}
-
-.title-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.title-row .ghost-btn {
-  padding: 13px 8px;
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-}
-
-/* The one progression cue the title screen keeps. The full record moved into
-   the setup sheet — it is a thing to check, not a thing to read before
-   playing — but a returning player should still see they have one. */
-.level-chip {
-  position: absolute;
-  top: max(14px, env(safe-area-inset-top));
-  left: 14px;
-  z-index: 5;
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  height: 40px;
-  padding: 0 13px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--hairline);
-  background: var(--panel);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.18em;
+  font-size: 10px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
 
-.level-chip .lv {
-  font-size: 14px;
-  letter-spacing: 0.02em;
+.profile-line .lv {
   color: var(--accent);
 }
 
@@ -440,12 +382,90 @@ body.board-showing {
   gap: 8px;
 }
 
+/* The primary takes most of the row and a shade less tracking: "Start
+   reaction" is two words that must not wrap onto two lines. */
 .setup-actions .primary-btn {
-  flex: 2;
+  flex: 3;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
 }
 
 .setup-actions .ghost-btn {
   flex: 1;
+}
+
+/* ---------- Local roster ---------- */
+/* One row per seat: the emission it plays as, and the name it plays under.
+   Naming the seats is what turns pass-and-play from "Player 2 wins" into
+   something with the people in the room in it. */
+.roster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  transition: border-color 0.15s ease;
+}
+
+.roster-row:focus-within {
+  border-color: var(--accent-line);
+}
+
+.roster-dot {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Deliberately not styled as a text box until it is in use: a column of
+   boxes reads as a form to fill in, and most people are happy being
+   Player 2. */
+.roster-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 2px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.roster-name::placeholder {
+  color: var(--text-faint);
+}
+
+.roster-name:focus {
+  outline: none;
+}
+
+.roster-name:disabled {
+  color: var(--text-dim);
+  -webkit-text-fill-color: var(--text-dim);
+  opacity: 1;
+}
+
+.roster-team {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
 }
 
 /* ---------- Settings ---------- */
@@ -1718,6 +1738,69 @@ body.board-showing {
   color: var(--text-dim);
 }
 
+/* ---------- Ranked readout on the result card ---------- */
+.win-rank {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.win-rank-badge {
+  flex-shrink: 0;
+  display: flex;
+}
+
+.win-rank-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.win-rank-name {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.win-rank-rating {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.win-rank-delta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.win-rank-delta.is-up {
+  color: #5df08a;
+}
+
+.win-rank-delta.is-down {
+  color: var(--danger);
+}
+
+.win-rank-delta.is-flat {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .win-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1904,7 +1987,7 @@ body.board-showing {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 10px 12px;
   margin-top: 10px;
   padding: 9px 12px;
   border: 1px solid var(--hairline);
@@ -1923,6 +2006,76 @@ body.board-showing {
   font-size: 10px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+/* ---------- Rank card ---------- */
+.rank-emblem {
+  flex-shrink: 0;
+  display: flex;
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.6));
+}
+
+.rank-badge {
+  display: block;
+}
+
+.rank-meta {
+  flex: 1;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rank-name {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rank-stats {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rank-next {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rank-code {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rank-code b {
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+}
+
+.bbadge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 /* How far through the tier the rating sits. The bar is the part that makes a
@@ -2107,18 +2260,6 @@ body.board-showing {
 
 .presence-strip .pv {
   color: var(--text-dim);
-}
-
-/* Marks a row as an AI opponent. Never omitted — a bot that reads as a person
-   is the whole thing this is meant to avoid. */
-.bot-tag {
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.16em;
-  padding: 2px 5px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 2px;
-  color: var(--text-faint);
 }
 
 .rooms-list {
@@ -2364,6 +2505,16 @@ body.board-showing {
   }
 }
 
+/* The tagline is one line or it is nothing: wrapped across two it stops
+   reading as a strapline and starts reading as a sentence that ran out of
+   room. Narrow phones get it a shade tighter rather than broken. */
+@media (max-width: 360px) {
+  .tagline {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+  }
+}
+
 @media (min-width: 700px) {
   .menu-inner {
     max-width: 420px;
@@ -2380,9 +2531,9 @@ body.board-showing {
    column and two thirds of the screen left empty; the attract board is what
    fills it now, so the hero only has to grow into it. */
 @media (min-width: 900px) and (min-height: 620px) {
-  .title-inner {
-    max-width: 400px;
-    gap: 40px;
+  .menu-inner.title-inner {
+    max-width: 360px;
+    gap: 34px;
   }
 
   .title-inner .logo {
@@ -2395,7 +2546,7 @@ body.board-showing {
   }
 
   .attract-host.live {
-    opacity: 0.5;
+    opacity: 0.42;
   }
 }
 

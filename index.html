@@ -50,8 +50,8 @@
            lives in the setup sheet below, defaulted to whatever was played
            last, so arriving at the game is not arriving at a form. -->
       <section id="screen-menu" class="screen">
-        <div id="level-chip" class="level-chip"></div>
-        <button id="settings-btn" class="icon-btn corner-btn corner-btn-2" aria-label="Settings">⚙</button>
+        <!-- Mute keeps a corner because it is the one control worth reaching
+             mid-thought. Everything else is in the stack. -->
         <button id="mute-btn-menu" class="icon-btn corner-btn" aria-label="Toggle sound">🔊</button>
 
         <div class="menu-inner title-inner">
@@ -76,19 +76,18 @@
             <p class="tagline">critical mass · propagation · capture</p>
           </div>
 
-          <div class="title-actions">
-            <button id="play-btn" class="primary-btn">Play</button>
+          <!-- One centred column, every option the same width. Play local
+               opens the match setup rather than starting immediately: the
+               settings are the first thing you want when you have chosen to
+               play locally, not something to have configured beforehand. -->
+          <nav class="title-actions" aria-label="Main menu">
+            <button id="play-btn" class="primary-btn" aria-haspopup="dialog">Play local</button>
+            <button id="play-online-btn" class="ghost-btn wide-btn">Play online</button>
+            <button id="settings-btn" class="ghost-btn wide-btn">Options</button>
+            <button id="howto-btn" class="ghost-btn wide-btn">How to play</button>
+          </nav>
 
-            <button id="setup-btn" class="setup-btn" aria-haspopup="dialog">
-              <span id="setup-summary" class="setup-summary">Classic · 11×6 · 2 players</span>
-              <span class="setup-cue" aria-hidden="true">setup</span>
-            </button>
-
-            <div class="title-row">
-              <button id="play-online-btn" class="ghost-btn">Play online</button>
-              <button id="howto-btn" class="ghost-btn">How to play</button>
-            </div>
-          </div>
+          <p id="level-chip" class="profile-line"></p>
         </div>
       </section>
 
@@ -105,9 +104,9 @@
             </div>
 
             <div class="field">
-              <div class="field-label">Ambience <span class="field-unit" id="music-value">45%</span></div>
-              <input id="music-range" class="range" type="range" min="0" max="100" step="1" value="45" aria-label="Ambience level" />
-              <p class="field-note">A low bed under the board. Zero switches it off rather than leaving it running silently.</p>
+              <div class="field-label">Music <span class="field-unit" id="music-value">45%</span></div>
+              <input id="music-range" class="range" type="range" min="0" max="100" step="1" value="45" aria-label="Music volume" />
+              <p class="field-note">Plays under the board, quieter mid-match. Zero switches it off rather than leaving it running silently.</p>
             </div>
 
             <div class="field">
@@ -150,11 +149,9 @@
 
       <!-- MATCH SETUP — the old menu, one level down. -->
       <section id="screen-setup" class="screen hidden overlay">
-        <div class="howto-card setup-card" role="dialog" aria-label="Match setup">
-          <div class="win-eyebrow">match setup</div>
-          <h2>Configure the run</h2>
-
-          <div id="profile-strip" class="profile-strip"></div>
+        <div class="howto-card setup-card" role="dialog" aria-label="Local match setup">
+          <div class="win-eyebrow">pass and play</div>
+          <h2>Play local</h2>
 
           <div class="panel">
             <div class="field">
@@ -175,12 +172,13 @@
             </div>
 
             <div class="field" id="players-field">
-              <div class="field-label">Reagents <span class="field-unit">players</span></div>
+              <div class="field-label">Players <span class="field-unit">tap a name to change it</span></div>
               <div class="stepper">
                 <button id="players-minus" class="stepper-btn" aria-label="Fewer players">−</button>
                 <div id="players-count" class="stepper-value">2</div>
                 <button id="players-plus" class="stepper-btn" aria-label="More players">+</button>
               </div>
+              <div id="player-roster" class="roster"></div>
               <p id="players-note" class="field-note hidden"></p>
             </div>
 
@@ -201,15 +199,11 @@
               </div>
             </div>
 
-            <div class="field">
-              <div class="field-label">Emission</div>
-              <div id="player-swatches" class="swatch-row"></div>
-            </div>
           </div>
 
           <div class="setup-actions">
             <button id="setup-start-btn" class="primary-btn">Start reaction</button>
-            <button id="setup-close-btn" class="ghost-btn">Done</button>
+            <button id="setup-close-btn" class="ghost-btn">Back</button>
           </div>
         </div>
       </section>
@@ -223,18 +217,26 @@
             <p class="tagline">private room · server authoritative</p>
           </div>
 
+          <!-- PROFILE — the name and record this device plays under. -->
           <div class="panel">
             <div class="field">
-              <div class="field-label">Callsign</div>
-              <input id="name-input" class="text-input" maxlength="16" placeholder="Player" />
+              <div class="field-label">Profile <span class="field-unit">saved on this device</span></div>
+              <div class="join-row">
+                <input id="name-input" class="text-input" maxlength="16" placeholder="Your name" autocomplete="off" />
+                <button id="name-save-btn" class="ghost-btn small-btn">SAVE</button>
+              </div>
+              <p id="name-note" class="field-note"></p>
             </div>
             <div id="account-strip" class="account-strip hidden"></div>
+            <p id="account-offline" class="field-note hidden">
+              Offline — your rank and friend code arrive once the server is reachable.
+            </p>
             <button id="leaderboard-btn" class="ghost-btn wide-btn">Leaderboards &amp; friends</button>
           </div>
 
           <div class="panel">
             <div class="field">
-              <div class="field-label">Quick match <span class="field-unit">find anyone</span></div>
+              <div class="field-label">Ranked match <span class="field-unit">find anyone</span></div>
               <div id="quick-mode-group" class="mode-grid"></div>
               <div id="quick-size-group" class="segmented" style="margin-top:8px">
                 <button class="segment" data-size="small">9×5</button>
@@ -250,30 +252,23 @@
             </div>
             <div id="quick-fallback" class="quick-fallback hidden">
               <p id="quick-fallback-msg" class="field-note"></p>
-              <button id="quick-fallback-btn" class="ghost-btn wide-btn">Play a bot instead</button>
+              <button id="quick-fallback-btn" class="ghost-btn wide-btn">Play a practice opponent</button>
             </div>
+            <p class="field-note">Matched on mode and board size against whoever is queued. These are the only games that move your rank.</p>
             <div id="presence-strip" class="presence-strip"></div>
           </div>
 
+          <!-- PRIVATE ROOM — the other way in, given the same weight as quick
+               match rather than looking like an afterthought below it. -->
           <div class="panel">
             <div class="field">
-              <div class="field-label">
-                Practice opponents
-                <span class="field-unit">play instantly</span>
-              </div>
-              <div id="bots-list" class="rooms-list"></div>
-              <p class="field-note">Bots play the real game and never affect your rating. Quick match falls back to one if nobody is around.</p>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="field">
-              <div class="field-label">Play with a friend</div>
-              <button id="create-room-btn" class="ghost-btn wide-btn">Create a private room</button>
-              <div class="join-row" style="margin-top:8px">
+              <div class="field-label">Play with a friend <span class="field-unit">private room</span></div>
+              <button id="create-room-btn" class="primary-btn">Create a private room</button>
+              <div class="join-row" style="margin-top:10px">
                 <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
                 <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
               </div>
+              <p class="field-note">Private rooms never appear in a public list and never affect anyone's rating.</p>
             </div>
           </div>
 
@@ -390,6 +385,7 @@
               <span id="win-verb" class="win-verb">wins</span>
             </div>
           </div>
+          <div id="win-rank" class="win-rank hidden"></div>
           <div id="win-metrics" class="win-metrics"></div>
           <div id="win-leaderboard" class="win-leaderboard"></div>
           <p id="rematch-state" class="rematch-state hidden"></p>

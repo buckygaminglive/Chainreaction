@@ -28,7 +28,22 @@ export interface Prefs {
   music: number;
   haptics: boolean;
   motion: MotionPref;
+  /** Names for local seats, indexed by seat. Sparse and short by design — an
+   *  empty entry means "no name given", which falls back to Player N rather
+   *  than storing the fallback and pretending it was a choice. */
+  names: string[];
+  /** The name this device plays online under. Kept here as well as on the
+   *  relay so it survives before an account exists, and so a returning player
+   *  is not handed a fresh random name on every visit. */
+  callsign: string;
 }
+
+/** Long enough for a real name, short enough to fit a pill on the HUD. */
+export const MAX_NAME_LENGTH = 12;
+/** Online names get a little more room than local seats: they sit on a
+ *  leaderboard rather than in a HUD pill. */
+export const MAX_CALLSIGN_LENGTH = 16;
+const MAX_SEATS = 6;
 
 const STORAGE_KEY = 'reacton.prefs.v1';
 
@@ -44,6 +59,8 @@ const DEFAULTS: Prefs = {
   music: 0.45,
   haptics: true,
   motion: 'auto',
+  names: [],
+  callsign: '',
 };
 
 const BOARD_SIZE_KEYS: BoardSizeKey[] = ['small', 'medium', 'large'];
@@ -53,6 +70,20 @@ const MOTION_KEYS: MotionPref[] = ['auto', 'full', 'reduced'];
 function level(value: unknown, fallback: number) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+}
+
+/** Names come back from storage as whatever was there last time, which on a
+ *  shared device is whatever somebody typed — so they are length-capped and
+ *  stripped of control characters here rather than trusted. */
+function readNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, MAX_SEATS)
+    .map((entry) =>
+      typeof entry === 'string'
+        ? entry.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, MAX_NAME_LENGTH)
+        : ''
+    );
 }
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
@@ -75,6 +106,11 @@ function read(): Prefs {
       music: level(parsed.music, DEFAULTS.music),
       haptics: parsed.haptics !== false,
       motion: pick(parsed.motion, MOTION_KEYS, DEFAULTS.motion),
+      names: readNames(parsed.names),
+      callsign:
+        typeof parsed.callsign === 'string'
+          ? parsed.callsign.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, MAX_CALLSIGN_LENGTH)
+          : '',
     };
   } catch {
     // Private-browsing modes and disabled storage both throw here. Defaults
