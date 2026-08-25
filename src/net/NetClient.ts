@@ -404,8 +404,8 @@ export class NetClient {
     }
   }
 
-  startGame(boardSize: BoardSizeKey, orbStyle: OrbStyleKey, mode: GameModeKey) {
-    this.send({ type: 'startGame', boardSize, orbStyle, mode });
+  startGame(boardSize: BoardSizeKey, orbStyle: OrbStyleKey, mode: GameModeKey, landscape: boolean) {
+    this.send({ type: 'startGame', boardSize, orbStyle, mode, landscape });
   }
 
   /** False when the socket wasn't up, so the caller can leave input unlocked. */
@@ -419,7 +419,12 @@ export class NetClient {
 
   /** Host-only. Keeps the relay's idea of the lobby (and therefore the public
    *  listing) in step with what the host has selected. */
-  setLobby(settings: { isPublic?: boolean; mode?: GameModeKey; boardSize?: BoardSizeKey }) {
+  setLobby(settings: {
+    isPublic?: boolean;
+    mode?: GameModeKey;
+    boardSize?: BoardSizeKey;
+    landscape?: boolean;
+  }) {
     this.send({ type: 'setLobby', ...settings });
   }
 

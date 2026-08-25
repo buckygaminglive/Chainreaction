@@ -2576,3 +2576,46 @@ body.board-showing {
 .reduce-motion .confetti-layer {
   display: none;
 }
+
+/* ---------- Desktop ---------- */
+/* A monitor is not a big phone. The setup sheet is a column of short fields,
+   which on a wide screen becomes a tall thin strip that scrolls for no reason
+   — so above 860px the panel goes two-up and the whole sheet fits at once. */
+@media (min-width: 860px) and (min-height: 640px) {
+  .setup-card {
+    max-width: 720px;
+  }
+
+  .setup-card .panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 22px;
+    align-items: start;
+  }
+
+  /* The mode picker keeps the full width: seven chips wrapped into a narrow
+     column read as a list of leftovers rather than a set of choices. */
+  .setup-card .panel > .field:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .settings-card,
+  .howto-paged {
+    max-width: 460px;
+  }
+}
+
+/* Pointer-driven only. A hover state is worth having where a cursor exists and
+   is actively wrong on touch, where it sticks to whatever was tapped last —
+   `hover: hover` is the only reliable way to ask. */
+@media (hover: hover) and (pointer: fine) {
+  .board-row:hover,
+  .room-row:hover {
+    border-color: var(--accent-line);
+    background: var(--panel-2);
+  }
+
+  .roster-row:hover {
+    border-color: var(--hairline-strong);
+  }
+}

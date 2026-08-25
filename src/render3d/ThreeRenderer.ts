@@ -138,7 +138,16 @@ export class ThreeRenderer {
   private scratchRel = new Vector3();
 
   private onCellTap: (row: number, col: number) => void = () => {};
+  /** The cell under the cursor, or null. Mouse only — a finger has no hover
+   *  state, and faking one would leave a highlight stranded on the last cell
+   *  tapped. */
+  private hovered: { row: number; col: number } | null = null;
+  /** Asked before lighting a cell: hovering somewhere you cannot play is a
+   *  worse signal than no hover at all. */
+  private canHover: (row: number, col: number) => boolean = () => false;
   private onPointerDownBound = (e: PointerEvent) => this.handlePointerDown(e);
+  private onPointerMoveBound = (e: PointerEvent) => this.handlePointerMove(e);
+  private onPointerLeaveBound = () => this.setHover(null);
   private onContextLostBound = (e: Event) => this.handleContextLost(e);
   private onContextRestoredBound = () => this.handleContextRestored();
 
@@ -151,6 +160,12 @@ export class ThreeRenderer {
 
   setCellTapHandler(fn: (row: number, col: number) => void) {
     this.onCellTap = fn;
+  }
+
+  /** Lets the caller decide which cells are worth lighting under the cursor —
+   *  the renderer knows the board, not whose turn it is. */
+  setHoverTest(fn: (row: number, col: number) => boolean) {
+    this.canHover = fn;
   }
 
   setOrbStyle(style: OrbStyle) {
@@ -192,6 +207,8 @@ export class ThreeRenderer {
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.touchAction = 'none';
     renderer.domElement.addEventListener('pointerdown', this.onPointerDownBound);
+    renderer.domElement.addEventListener('pointermove', this.onPointerMoveBound);
+    renderer.domElement.addEventListener('pointerleave', this.onPointerLeaveBound);
     renderer.domElement.addEventListener('webglcontextlost', this.onContextLostBound, false);
     renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestoredBound, false);
     return renderer;
@@ -222,6 +239,8 @@ export class ThreeRenderer {
     // never lost — only the GPU-side resources — so nothing needs rebuilding.
     const old = this.renderer;
     old.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
+    old.domElement.removeEventListener('pointermove', this.onPointerMoveBound);
+    old.domElement.removeEventListener('pointerleave', this.onPointerLeaveBound);
     old.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
     old.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
     this.host.removeChild(old.domElement);
@@ -488,6 +507,12 @@ export class ThreeRenderer {
     const w = this.host.clientWidth;
     const h = this.host.clientHeight;
     if (w < 10 || h < 10) return;
+    // Re-applied on every layout, not just at construction. The device pixel
+    // ratio is not a constant: it changes when the window moves between a
+    // HiDPI and a standard monitor, and when the browser zooms. A renderer
+    // holding the ratio it saw at startup draws at the wrong scale for the
+    // buffer it is drawing into.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h, false);
 
     const rows = this.engine.rows;
@@ -703,13 +728,51 @@ export class ThreeRenderer {
     }
   }
 
-  private handlePointerDown(e: PointerEvent) {
+  /** Which cell is under this pointer event, or null. */
+  private cellAt(e: PointerEvent): { row: number; col: number } | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -(((e.clientY - rect.top) / rect.height) * 2 - 1));
     this.raycaster.setFromCamera(ndc, this.camera);
     const hits = this.raycaster.intersectObjects(this.tileMeshes, false);
-    if (!hits.length) return;
-    const { row, col } = hits[0].object.userData as { row: number; col: number };
+    if (!hits.length) return null;
+    return hits[0].object.userData as { row: number; col: number };
+  }
+
+  /**
+   * Lifts the cell under the cursor.
+   *
+   * Mouse only: `pointerType` is checked because a touch device fires
+   * pointermove on the way to a tap, which would leave a highlight sitting on
+   * whatever was last touched with nothing hovering it.
+   */
+  private handlePointerMove(e: PointerEvent) {
+    if (e.pointerType === 'touch') return;
+    const cell = this.cellAt(e);
+    this.setHover(cell && this.canHover(cell.row, cell.col) ? cell : null);
+  }
+
+  private setHover(next: { row: number; col: number } | null) {
+    const same =
+      (!next && !this.hovered) ||
+      (next && this.hovered && next.row === this.hovered.row && next.col === this.hovered.col);
+    if (same) return;
+
+    if (this.hovered) {
+      const prev = this.cells[this.hovered.row]?.[this.hovered.col];
+      if (prev) gsap.to(prev.tile.position, { y: TILE_HEIGHT / 2, duration: 0.16, ease: 'power2.out' });
+    }
+    this.hovered = next;
+    this.renderer.domElement.style.cursor = next ? 'pointer' : 'default';
+    if (next) {
+      const view = this.cells[next.row]?.[next.col];
+      if (view) gsap.to(view.tile.position, { y: TILE_HEIGHT / 2 + 0.09, duration: 0.16, ease: 'power2.out' });
+    }
+  }
+
+  private handlePointerDown(e: PointerEvent) {
+    const cell = this.cellAt(e);
+    if (!cell) return;
+    const { row, col } = cell;
     const view = this.cells[row][col];
     gsap.to(view.tile.position, {
       y: TILE_HEIGHT / 2 - 0.03,
@@ -998,6 +1061,8 @@ export class ThreeRenderer {
     this.ro?.disconnect();
     cancelAnimationFrame(this.raf);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
+    this.renderer.domElement.removeEventListener('pointermove', this.onPointerMoveBound);
+    this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeaveBound);
     this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
     this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
     for (const part of this.substrateParts) {

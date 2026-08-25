@@ -43,6 +43,8 @@ export interface PublicRoom {
   host: string;
   mode: GameModeKey;
   boardSize: BoardSizeKey;
+  /** True when the lattice is turned on its side — see `landscape` below. */
+  landscape?: boolean;
   players: number;
   maxPlayers: number;
 }
@@ -50,7 +52,18 @@ export interface PublicRoom {
 export type ClientMsg =
   // `mode` is optional on the wire only so a relay running ahead of the
   // deployed client still understands it. New clients always send it.
-  | { type: 'startGame'; boardSize: BoardSizeKey; orbStyle: OrbStyleKey; mode?: GameModeKey }
+  /** `landscape` turns the lattice on its side: the same three sizes, rows and
+   *  columns swapped. Every board was portrait, which letterboxes badly on a
+   *  monitor — the board is the whole screen, so its aspect has to be able to
+   *  match the screen's. Optional on the wire so an older relay simply keeps
+   *  serving portrait rather than rejecting the message. */
+  | {
+      type: 'startGame';
+      boardSize: BoardSizeKey;
+      orbStyle: OrbStyleKey;
+      mode?: GameModeKey;
+      landscape?: boolean;
+    }
   | { type: 'move'; row: number; col: number }
   | { type: 'pickColor'; colorIndex: number }
   /** Legacy immediate restart. Current clients send `rematchVote`; the relay
@@ -63,7 +76,13 @@ export type ClientMsg =
   /** Host-only lobby settings. The relay needs these before the game starts,
    *  not just at kick-off, or a public listing advertises whatever the room
    *  defaulted to rather than what the host actually picked. */
-  | { type: 'setLobby'; isPublic?: boolean; mode?: GameModeKey; boardSize?: BoardSizeKey }
+  | {
+      type: 'setLobby';
+      isPublic?: boolean;
+      mode?: GameModeKey;
+      boardSize?: BoardSizeKey;
+      landscape?: boolean;
+    }
   /** Attaches a verified account to this seat.
    *
    *  Sent as a message rather than as a query parameter on the socket URL.

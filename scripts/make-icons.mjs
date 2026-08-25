@@ -29,6 +29,8 @@ const CORE_HOT = [0xe8, 0xfb, 0xff];
 const CORE_MID = [0x6e, 0xe6, 0xff];
 const CORE_COLD = [0x12, 0xa8, 0xd4];
 const TEXT = [0xe8, 0xed, 0xf4];
+const CELL = [0x16, 0x1b, 0x23];
+const RED = [0xff, 0x33, 0x55];
 
 // ---------- surface ----------
 function surface(w, h, fill) {
@@ -223,6 +225,72 @@ function drawWordmark(s, text, x, y, capHeight, weight, tracking, colour, alpha 
 const wordmarkWidth = (text, capHeight, tracking) =>
   text.length * capHeight * 0.74 + (text.length - 1) * tracking;
 
+// ---------- board motif ----------
+/**
+ * A fragment of the real lattice: cells, a cell going critical, and the four
+ * particles it fires. Showing the mechanic rather than decorating around it —
+ * a store listing is the one place a player decides whether they understand
+ * the game, and a grid mid-cascade explains it faster than any strapline.
+ */
+function drawBoard(s, originX, originY, cols, rows, cell, gap, alpha) {
+  const at = (col, row) => [originX + col * (cell + gap), originY + row * (cell + gap)];
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const [x, y] = at(col, row);
+      paint(s, roundRect(x + cell / 2, y + cell / 2, cell / 2, cell / 2, cell * 0.2), CELL, alpha);
+    }
+  }
+
+  // The cell about to go, dead centre of the fragment, and its four targets.
+  const midC = Math.floor(cols / 2);
+  const midR = Math.floor(rows / 2);
+  const [cx, cy] = at(midC, midR);
+  const centre = [cx + cell / 2, cy + cell / 2];
+
+  const targets = [
+    [midC, midR - 1],
+    [midC, midR + 1],
+    [midC - 1, midR],
+    [midC + 1, midR],
+  ].filter(([col, row]) => col >= 0 && col < cols && row >= 0 && row < rows);
+
+  // Emission traces, drawn under the orbs so they read as coming from beneath.
+  for (const [col, row] of targets) {
+    const [tx, ty] = at(col, row);
+    paint(
+      s,
+      stroke([centre, [tx + cell / 2, ty + cell / 2]], 2),
+      ACCENT,
+      alpha * 2.6
+    );
+  }
+
+  // A couple of held cells either side, so the board reads as contested.
+  const held = [
+    [0, 0, ACCENT],
+    [cols - 1, 0, RED],
+    [0, rows - 1, RED],
+    [cols - 1, rows - 1, ACCENT],
+  ];
+  for (const [col, row, colour] of held) {
+    if (col < 0 || row < 0 || col >= cols || row >= rows) continue;
+    const [x, y] = at(col, row);
+    paint(s, circle(x + cell / 2, y + cell / 2, cell * 0.2), colour, alpha * 3.2);
+  }
+
+  for (const [col, row] of targets) {
+    const [x, y] = at(col, row);
+    paint(s, circle(x + cell / 2, y + cell / 2, cell * 0.17), ACCENT, alpha * 3.6);
+  }
+
+  // The critical cell itself, brightest thing in the fragment.
+  paint(s, circle(centre[0], centre[1], cell * 0.26), null, 1, (x, y) => {
+    const t = Math.min(1, Math.hypot(x - centre[0] + cell * 0.06, y - centre[1] + cell * 0.06) / (cell * 0.36));
+    return t < 0.4 ? mix(CORE_HOT, CORE_MID, t / 0.4) : mix(CORE_MID, CORE_COLD, (t - 0.4) / 0.6);
+  });
+}
+
 // ---------- PNG ----------
 function writePng(path, s) {
   const { w, h, data } = s;
@@ -340,4 +408,47 @@ for (const size of [192, 512]) {
   }
 
   writePng(join(OUT, 'og-card.png'), s);
+}
+
+// Play Store feature graphic. 1024x500, and cropped differently on every
+// surface it appears on, so nothing that matters goes near an edge.
+{
+  const w = 1024;
+  const h = 500;
+  const s = surface(w, h, GROUND);
+
+  for (let x = 0; x < w; x += 34) paint(s, stroke([[x, 0], [x, h]], 1), [255, 255, 255], 0.03);
+  for (let y = 0; y < h; y += 34) paint(s, stroke([[0, y], [w, y]], 1), [255, 255, 255], 0.03);
+
+  // The lattice sits in the right quarter, clear of the wordmark. It is
+  // ground, not subject: overlapping the type would cost the one word that
+  // has to survive being scaled down to a thumbnail.
+  drawBoard(s, 776, 132, 3, 4, 52, 9, 0.13);
+
+  const glowX = 190;
+  const glowY = h / 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const t = Math.hypot(x - glowX, y - glowY) / 400;
+      if (t < 1) blend(s, x, y, ACCENT, (1 - t) ** 3 * 0.15);
+    }
+  }
+
+  drawMark(s, glowX, glowY, 180, { plate: false });
+
+  const cap = 56;
+  const tracking = 20;
+  const textX = 320;
+  const width = wordmarkWidth('REACTON', cap, tracking);
+  drawWordmark(s, 'REACTON', textX, glowY - cap / 2 - 20, cap, 3.6, tracking, TEXT);
+
+  paint(s, stroke([[textX, glowY + cap / 2 + 14], [textX + width, glowY + cap / 2 + 14]], 1.5), ACCENT, 0.35);
+  const dotY = glowY + cap / 2 + 44;
+  for (let i = 0; i < 3; i++) {
+    const bx = textX + i * 42;
+    paint(s, circle(bx, dotY, 4.5), ACCENT, 0.85 - i * 0.2);
+    if (i < 2) paint(s, stroke([[bx + 8, dotY], [bx + 34, dotY]], 1.5), ACCENT, 0.3);
+  }
+
+  writePng(join(OUT, 'feature-graphic.png'), s);
 }

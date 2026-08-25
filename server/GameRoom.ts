@@ -62,6 +62,7 @@ interface Meta {
   nextPlayerId: number;
   hostId: number | null;
   boardSize: BoardSizeKey;
+  landscape: boolean;
   orbStyle: OrbStyleKey;
   mode: GameModeKey;
   seed: number;
@@ -88,6 +89,13 @@ const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
 
 const MAX_PLAYERS = 6;
 
+/** Rows and columns swapped when the board is played on its side. Kept as a
+ *  function rather than a second size table so there is still exactly one
+ *  definition of how big each board is. */
+function orient(size: { rows: number; cols: number }, landscape: boolean) {
+  return landscape ? { rows: size.cols, cols: size.rows } : size;
+}
+
 /** Grace on top of the displayed turn clock before the relay plays the move
  *  itself. The client's countdown starts when the message lands, but the board
  *  is still animating the previous cascade at that point — without a little
@@ -111,6 +119,8 @@ export class GameRoom extends DurableObject<Env> {
   private nextPlayerId = 0;
   private hostId: number | null = null;
   private boardSize: BoardSizeKey = 'medium';
+  /** Rows and columns swapped, for a screen that is wider than it is tall. */
+  private landscape = false;
   private orbStyle: OrbStyleKey = 'emoji';
   private mode: GameModeKey = 'classic';
   private seed = 0;
@@ -144,6 +154,7 @@ export class GameRoom extends DurableObject<Env> {
         this.nextPlayerId = meta.nextPlayerId;
         this.hostId = meta.hostId;
         this.boardSize = meta.boardSize;
+        this.landscape = meta.landscape ?? false;
         this.orbStyle = meta.orbStyle;
         this.mode = meta.mode ?? 'classic';
         this.seed = meta.seed ?? 0;
@@ -296,7 +307,7 @@ export class GameRoom extends DurableObject<Env> {
       // `mode` is newer than the deployed client. Treating its absence as
       // Classic is what lets the relay ship before the client without
       // breaking whoever is mid-session on the old build.
-      await this.handleStart(ws, att, msg.boardSize, msg.orbStyle, msg.mode ?? 'classic');
+      await this.handleStart(ws, att, msg.boardSize, msg.orbStyle, msg.mode ?? 'classic', msg.landscape === true);
     } else if (msg.type === 'move') {
       await this.handleMove(ws, att, msg.row, msg.col);
     } else if (msg.type === 'restart' || msg.type === 'rematchVote') {
@@ -311,6 +322,7 @@ export class GameRoom extends DurableObject<Env> {
       // Narrowed against the mode table, since this arrives from a client.
       if (msg.mode && GAME_MODES[msg.mode]?.online) this.mode = msg.mode;
       if (msg.boardSize && BOARD_SIZES[msg.boardSize]) this.boardSize = msg.boardSize;
+      if (msg.landscape !== undefined) this.landscape = msg.landscape === true;
       await this.persistMeta();
       this.broadcastPlayers();
     } else if (msg.type === 'pickColor') {
@@ -392,7 +404,8 @@ export class GameRoom extends DurableObject<Env> {
     att: Attachment,
     boardSize: BoardSizeKey,
     orbStyle: OrbStyleKey,
-    mode: GameModeKey
+    mode: GameModeKey,
+    landscape: boolean
   ) {
     if (att.id !== this.hostId || this.started) return;
 
@@ -414,7 +427,9 @@ export class GameRoom extends DurableObject<Env> {
       return;
     }
 
-    const size = BOARD_SIZES[boardSize];
+    // The dimensions the whole room plays on, decided here and broadcast:
+    // the host's screen shape settles it, not each client's.
+    const size = orient(BOARD_SIZES[boardSize], landscape);
     const ordered = sockets
       .map((s) => s.deserializeAttachment() as Attachment)
       .sort((a, b) => a.id - b.id);
@@ -439,6 +454,7 @@ export class GameRoom extends DurableObject<Env> {
     });
 
     this.boardSize = boardSize;
+    this.landscape = landscape;
     this.orbStyle = orbStyle;
     this.mode = mode;
     await this.beginGame(size.rows, size.cols, players);
@@ -908,6 +924,7 @@ export class GameRoom extends DurableObject<Env> {
       nextPlayerId: this.nextPlayerId,
       hostId: this.hostId,
       boardSize: this.boardSize,
+      landscape: this.landscape,
       orbStyle: this.orbStyle,
       mode: this.mode,
       seed: this.seed,

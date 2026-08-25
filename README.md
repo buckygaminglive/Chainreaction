@@ -326,6 +326,38 @@ is how audio breaks in ways that are very hard to trace.
 
 Packaging steps live in [ANDROID.md](ANDROID.md).
 
+### The board has an orientation
+
+Every lattice used to be portrait, which on a monitor letterboxes into a strip
+down the middle with two thirds of the display doing nothing. The board *is*
+the screen here, so its aspect has to be able to match the screen's.
+
+`landscape` swaps rows and columns — the same three sizes, turned on their
+side. Kept as a transform rather than a second size table, so there is still
+one definition of how big each board is, and the relay applies the identical
+transform so client and server cannot disagree about the shape.
+
+It defaults from the shape of the screen and can be overridden per player.
+The threshold is 1.15 rather than 1.0 so a nearly square window does not flip
+back and forth on a few pixels of resize. Online, the host's choice settles it
+for the room: a board cannot be tall for one player and wide for another.
+
+The size controls relabel themselves — showing "11×6" next to a Wide selection
+would be a plain lie about what Start produces.
+
+### Desktop
+
+The setup sheet goes two-column above 860px. It is a stack of short fields,
+which on a wide screen is a tall thin strip that scrolls for no reason; the
+mode picker keeps the full width, because seven chips wrapped into a narrow
+column read as leftovers rather than as a set of choices.
+
+Cells lift under the cursor, gated on whether the move is actually available —
+not just legal, but yours to make. A cell that lifts during the AI's turn is a
+promise the game does not keep. Hover is `pointerType`-gated and behind
+`(hover: hover)`, because a finger has no hover state and faking one strands
+the highlight on whatever was tapped last.
+
 ### Online features
 
 **Quick match** brokers a room code and nothing else; the caller then joins over
@@ -588,8 +620,6 @@ needs real games.
   not a new tab.
 - Player stats are device-local (`localStorage`); the roadmap puts profiles and
   match history on the server only after the multiplayer loop is reliable.
-- Board sizes are all portrait-shaped, so a landscape screen letterboxes
-  heavily. A landscape-oriented lattice would suit wide ratios better.
 - Telemetry has no collection endpoint configured, so nothing is actually
   being gathered yet — the events exist and are correct, the destination is
   a decision that has not been made.

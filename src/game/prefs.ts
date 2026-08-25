@@ -16,6 +16,11 @@ import type { BoardSizeKey, OrbStyleKey } from '../net/protocol.ts';
  *  cascade animations here and nowhere else, or the reverse. */
 export type MotionPref = 'auto' | 'full' | 'reduced';
 
+/** Which way up the lattice is played. 'auto' takes it from the shape of the
+ *  screen, which is right almost always and wrong exactly when somebody wants
+ *  a tall board on a monitor. */
+export type OrientationPref = 'auto' | 'portrait' | 'landscape';
+
 export interface Prefs {
   mode: GameModeKey;
   boardSize: BoardSizeKey;
@@ -28,6 +33,7 @@ export interface Prefs {
   music: number;
   haptics: boolean;
   motion: MotionPref;
+  orientation: OrientationPref;
   /** Names for local seats, indexed by seat. Sparse and short by design — an
    *  empty entry means "no name given", which falls back to Player N rather
    *  than storing the fallback and pretending it was a choice. */
@@ -59,6 +65,7 @@ const DEFAULTS: Prefs = {
   music: 0.45,
   haptics: true,
   motion: 'auto',
+  orientation: 'auto',
   names: [],
   callsign: '',
 };
@@ -66,6 +73,7 @@ const DEFAULTS: Prefs = {
 const BOARD_SIZE_KEYS: BoardSizeKey[] = ['small', 'medium', 'large'];
 const ORB_STYLE_KEYS: OrbStyleKey[] = ['dots', 'emoji'];
 const MOTION_KEYS: MotionPref[] = ['auto', 'full', 'reduced'];
+const ORIENTATION_KEYS: OrientationPref[] = ['auto', 'portrait', 'landscape'];
 
 function level(value: unknown, fallback: number) {
   const n = Number(value);
@@ -106,6 +114,7 @@ function read(): Prefs {
       music: level(parsed.music, DEFAULTS.music),
       haptics: parsed.haptics !== false,
       motion: pick(parsed.motion, MOTION_KEYS, DEFAULTS.motion),
+      orientation: pick(parsed.orientation, ORIENTATION_KEYS, DEFAULTS.orientation),
       names: readNames(parsed.names),
       callsign:
         typeof parsed.callsign === 'string'

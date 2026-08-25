@@ -8,7 +8,13 @@ import { pickBot, type Bot } from './game/bots';
 import { stats } from './game/stats';
 import { rankFor, rankProgress, nextRankAt } from './game/rank';
 import { rankBadgeSvg } from './render/rankBadge';
-import { prefs, MAX_NAME_LENGTH, MAX_CALLSIGN_LENGTH, type MotionPref } from './game/prefs';
+import {
+  prefs,
+  MAX_NAME_LENGTH,
+  MAX_CALLSIGN_LENGTH,
+  type MotionPref,
+  type OrientationPref,
+} from './game/prefs';
 // Three.js is the bulk of the bundle and nothing outside the board needs it,
 // so the renderer is pulled in on demand when a match actually starts — the
 // menu, the online screens and the join-by-link flow all load without it.
@@ -29,6 +35,32 @@ const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
   medium: { rows: 11, cols: 6 },
   large: { rows: 13, cols: 7 },
 };
+
+/** The shape the screen is asking for. A board is the whole screen here, so a
+ *  portrait lattice on a monitor letterboxes into a strip down the middle with
+ *  two thirds of the display doing nothing. 1.15 rather than 1.0 so a nearly
+ *  square window does not flip back and forth on a few pixels of resize. */
+function screenPrefersLandscape(): boolean {
+  return window.innerWidth > window.innerHeight * 1.15;
+}
+
+/** Rows and columns swapped when playing wide. One definition of how big each
+ *  board is; orientation is a transform on top of it, matching the relay. */
+function orient(size: { rows: number; cols: number }, landscape: boolean) {
+  return landscape ? { rows: size.cols, cols: size.rows } : size;
+}
+
+/** The player's choice, or the screen's if they left it on auto. */
+function useLandscape(): boolean {
+  if (orientationPref === 'landscape') return true;
+  if (orientationPref === 'portrait') return false;
+  return screenPrefersLandscape();
+}
+
+/** The dimensions a local game would actually be played on. */
+function boardDims(size: BoardSizeKey = boardSizeKey) {
+  return orient(BOARD_SIZES[size], useLandscape());
+}
 
 /** A chain has to reach this depth before it's worth interrupting the board
  *  with a counter — below it, every ordinary move would flash a "×1". */
@@ -77,6 +109,7 @@ let renderer: ThreeRenderer | null = null;
 let animating = false;
 let muted = false;
 let motionPref: MotionPref = 'auto';
+let orientationPref: OrientationPref = 'auto';
 /** Names for local seats, indexed by seat. Empty means "not named", which
  *  falls back to Player N rather than storing the fallback as if it were a
  *  choice somebody made. */
@@ -111,6 +144,9 @@ let net: NetClient | null = null;
 let onlineMode = false;
 let myPlayerId = -1;
 let lobbyBoardSize: BoardSizeKey = 'medium';
+/** The room's orientation. The host's choice, applied to everyone — a board
+ *  cannot be tall for one player and wide for another. */
+let lobbyLandscape = false;
 let lobbyOrbStyle: OrbStyle = 'dots';
 let lobbyMode: GameModeKey = DEFAULT_MODE;
 let intentionalDisconnect = false;
@@ -154,6 +190,8 @@ const playersFieldEl = $('players-field');
 const playersNoteEl = $('players-note');
 const playerRosterEl = $('player-roster');
 const boardSizeGroup = $('board-size-group');
+const orientationGroup = $('orientation-group');
+const lobbyOrientationGroup = $('lobby-orientation-group');
 const orbStyleGroup = $('orb-style-group');
 const modeGroup = $('mode-group');
 const modeBlurbEl = $('mode-blurb');
@@ -355,6 +393,18 @@ function renderRoster() {
 /** Moves a segmented control's highlight without going through its click
  *  handler — restoring a stored choice is not the player making one, and the
  *  handler would tap a sound and re-persist on every boot. */
+/** Retitles a board-size control so the numbers match the orientation the
+ *  board will actually be built at. Showing "11×6" next to a Wide selection
+ *  would be a straightforward lie about what Start produces. */
+function relabelSizes(group: HTMLElement, landscape: boolean) {
+  group.querySelectorAll<HTMLElement>('.segment').forEach((seg) => {
+    const key = seg.dataset.size as BoardSizeKey | undefined;
+    if (!key || !BOARD_SIZES[key]) return;
+    const dims = orient(BOARD_SIZES[key], landscape);
+    seg.textContent = `${dims.rows}×${dims.cols}`;
+  });
+}
+
 function markSegment(group: HTMLElement, key: string, value: string) {
   group.querySelectorAll<HTMLElement>('.segment').forEach((seg) => {
     seg.classList.toggle('active', seg.dataset[key] === value);
@@ -371,6 +421,7 @@ function applyStoredPrefs() {
   orbStyle = stored.orbStyle;
   muted = stored.muted;
   motionPref = stored.motion;
+  orientationPref = stored.orientation;
   localNames = stored.names;
   callsign = stored.callsign;
   // Set here rather than at module load: prefs are not read until this runs,
@@ -383,6 +434,14 @@ function applyStoredPrefs() {
   haptics.enabled = stored.haptics;
   markSegment(boardSizeGroup, 'size', boardSizeKey);
   markSegment(orbStyleGroup, 'style', orbStyle);
+  // 'auto' resolves against this screen, so the control shows what will
+  // actually happen rather than the word "auto".
+  const landscape = useLandscape();
+  markSegment(orientationGroup, 'orient', landscape ? 'landscape' : 'portrait');
+  relabelSizes(boardSizeGroup, landscape);
+  lobbyLandscape = landscape;
+  markSegment(lobbyOrientationGroup, 'orient', landscape ? 'landscape' : 'portrait');
+  relabelSizes(lobbyBoardSizeGroup, landscape);
   renderSettings();
   applyMotionPref();
   sfx.startBed();
@@ -400,6 +459,7 @@ function persistPrefs() {
     music: sfx.musicVolume,
     haptics: haptics.enabled,
     motion: motionPref,
+    orientation: orientationPref,
     names: localNames,
     callsign,
   });
@@ -512,7 +572,7 @@ function selectMode(key: GameModeKey) {
 
 /** Draws the lattice the current mode and board size would actually produce. */
 function renderModePreview() {
-  const size = BOARD_SIZES[boardSizeKey];
+  const size = boardDims();
   const { svg, caption, hasSpecials } = modePreview(modeKey, size.rows, size.cols, survivalRound);
   modePreviewEl.innerHTML = svg;
   modeCaptionEl.textContent = caption;
@@ -569,6 +629,19 @@ onSegmentPick(boardSizeGroup, (el) => {
   persistPrefs();
 });
 
+onSegmentPick(orientationGroup, (el) => {
+  orientationPref = el.dataset.orient === 'landscape' ? 'landscape' : 'portrait';
+  relabelSizes(boardSizeGroup, useLandscape());
+  renderModePreview();
+  persistPrefs();
+});
+
+onSegmentPick(lobbyOrientationGroup, (el) => {
+  lobbyLandscape = el.dataset.orient === 'landscape';
+  relabelSizes(lobbyBoardSizeGroup, lobbyLandscape);
+  net?.setLobby({ landscape: lobbyLandscape });
+});
+
 onSegmentPick(orbStyleGroup, (el) => {
   orbStyle = el.dataset.style as OrbStyle;
   renderer?.setOrbStyle(orbStyle);
@@ -577,7 +650,7 @@ onSegmentPick(orbStyleGroup, (el) => {
 
 onSegmentPick(lobbyBoardSizeGroup, (el) => {
   lobbyBoardSize = el.dataset.size as BoardSizeKey;
-  net?.setLobby({ boardSize: lobbyBoardSize });
+  net?.setLobby({ boardSize: lobbyBoardSize, landscape: lobbyLandscape });
 });
 
 onSegmentPick(lobbyOrbStyleGroup, (el) => {
@@ -1289,7 +1362,7 @@ function buildLocalPlayers(): PlayerConfig[] {
 async function startLocalGame() {
   // A pass-and-play game has no bot opponent, whatever the last match was.
   activeBot = null;
-  const size = BOARD_SIZES[boardSizeKey];
+  const size = boardDims();
   // A fresh seed per game, so Chaos re-rolls and a Tournament plays every game
   // on a different lattice. Power Cells ignores it by design.
   const seed = randomSeed();
@@ -1301,6 +1374,7 @@ async function startLocalGame() {
   });
   if (!(await mountGame(newEngine, orbStyle))) return;
   renderer!.setCellTapHandler(onCellTapLocal);
+  renderer!.setHoverTest(localHoverTest);
   renderMatchBanner();
   startTurnClock();
   maybeRunAiTurn();
@@ -1411,6 +1485,28 @@ async function onCellTapLocal(row: number, col: number) {
   animating = true;
   sfx.unlock();
   await applyAndAnimateMove(row, col);
+}
+
+/**
+ * Whether a cell is worth lighting under the cursor.
+ *
+ * Not simply "is this a legal move": during the AI's or a bot's turn the board
+ * is not yours to act on, and a cell that lifts when you cannot use it is a
+ * promise the game does not keep.
+ */
+function localHoverTest(row: number, col: number): boolean {
+  if (!engine || animating || engine.gameOver) return false;
+  const current = engine.currentPlayer().id;
+  if (activeBot && current !== 0) return false;
+  if (GAME_MODES[modeKey].solo && current === AI_PLAYER_ID) return false;
+  return engine.canPlay(row, col);
+}
+
+/** Online, the same idea: only on your own turn. */
+function onlineHoverTest(row: number, col: number): boolean {
+  if (!engine || animating || engine.gameOver) return false;
+  if (engine.currentPlayer().id !== myPlayerId) return false;
+  return engine.canPlay(row, col);
 }
 
 async function onCellTapOnline(row: number, col: number) {
@@ -2128,6 +2224,7 @@ async function startBotMatch(bot: Bot) {
   });
   if (!(await mountGame(newEngine, orbStyle))) return;
   renderer!.setCellTapHandler(onCellTapLocal);
+  renderer!.setHoverTest(localHoverTest);
   renderMatchBanner();
   showScreen(screenGame);
   maybeRunAiTurn();
@@ -2350,7 +2447,7 @@ roomCodeBtn.addEventListener('click', async () => {
 
 lobbyStartBtn.addEventListener('click', () => {
   sfx.buttonTap();
-  net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode);
+  net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode, lobbyLandscape);
 });
 
 $('lobby-back-btn').addEventListener('click', () => {
@@ -2412,7 +2509,7 @@ function renderLobby(players: NetPlayer[], hostId: number) {
     }
     quickMatchPending = false;
     queuedCode = null;
-    if (isHost) net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode);
+    if (isHost) net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode, lobbyLandscape);
   }
 }
 
@@ -2487,6 +2584,7 @@ async function startOnlineGame(
   });
   if (!(await mountGame(newEngine, style))) return;
   renderer!.setCellTapHandler(onCellTapOnline);
+  renderer!.setHoverTest(onlineHoverTest);
   renderMatchBanner();
   enterOnlineMatchUi();
   showScreen(screenGame);
@@ -2524,6 +2622,7 @@ async function resumeOnlineGame(
   newEngine.loadSnapshot(snapshot);
   if (!(await mountGame(newEngine, style, { fromSnapshot: true }))) return;
   renderer!.setCellTapHandler(onCellTapOnline);
+  renderer!.setHoverTest(onlineHoverTest);
   renderMatchBanner();
   enterOnlineMatchUi();
   showScreen(screenGame);
