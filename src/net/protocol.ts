@@ -106,6 +106,16 @@ export type ServerMsg =
       seed?: number;
     }
   | { type: 'move'; row: number; col: number }
+  | {
+      /** The turn clock for a timed mode, enforced by the relay rather than by
+       *  each client's own idea of when a turn expired. Carries time
+       *  *remaining* rather than an absolute deadline: every client's clock is
+       *  wrong by some amount, and a timestamp would be read through that
+       *  error, while a duration is only read through the trip time. */
+      type: 'turnClock';
+      player: number;
+      ms: number;
+    }
   | { type: 'taunt'; from: number; emoji: number }
   /** Who has asked for a rematch, and how many are needed. */
   | { type: 'rematch'; votes: number[]; needed: number }

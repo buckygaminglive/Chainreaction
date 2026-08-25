@@ -95,6 +95,10 @@ export class NetClient {
     seed: number
   ) => void = () => {};
   onMove: (row: number, col: number) => void = () => {};
+  /** A timed mode's clock, kept by the relay. `ms` is time remaining from the
+   *  moment the message arrives, so the countdown starts on receipt rather
+   *  than being read against a clock this device may have set wrong. */
+  onTurnClock: (player: number, ms: number) => void = () => {};
   /** Fired when the relay hands back a match already in progress, after this
    *  client reconnected into it. */
   onResume: (
@@ -358,6 +362,9 @@ export class NetClient {
         break;
       case 'move':
         this.onMove(msg.row, msg.col);
+        break;
+      case 'turnClock':
+        this.onTurnClock(msg.player, msg.ms);
         break;
       case 'error':
         this.onError(msg.message);

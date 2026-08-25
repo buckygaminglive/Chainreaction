@@ -46,7 +46,10 @@ export const GAME_MODES: Record<GameModeKey, GameMode> = {
     seriesLength: 1,
     solo: false,
     fixedPlayers: null,
-    online: false,
+    // The clock is kept by the relay's alarm, not by each client — otherwise
+    // every player has their own idea of when a turn expired, and the one with
+    // the slowest connection always loses the argument.
+    online: true,
   },
   chaos: {
     key: 'chaos',

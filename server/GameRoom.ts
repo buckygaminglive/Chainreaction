@@ -71,6 +71,13 @@ interface Meta {
   roomScore?: [number, number][];
   isPublic?: boolean;
   roomCode?: string;
+  /** Both deadlines have to survive hibernation. The WebSocket hibernation
+   *  API means a room with players connected can still be evicted between
+   *  arming an alarm and that alarm firing — and an alarm that wakes an object
+   *  which has forgotten why it set it does nothing at all. */
+  turnDeadline?: number;
+  absentDeadline?: number;
+  lastActivity?: number;
 }
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -80,6 +87,23 @@ const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
 };
 
 const MAX_PLAYERS = 6;
+
+/** Grace on top of the displayed turn clock before the relay plays the move
+ *  itself. The client's countdown starts when the message lands, but the board
+ *  is still animating the previous cascade at that point — without a little
+ *  slack the relay would cut people off while they were still watching the
+ *  move that gave them the turn. */
+const TURN_ANIMATION_GRACE_MS = 1_400;
+
+/** How long a disconnected player's turn is waited on before the relay plays
+ *  it for them. Long enough to survive a tunnel or a locked phone, short
+ *  enough that the player still sitting there does not give up and leave. */
+const ABSENT_TURN_GRACE_MS = 45_000;
+
+/** A room nobody has been connected to for this long is torn down. Idle rooms
+ *  used to live forever: storage nothing would ever read again, and a public
+ *  listing outliving the room it points at. */
+const IDLE_ROOM_TTL_MS = 30 * 60_000;
 
 export class GameRoom extends DurableObject<Env> {
   private engine: GameEngine | null = null;
@@ -103,6 +127,12 @@ export class GameRoom extends DurableObject<Env> {
   /** The DO is addressed by room code but is never told what it is, so it is
    *  captured from the first request that reaches it. */
   private roomCode = '';
+  /** Epoch ms the current turn is cut off at in a timed mode, or 0. */
+  private turnDeadline = 0;
+  /** Epoch ms the relay stops waiting for an absent player's turn, or 0. */
+  private absentDeadline = 0;
+  /** Last time anything happened here, for the idle TTL. */
+  private lastActivity = Date.now();
   private ready: Promise<void>;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -121,6 +151,9 @@ export class GameRoom extends DurableObject<Env> {
         this.roomScore = new Map(meta.roomScore ?? []);
         this.isPublic = meta.isPublic ?? false;
         this.roomCode = meta.roomCode ?? '';
+        this.turnDeadline = meta.turnDeadline ?? 0;
+        this.absentDeadline = meta.absentDeadline ?? 0;
+        this.lastActivity = meta.lastActivity ?? Date.now();
       }
       const snap = await ctx.storage.get<EngineSnapshot>('engineSnapshot');
       if (snap && meta?.rows && meta?.cols) {
@@ -226,6 +259,10 @@ export class GameRoom extends DurableObject<Env> {
 
     this.broadcastPlayers();
     if (this.engine?.gameOver) this.broadcastRematchState();
+    // Somebody is here, so the idle clock restarts and any grace on a seat
+    // that just came back is cleared.
+    this.lastActivity = Date.now();
+    await this.syncAbsentTimer();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -259,6 +296,7 @@ export class GameRoom extends DurableObject<Env> {
     }
     const att = ws.deserializeAttachment() as Attachment;
     if (!att) return;
+    this.lastActivity = Date.now();
 
     if (msg.type === 'startGame') {
       // `mode` is newer than the deployed client. Treating its absence as
@@ -338,6 +376,8 @@ export class GameRoom extends DurableObject<Env> {
     }
     await this.persistMeta();
     this.broadcastPlayers();
+    // The player who just dropped may be the one the board is waiting on.
+    await this.syncAbsentTimer();
 
     // Someone leaving the result screen means the rematch everyone else is
     // waiting on is never coming. Reopen the lobby so the room stays usable
@@ -442,6 +482,7 @@ export class GameRoom extends DurableObject<Env> {
     this.broadcastRoomScore();
     // A room in progress is not joinable, so it comes off the public list.
     void this.syncListing();
+    await this.beginTurn();
   }
 
   private broadcastRoomScore() {
@@ -470,12 +511,21 @@ export class GameRoom extends DurableObject<Env> {
       return;
     }
     if (!this.engine.canPlay(row, col)) return;
+    await this.applyMove(att.id, row, col);
+  }
 
+  /** The one path a move takes into the board, whoever asked for it: a player,
+   *  the Blitz clock, or the grace period on somebody who has not come back.
+   *  Keeping them on one path is what stops a timed-out move quietly skipping
+   *  the score-keeping or the result report. */
+  private async applyMove(playerId: number, row: number, col: number) {
+    if (!this.engine) return;
     const result = this.engine.applyMove(row, col);
     // Tracked here rather than trusted from the client: the best chain a player
     // reports about themselves is not a statistic, it is a wish.
-    const entry = this.roster.get(att.id);
+    const entry = this.roster.get(playerId);
     if (entry && result.chain > (entry.bestChain ?? 0)) entry.bestChain = result.chain;
+    this.lastActivity = Date.now();
     await this.persistEngine();
     this.broadcastAll({ type: 'move', row, col });
 
@@ -485,10 +535,152 @@ export class GameRoom extends DurableObject<Env> {
       const winner = this.engine.winner;
       this.roomScore.set(winner, (this.roomScore.get(winner) ?? 0) + 1);
       this.rematchVotes.clear();
+      this.turnDeadline = 0;
+      this.absentDeadline = 0;
       await this.persistMeta();
       this.broadcastRoomScore();
       await this.reportResult(winner);
+      await this.armAlarm();
+    } else {
+      await this.beginTurn();
     }
+  }
+
+  // ---------- The alarm ----------
+  /**
+   * A Durable Object gets exactly one alarm, so everything here that needs
+   * waking up shares it: the Blitz turn clock, the grace period on an absent
+   * player's turn, and the idle-room TTL. Whichever is soonest owns the alarm,
+   * and the handler works out what was actually due.
+   */
+  private async armAlarm() {
+    const candidates = [this.turnDeadline, this.absentDeadline, this.lastActivity + IDLE_ROOM_TTL_MS];
+    const next = Math.min(...candidates.filter((t) => t > 0));
+    if (!Number.isFinite(next)) return;
+    const current = await this.ctx.storage.getAlarm();
+    if (current !== next) await this.ctx.storage.setAlarm(next);
+  }
+
+  async alarm() {
+    await this.ready;
+    const now = Date.now();
+
+    // An empty room nothing has touched is storage nobody will ever read again
+    // and a public listing pointing at nothing.
+    if (this.ctx.getWebSockets().length === 0 && now >= this.lastActivity + IDLE_ROOM_TTL_MS) {
+      await this.shutDown();
+      return;
+    }
+
+    // Both timeouts do the same thing — play the move — so they share a path.
+    // applyMove re-arms the alarm through beginTurn on its way out.
+    if (this.turnDeadline && now >= this.turnDeadline) {
+      this.turnDeadline = 0;
+      await this.playTimedOutTurn();
+      return;
+    }
+    if (this.absentDeadline && now >= this.absentDeadline) {
+      this.absentDeadline = 0;
+      await this.playTimedOutTurn();
+      return;
+    }
+
+    await this.armAlarm();
+  }
+
+  /**
+   * Sets the clock for a turn that has just changed hands. Deliberately *not*
+   * called on a roster change: if it were, dropping out and coming back would
+   * be a way to buy more time on the clock.
+   */
+  private async beginTurn() {
+    this.turnDeadline = 0;
+    this.absentDeadline = 0;
+    if (this.engine && this.started && !this.engine.gameOver) {
+      const seconds = GAME_MODES[this.mode].turnSeconds;
+      if (seconds) {
+        // The enforced deadline runs a little longer than the one players see,
+        // to cover the cascade still animating on their screens when this
+        // message lands. Erring the other way would cut somebody off while
+        // they were still watching the move that handed them the turn.
+        this.turnDeadline = Date.now() + seconds * 1000 + TURN_ANIMATION_GRACE_MS;
+        this.broadcastAll({
+          type: 'turnClock',
+          player: this.engine.currentPlayer().id,
+          ms: seconds * 1000,
+        });
+      }
+    }
+    await this.syncAbsentTimer();
+  }
+
+  /**
+   * Arms — or clears — the grace period on a seat whose player is not
+   * connected. Safe to call on any roster change: it never touches the turn
+   * clock, and it will not re-arm a grace that is already running, so a
+   * flapping connection cannot extend it indefinitely.
+   */
+  private async syncAbsentTimer() {
+    const live = this.engine !== null && this.started && !this.engine.gameOver;
+    const currentId = live && this.engine ? this.engine.currentPlayer().id : null;
+    const present = currentId !== null && this.roster.get(currentId)?.connected === true;
+    // Only worth waiting on while somebody is still in the room being kept
+    // waiting. An empty room is the idle TTL's problem, not the clock's.
+    const someoneWatching = this.ctx.getWebSockets().length > 0;
+
+    if (live && !present && someoneWatching) {
+      if (!this.absentDeadline) this.absentDeadline = Date.now() + ABSENT_TURN_GRACE_MS;
+    } else {
+      this.absentDeadline = 0;
+    }
+    await this.persistMeta();
+    await this.armAlarm();
+  }
+
+  /**
+   * A timed-out turn plays a move rather than skipping it. Skipping would
+   * leave a player who has never placed a particle un-eliminable, which stalls
+   * the win condition instead of resolving the match — the same reasoning the
+   * local Blitz already used, now enforced in the one place that can enforce
+   * it for everybody at once.
+   */
+  private async playTimedOutTurn() {
+    if (!this.engine || this.engine.gameOver || !this.started) {
+      await this.armAlarm();
+      return;
+    }
+    const moves = this.engine.legalMoves();
+    if (!moves.length) {
+      await this.armAlarm();
+      return;
+    }
+    const pick = moves[Math.floor(Math.random() * moves.length)];
+    await this.applyMove(this.engine.currentPlayer().id, pick.row, pick.col);
+  }
+
+  /** Nothing here is worth keeping: the room is empty and stale. The listing
+   *  goes first, so the browser stops pointing at a room that is about to stop
+   *  existing. */
+  private async shutDown() {
+    if (this.isPublic) {
+      this.isPublic = false;
+      await this.syncListing();
+    }
+    this.engine = null;
+    this.started = false;
+    this.roster.clear();
+    this.roomScore.clear();
+    this.rematchVotes.clear();
+    this.hostId = null;
+    // Seat numbering restarts too. Storage is about to be wiped, so a later
+    // restore would come back at zero while a live instance kept counting —
+    // and the two disagreeing about seat ids is worse than either value.
+    this.nextPlayerId = 0;
+    this.turnDeadline = 0;
+    this.absentDeadline = 0;
+    this.lastActivity = Date.now();
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
   }
 
   /**
@@ -589,9 +781,12 @@ export class GameRoom extends DurableObject<Env> {
     this.started = false;
     this.engine = null;
     this.rematchVotes.clear();
+    this.turnDeadline = 0;
+    this.absentDeadline = 0;
     await this.ctx.storage.delete('engineSnapshot');
     await this.persistMeta();
     this.broadcastPlayers();
+    await this.armAlarm();
   }
 
   private rosterList(): NetPlayer[] {
@@ -673,6 +868,9 @@ export class GameRoom extends DurableObject<Env> {
       roomScore: Array.from(this.roomScore.entries()),
       isPublic: this.isPublic,
       roomCode: this.roomCode,
+      turnDeadline: this.turnDeadline,
+      absentDeadline: this.absentDeadline,
+      lastActivity: this.lastActivity,
     };
     await this.ctx.storage.put('meta', meta);
   }
