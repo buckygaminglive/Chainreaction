@@ -6,6 +6,8 @@ import { layoutForMode, randomSeed } from './game/cells';
 import { chooseMove, skillForRound } from './game/ai';
 import { BOTS, pickBot, type Bot } from './game/bots';
 import { stats } from './game/stats';
+import { rankFor, rankProgress, nextRankAt } from './game/rank';
+import { prefs, type MotionPref } from './game/prefs';
 // Three.js is the bulk of the bundle and nothing outside the board needs it,
 // so the renderer is pulled in on demand when a match actually starts — the
 // menu, the online screens and the join-by-link flow all load without it.
@@ -17,6 +19,7 @@ import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import { account } from './net/account';
+import { telemetry } from './net/telemetry';
 import { TAUNTS, TAUNT_COOLDOWN_MS } from './net/taunts';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
@@ -43,6 +46,27 @@ const TEAM_NAMES = ['Team A', 'Team B'];
 /** In Survival the human always holds seat 0 and the system holds seat 1. */
 const AI_PLAYER_ID = 1;
 
+/** Attract mode: two seats, because §18 asks for one or two controlled energy
+ *  accents and rules out a rainbow. Slow enough to read as atmosphere rather
+ *  than a demo running at speed. */
+const ATTRACT_MOVE_MS = 620;
+const ATTRACT_RESTART_MS = 2200;
+/** How hard the attract seats play. Well short of 1: a perfect game is a
+ *  cagey one, and the title screen wants cascades. */
+const ATTRACT_SKILL = 0.55;
+/** Pause between pops on the finished board under the result card. */
+const VICTORY_LAP_MS = 1150;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const systemReducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** The effective setting: the player's choice where they made one, the
+ *  operating system's where they left it on auto. */
+const reducedMotion = () =>
+  motionPref === 'reduced' || (motionPref === 'auto' && systemReducedMotion());
+
 let numPlayers = 2;
 let boardSizeKey: BoardSizeKey = 'medium';
 let orbStyle: OrbStyle = 'dots';
@@ -51,6 +75,7 @@ let engine: GameEngine | null = null;
 let renderer: ThreeRenderer | null = null;
 let animating = false;
 let muted = false;
+let motionPref: MotionPref = 'auto';
 // Bumped whenever the current game is torn down (leaving to the menu,
 // starting a new game). A cascade's explode sound is scheduled via
 // setTimeout to land on the real blast moment, which can still be pending
@@ -62,6 +87,9 @@ let soundGeneration = 0;
 
 // ---------- Per-match telemetry (feeds the result card and local stats) ----------
 let matchTurns = 0;
+/** Wall-clock start of the mounted match, for the session/completion metrics
+ *  §14 asks for. Zero between matches. */
+let matchStartedAt = 0;
 let matchBestChain = 0;
 let matchBestCapture = 0;
 
@@ -100,6 +128,18 @@ const screenWin = $('screen-win');
 const screenHowto = $('screen-howto');
 const screenOnline = $('screen-online');
 const screenLobby = $('screen-lobby');
+const screenSetup = $('screen-setup');
+const screenSettings = $('screen-settings');
+const attractHost = $('attract-host');
+const volumeRange = $<HTMLInputElement>('volume-range');
+const volumeValueEl = $('volume-value');
+const musicRange = $<HTMLInputElement>('music-range');
+const musicValueEl = $('music-value');
+const hapticsGroup = $('haptics-group');
+const hapticsNoteEl = $('haptics-note');
+const motionGroup = $('motion-group');
+const telemetryGroup = $('telemetry-group');
+const telemetryNoteEl = $('telemetry-note');
 const ALL_SCREENS = [screenMenu, screenGame, screenOnline, screenLobby];
 
 const playersCountEl = $('players-count');
@@ -114,6 +154,8 @@ const modePreviewEl = $('mode-preview');
 const modeCaptionEl = $('mode-caption');
 const modeLegendEl = $('mode-legend');
 const profileStripEl = $('profile-strip');
+const levelChipEl = $('level-chip');
+const setupSummaryEl = $('setup-summary');
 const playPillsEl = $('player-pills');
 const boardHost = $('board-host');
 const chainReadoutEl = $('chain-readout');
@@ -127,8 +169,10 @@ const tauntToggleEl = $<HTMLButtonElement>('taunt-toggle');
 const tauntPaletteEl = $('taunt-palette');
 const tauntFeedEl = $('taunt-feed');
 const rematchStateEl = $('rematch-state');
-const winTitleEl = $('win-title');
-const winEyebrowEl = document.querySelector('.win-eyebrow') as HTMLElement;
+const winCardEl = document.querySelector('.win-card') as HTMLElement;
+const winNameEl = $('win-name');
+const winVerbEl = $('win-verb');
+const winEyebrowEl = screenWin.querySelector('.win-eyebrow') as HTMLElement;
 const winMetricsEl = $('win-metrics');
 const winLeaderboardEl = $('win-leaderboard');
 const playAgainBtn = $('play-again-btn');
@@ -215,8 +259,107 @@ function renderSwatches() {
   }
 }
 
+/** Moves a segmented control's highlight without going through its click
+ *  handler — restoring a stored choice is not the player making one, and the
+ *  handler would tap a sound and re-persist on every boot. */
+function markSegment(group: HTMLElement, key: string, value: string) {
+  group.querySelectorAll<HTMLElement>('.segment').forEach((seg) => {
+    seg.classList.toggle('active', seg.dataset[key] === value);
+  });
+}
+
+/** The menu forgot every choice between visits, which is what made defaulting
+ *  Play to "whatever you played last" impossible. Returns the stored mode so
+ *  init can hand it straight to selectMode. */
+function applyStoredPrefs() {
+  const stored = prefs.get();
+  numPlayers = stored.players;
+  boardSizeKey = stored.boardSize;
+  orbStyle = stored.orbStyle;
+  muted = stored.muted;
+  motionPref = stored.motion;
+  sfx.muted = muted;
+  sfx.volume = stored.volume;
+  sfx.musicVolume = stored.music;
+  haptics.enabled = stored.haptics;
+  markSegment(boardSizeGroup, 'size', boardSizeKey);
+  markSegment(orbStyleGroup, 'style', orbStyle);
+  renderSettings();
+  applyMotionPref();
+  sfx.startBed();
+  return stored.mode;
+}
+
+function persistPrefs() {
+  prefs.save({
+    mode: modeKey,
+    boardSize: boardSizeKey,
+    players: numPlayers,
+    orbStyle,
+    muted,
+    volume: sfx.volume,
+    music: sfx.musicVolume,
+    haptics: haptics.enabled,
+    motion: motionPref,
+  });
+}
+
+// ---------- Settings ----------
+function renderSettings() {
+  volumeRange.value = String(Math.round(sfx.volume * 100));
+  volumeValueEl.textContent = `${Math.round(sfx.volume * 100)}%`;
+  musicRange.value = String(Math.round(sfx.musicVolume * 100));
+  musicValueEl.textContent = `${Math.round(sfx.musicVolume * 100)}%`;
+  markSegment(hapticsGroup, 'haptics', haptics.enabled ? '1' : '0');
+  hapticsNoteEl.classList.toggle('hidden', haptics.available);
+  markSegment(telemetryGroup, 'telemetry', telemetry.enabled ? '1' : '0');
+  // Saying "on" over a build that collects nothing would be a lie the player
+  // has no way to check.
+  telemetryNoteEl.textContent = telemetry.configured
+    ? 'Counts and durations only — never your name, room codes or board positions.'
+    : 'No collection endpoint is configured in this build, so nothing is being sent anywhere.';
+}
+
+/** Reduced motion is a class on the document rather than a bare media query,
+ *  so the in-app setting and the system one drive exactly the same CSS. */
+function applyMotionPref() {
+  const reduced = reducedMotion();
+  document.documentElement.classList.toggle('reduce-motion', reduced);
+  // On auto, show which way the system resolved it rather than leaving both
+  // segments dark and the player guessing.
+  markSegment(motionGroup, 'motion', reduced ? 'reduced' : 'full');
+  if (reduced) stopAttract();
+  else if (!screenMenu.classList.contains('hidden')) void startAttract();
+}
+
+volumeRange.addEventListener('input', () => {
+  sfx.unlock();
+  sfx.volume = Number(volumeRange.value) / 100;
+  volumeValueEl.textContent = `${volumeRange.value}%`;
+  persistPrefs();
+});
+
+// Not on 'input': a tap per slider step would machine-gun the effect.
+volumeRange.addEventListener('change', () => sfx.buttonTap());
+
+musicRange.addEventListener('input', () => {
+  sfx.unlock();
+  sfx.musicVolume = Number(musicRange.value) / 100;
+  musicValueEl.textContent = `${musicRange.value}%`;
+  persistPrefs();
+});
+
+/** The one line on the title screen that says what Play will actually start. */
+function renderSetupSummary() {
+  const mode = GAME_MODES[modeKey];
+  const size = BOARD_SIZES[boardSizeKey];
+  const seats = mode.solo ? 'solo' : mode.teams ? '2v2' : `${numPlayers} players`;
+  setupSummaryEl.textContent = `${mode.name} · ${size.rows}×${size.cols} · ${seats}`;
+}
+
 function renderProfileStrip() {
   const s = stats.get();
+  levelChipEl.innerHTML = `<span class="lv">${stats.level(s)}</span>level`;
   const cells: [string, string, boolean][] = [
     [String(stats.level(s)), 'level', true],
     [String(s.matches), 'runs', false],
@@ -276,6 +419,8 @@ function selectMode(key: GameModeKey) {
   renderModeGrid(modeGroup, modeKey, false, selectMode);
   renderSwatches();
   renderModePreview();
+  renderSetupSummary();
+  persistPrefs();
 }
 
 /** Draws the lattice the current mode and board size would actually produce. */
@@ -310,6 +455,8 @@ function stepPlayers(delta: number) {
   numPlayers = Math.min(6, Math.max(2, numPlayers + delta));
   playersCountEl.textContent = String(numPlayers);
   renderSwatches();
+  renderSetupSummary();
+  persistPrefs();
 }
 
 $('players-minus').addEventListener('click', () => stepPlayers(-1));
@@ -333,11 +480,14 @@ onSegmentPick(boardSizeGroup, (el) => {
   boardSizeKey = el.dataset.size as BoardSizeKey;
   // The preview is the real lattice, so it has to follow the board size too.
   renderModePreview();
+  renderSetupSummary();
+  persistPrefs();
 });
 
 onSegmentPick(orbStyleGroup, (el) => {
   orbStyle = el.dataset.style as OrbStyle;
   renderer?.setOrbStyle(orbStyle);
+  persistPrefs();
 });
 
 onSegmentPick(lobbyBoardSizeGroup, (el) => {
@@ -353,14 +503,91 @@ onSegmentPick(lobbyVisibilityGroup, (el) => {
   net?.setLobby({ isPublic: el.dataset.public === '1' });
 });
 
+onSegmentPick(hapticsGroup, (el) => {
+  haptics.enabled = el.dataset.haptics === '1';
+  if (haptics.enabled) haptics.place();
+  persistPrefs();
+});
+
+onSegmentPick(telemetryGroup, (el) => {
+  // Kept outside prefs on purpose: a consent choice should not be reset by
+  // anything that resets game settings.
+  telemetry.enabled = el.dataset.telemetry === '1';
+});
+
+onSegmentPick(motionGroup, (el) => {
+  motionPref = el.dataset.motion === 'reduced' ? 'reduced' : 'full';
+  applyMotionPref();
+  persistPrefs();
+});
+
+// ---------- How to play ----------
+/* One idea per page rather than four rules in a list. The last page starts a
+ * game rather than returning to the title screen: someone who has just read
+ * how to play wants to play, and making them find Play again is a step that
+ * exists only because the overlay was built as a document. */
+const howtoPages = Array.from(document.querySelectorAll<HTMLElement>('.howto-page'));
+const howtoStepEl = $('howto-step');
+const howtoDotsEl = $('howto-dots');
+const howtoPrevBtn = $<HTMLButtonElement>('howto-prev');
+const howtoNextBtn = $<HTMLButtonElement>('howto-next');
+let howtoPage = 0;
+
+for (let i = 0; i < howtoPages.length; i++) {
+  const dot = document.createElement('button');
+  dot.className = 'howto-dot';
+  dot.setAttribute('aria-label', `Page ${i + 1}`);
+  dot.addEventListener('click', () => {
+    sfx.buttonTap();
+    showHowtoPage(i);
+  });
+  howtoDotsEl.appendChild(dot);
+}
+
+function showHowtoPage(index: number) {
+  howtoPage = Math.min(howtoPages.length - 1, Math.max(0, index));
+  howtoPages.forEach((page, i) => page.classList.toggle('on', i === howtoPage));
+  howtoDotsEl.querySelectorAll('.howto-dot').forEach((dot, i) => {
+    dot.classList.toggle('on', i === howtoPage);
+  });
+  howtoStepEl.textContent = `${howtoPage + 1} / ${howtoPages.length}`;
+  howtoPrevBtn.toggleAttribute('disabled', howtoPage === 0);
+  howtoNextBtn.textContent = howtoPage === howtoPages.length - 1 ? 'Start playing' : 'Next';
+}
+
 $('howto-btn').addEventListener('click', () => {
   sfx.unlock();
   sfx.buttonTap();
+  showHowtoPage(0);
   showOverlay(screenHowto);
 });
+
+howtoPrevBtn.addEventListener('click', () => {
+  sfx.buttonTap();
+  showHowtoPage(howtoPage - 1);
+});
+
+howtoNextBtn.addEventListener('click', () => {
+  sfx.buttonTap();
+  if (howtoPage < howtoPages.length - 1) {
+    showHowtoPage(howtoPage + 1);
+    return;
+  }
+  hideOverlay(screenHowto);
+  startLocalRun();
+});
+
 $('howto-close-btn').addEventListener('click', () => {
   sfx.buttonTap();
   hideOverlay(screenHowto);
+});
+
+// Arrow keys page it, for anyone reading this on a keyboard.
+window.addEventListener('keydown', (e) => {
+  if (screenHowto.classList.contains('hidden')) return;
+  if (e.key === 'ArrowRight') showHowtoPage(howtoPage + 1);
+  else if (e.key === 'ArrowLeft') showHowtoPage(howtoPage - 1);
+  else if (e.key === 'Escape') hideOverlay(screenHowto);
 });
 
 function updateMuteIcon() {
@@ -372,6 +599,16 @@ function toggleMute() {
   muted = !muted;
   sfx.muted = muted;
   updateMuteIcon();
+  persistPrefs();
+}
+
+// A system-level motion change while the game is open should still be picked
+// up — but only while the player is on auto, or their own choice is not a
+// choice at all.
+if (typeof matchMedia === 'function') {
+  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
+    if (motionPref === 'auto') applyMotionPref();
+  });
 }
 $('mute-btn-menu').addEventListener('click', toggleMute);
 $('mute-btn-game').addEventListener('click', toggleMute);
@@ -416,7 +653,8 @@ $('win-menu-btn').addEventListener('click', () => {
   showScreen(screenMenu);
 });
 
-$('play-btn').addEventListener('click', () => {
+/** Play, from the title screen or from the bottom of the setup sheet. */
+function startLocalRun() {
   sfx.unlock();
   sfx.buttonTap();
   if (net) disconnectNet();
@@ -424,22 +662,171 @@ $('play-btn').addEventListener('click', () => {
   resetSeries();
   void startLocalGame();
   showScreen(screenGame);
+}
+
+$('play-btn').addEventListener('click', startLocalRun);
+$('setup-start-btn').addEventListener('click', startLocalRun);
+
+$('setup-btn').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  showOverlay(screenSetup);
+});
+
+$('setup-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenSetup);
+});
+
+$('settings-btn').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  renderSettings();
+  showOverlay(screenSettings);
+});
+
+$('settings-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenSettings);
 });
 
 function showScreen(el: HTMLElement) {
+  const from = ALL_SCREENS.find((s) => !s.classList.contains('hidden')) ?? null;
   ALL_SCREENS.forEach((s) => s.classList.add('hidden'));
   // The result card sits over the finished board with pointer-events:none, so
   // the HUD's back button stays clickable underneath it. Clearing it on every
   // screen change stops it being left floating over the menu.
   hideOverlay(screenWin);
+  hideOverlay(screenSetup);
+  hideOverlay(screenSettings);
   el.classList.remove('hidden');
-  if (el === screenMenu) renderProfileStrip();
+  // The bed sits forward everywhere except over a live board, where the
+  // effects need the room.
+  sfx.setBedMood(el === screenGame ? 'match' : 'menu');
+  if (el === screenMenu) {
+    renderProfileStrip();
+    renderSetupSummary();
+    void startAttract();
+  } else {
+    stopAttract();
+  }
+  syncBenchGrid();
+  if (from !== el) playScreenIn(el);
+}
+
+/** The page's measurement grid is the bench the UI sits on — but only while
+ *  there is no board on screen. A board draws its own lattice, and the two
+ *  grids do not line up, which reads as a rendering fault rather than as
+ *  texture. Applies equally to the attract match behind the title screen. */
+function syncBenchGrid() {
+  const boardOnScreen = !screenGame.classList.contains('hidden') || attractRenderer !== null;
+  document.body.classList.toggle('board-showing', boardOnScreen);
+}
+
+/** Screens used to swap by toggling display, which is instant in the wrong
+ *  way — nothing carries across the cut. A short fade and rise is enough for
+ *  one screen to read as handing over to the next. Done with a class rather
+ *  than GSAP so the menu keeps loading without the animation library. */
+function playScreenIn(el: HTMLElement) {
+  el.classList.remove('screen-in');
+  void el.offsetWidth; // restart the animation even on a repeated target
+  el.classList.add('screen-in');
 }
 function showOverlay(el: HTMLElement) {
   el.classList.remove('hidden');
 }
 function hideOverlay(el: HTMLElement) {
   el.classList.add('hidden');
+}
+
+// ---------- Attract mode ----------
+/** The title screen runs a real match behind it: a live GameEngine, two AI
+ *  seats and the same renderer the game uses. Three things at once — it is the
+ *  brief's motion language (§18) where the menu had none, it shows a
+ *  first-time player the mechanic before they have read a word, and because it
+ *  pulls in the renderer chunk while they are still looking at the menu, the
+ *  first Start no longer waits on a 600 KB download behind an empty screen. */
+let attractEngine: GameEngine | null = null;
+let attractRenderer: ThreeRenderer | null = null;
+/** Bumped on every stop, so an attract loop or a pending chunk load can tell
+ *  that the player has moved on and bail rather than mounting over them. */
+let attractToken = 0;
+
+function newAttractEngine(): GameEngine {
+  const size = BOARD_SIZES.medium;
+  const players: PlayerConfig[] = [0, 1].map((i) => ({
+    id: i,
+    name: PLAYER_THEMES[i].name,
+    color: PLAYER_THEMES[i].base,
+    colorLight: PLAYER_THEMES[i].light,
+    isAlive: true,
+  }));
+  return new GameEngine({ rows: size.rows, cols: size.cols, players });
+}
+
+async function startAttract() {
+  if (attractRenderer || renderer || reducedMotion()) return;
+  const token = ++attractToken;
+  const { ThreeRenderer: Renderer } = await import('./render3d/ThreeRenderer');
+  if (token !== attractToken) return;
+  attractEngine = newAttractEngine();
+  const board = new Renderer(attractEngine, colorOf, 'dots');
+  await board.init(attractHost);
+  if (token !== attractToken) {
+    board.destroy();
+    return;
+  }
+  attractRenderer = board;
+  board.resetVisual();
+  board.setTurnColor(PLAYER_THEMES[0].base, true);
+  attractHost.classList.remove('hidden');
+  syncBenchGrid();
+  // Next frame, so the opacity transition has a start value to run from.
+  requestAnimationFrame(() => attractHost.classList.add('live'));
+  void runAttract(token);
+}
+
+function stopAttract() {
+  attractToken++;
+  attractHost.classList.remove('live');
+  attractHost.classList.add('hidden');
+  attractRenderer?.destroy();
+  attractRenderer = null;
+  attractEngine = null;
+  attractHost.querySelectorAll('canvas').forEach((c) => c.remove());
+  syncBenchGrid();
+}
+
+async function runAttract(token: number) {
+  while (token === attractToken && attractRenderer && attractEngine) {
+    await wait(ATTRACT_MOVE_MS);
+    if (token !== attractToken) return;
+    // A hidden tab throttles requestAnimationFrame, so the renderer's
+    // animations would never settle and every queued move would pile up
+    // behind them. Wait it out instead.
+    if (document.hidden) continue;
+    const board = attractRenderer;
+    const game = attractEngine;
+    if (!board || !game) return;
+
+    if (game.gameOver) {
+      await wait(ATTRACT_RESTART_MS);
+      if (token !== attractToken || !attractRenderer || !attractEngine) return;
+      // Reload rather than rebuild: the renderer holds this engine object, and
+      // swapping it would mean tearing down a WebGL context every match.
+      attractEngine.loadSnapshot(newAttractEngine().getSnapshot());
+      attractRenderer.resetVisual();
+      attractRenderer.setTurnColor(PLAYER_THEMES[0].base, true);
+      continue;
+    }
+
+    const move = chooseMove(game, game.currentPlayer().id, ATTRACT_SKILL);
+    if (!move) return;
+    const result = game.applyMove(move.row, move.col);
+    await board.playEvents(result.events).catch(() => {});
+    if (token !== attractToken || !attractRenderer) return;
+    if (!game.gameOver) attractRenderer.setTurnColor(colorOf(game.currentPlayer().id).base);
+  }
 }
 
 // ---------- Series / run bookkeeping ----------
@@ -687,12 +1074,28 @@ function stopTurnClock() {
 /** Blitz is local-only for now: an online turn clock has to be enforced by the
  *  relay to stay server-authoritative, and running it client-side would hand
  *  every client its own idea of when a turn expired. */
+/** The local clock. Online, the relay keeps time instead — see
+ *  runTurnClock's `autoPlay` argument and net.onTurnClock below. */
 function startTurnClock() {
   const seconds = GAME_MODES[modeKey].turnSeconds;
   stopTurnClock();
   if (!seconds || onlineMode || !engine || engine.gameOver) return;
+  runTurnClock(seconds * 1000, true);
+}
 
-  const totalMs = seconds * 1000;
+/**
+ * Runs the visible countdown.
+ *
+ * `autoPlay` is what separates the two modes of this clock. Locally there is
+ * nobody else to enforce it, so expiry plays the move. Online the relay owns
+ * the deadline — it has to, or every client gets its own idea of when a turn
+ * expired and the one with the slowest connection always loses the argument —
+ * so expiry here just stops the counter and waits for the move to arrive.
+ */
+function runTurnClock(totalMs: number, autoPlay: boolean) {
+  stopTurnClock();
+  if (!engine || engine.gameOver) return;
+
   const deadline = performance.now() + totalMs;
   const generation = soundGeneration;
   let lastWholeSecond = -1;
@@ -716,8 +1119,16 @@ function startTurnClock() {
     }
 
     if (left <= 0) {
-      stopTurnClock();
-      void autoPlayTurn();
+      if (autoPlay) {
+        stopTurnClock();
+        void autoPlayTurn();
+      } else {
+        // Leave the readout sitting at zero: the relay's move is already on
+        // its way, and hiding the clock first would look like the turn was
+        // skipped rather than played.
+        cancelAnimationFrame(clockRaf);
+        turnClockValue.textContent = '0.0';
+      }
       return;
     }
     clockRaf = requestAnimationFrame(step);
@@ -813,6 +1224,17 @@ async function startLocalGame() {
  *  any time the player leaves the game screen without starting a new game
  *  (starting one already tears down the old game via mountGame below). */
 function leaveGameScreen() {
+  // A match left part-way is exactly what "match completion" in §14 measures
+  // against, so it has to be reported as loudly as a finished one.
+  if (matchStartedAt && engine && !engine.gameOver) {
+    telemetry.event('match_abandoned', {
+      mode: modeKey,
+      online: onlineMode,
+      seconds: Math.round((Date.now() - matchStartedAt) / 1000),
+      turns: matchTurns,
+    });
+  }
+  matchStartedAt = 0;
   soundGeneration++;
   stopTurnClock();
   hideChain();
@@ -837,6 +1259,9 @@ async function mountGame(
   opts: { fromSnapshot?: boolean } = {}
 ): Promise<boolean> {
   soundGeneration++;
+  // Two WebGL contexts for one board is one too many, and the attract match
+  // has no reason to keep running once a real one is starting.
+  stopAttract();
   stopTurnClock();
   hideChain();
   // Hidden on every mount; the online paths turn it back on via
@@ -869,6 +1294,17 @@ async function mountGame(
   // Snapped, not eased: there is no previous turn to hand off from.
   syncBoardTurnColor(true);
   animating = false;
+  matchStartedAt = Date.now();
+  telemetry.event('match_start', {
+    mode: modeKey,
+    size: boardSizeKey,
+    players: newEngine.players.length,
+    online: onlineMode,
+    // A bot match is neither a human match nor pass-and-play, and lumping it
+    // in with either makes mode popularity meaningless.
+    opponent: onlineMode ? 'human' : activeBot ? 'bot' : 'local',
+    resumed: opts.fromSnapshot === true,
+  });
 
   exposeDebug();
   return true;
@@ -876,7 +1312,7 @@ async function mountGame(
 
 function exposeDebug() {
   if (import.meta.env.DEV) {
-    (window as any).__debug = { engine, renderer, net, onCellTapLocal, onCellTapOnline };
+    (window as any).__debug = { engine, renderer, net, sfx, haptics, onCellTapLocal, onCellTapOnline };
   }
 }
 
@@ -1006,7 +1442,8 @@ function resultPresentation(winnerId: number) {
     const cleared = winnerId !== AI_PLAYER_ID;
     return {
       eyebrow: cleared ? `round ${survivalRound} cleared` : 'run ended',
-      title: cleared ? `Round ${survivalRound} cleared` : `The system took round ${survivalRound}`,
+      name: cleared ? `Round ${survivalRound}` : 'The system',
+      verb: cleared ? 'cleared' : `took round ${survivalRound}`,
       action: cleared ? `Round ${survivalRound + 1}` : 'Restart run',
     };
   }
@@ -1018,23 +1455,25 @@ function resultPresentation(winnerId: number) {
     if (seriesDecided()) {
       return {
         eyebrow: 'series complete',
-        title: `${winnerName} takes the series ${score}`,
+        name: winnerName,
+        verb: `takes the series ${score}`,
         action: 'New series',
       };
     }
     return {
       eyebrow: `game ${seriesGame} of ${mode.seriesLength} · ${score}`,
-      title: `${winnerName} wins game ${seriesGame}`,
+      name: winnerName,
+      verb: `wins game ${seriesGame}`,
       action: 'Next game',
     };
   }
 
   if (engine!.isTeamGame) {
     const team = engine!.teamOf(winnerId) ?? 0;
-    return { eyebrow: 'reaction complete', title: `${TEAM_NAMES[team]} wins`, action: 'Run again' };
+    return { eyebrow: 'reaction complete', name: TEAM_NAMES[team], verb: 'wins', action: 'Run again' };
   }
 
-  return { eyebrow: 'reaction complete', title: `${winnerName} wins`, action: 'Run again' };
+  return { eyebrow: 'reaction complete', name: winnerName, verb: 'wins', action: 'Run again' };
 }
 
 function showWin(winnerId: number) {
@@ -1057,8 +1496,12 @@ function showWin(winnerId: number) {
 
   const view = resultPresentation(winnerId);
   winEyebrowEl.textContent = view.eyebrow;
-  winTitleEl.textContent = view.title;
-  winTitleEl.style.color = theme.css;
+  winNameEl.textContent = view.name;
+  winVerbEl.textContent = view.verb;
+  // One value drives the name, its glow and the rule under the head.
+  winCardEl.style.setProperty('--win-color', theme.css);
+  winCardEl.style.setProperty('--win-glow', `${theme.css}3d`);
+  winCardEl.style.setProperty('--win-line', `${theme.css}40`);
   playAgainBtn.textContent = view.action;
 
   // A Survival round is one step of a run, not a match in its own right — only
@@ -1097,8 +1540,78 @@ function showWin(winnerId: number) {
   // showing the pre-game score next to a card announcing the new one.
   renderMatchBanner();
 
+  telemetry.event('match_end', {
+    mode: modeKey,
+    online: onlineMode,
+    seconds: matchStartedAt ? Math.round((Date.now() - matchStartedAt) / 1000) : undefined,
+    turns: matchTurns,
+    bestChain: matchBestChain,
+    won: winnerId === localSeatId(),
+  });
+  matchStartedAt = 0;
+
   launchTraces(theme.css);
-  setTimeout(() => showOverlay(screenWin), 450);
+  const generation = soundGeneration;
+  setTimeout(() => {
+    if (generation !== soundGeneration) return;
+    showOverlay(screenWin);
+    void runVictoryLap(winnerId, generation);
+  }, 450);
+}
+
+/** The board froze the instant the result card appeared, which is the least
+ *  celebratory thing a chain-reaction game can do. It keeps reacting instead:
+ *  the winner's own cells are pushed over critical, one every second or so,
+ *  and allowed to cascade under the card.
+ *
+ *  It runs on a *copy* of the final position with the game-over flag cleared,
+ *  because `canPlay` — correctly — refuses every move once a winner exists.
+ *  Every pop is still a real engine move, so the cascade rules stay in one
+ *  place, and the live engine keeps the position the match actually ended on
+ *  for the result card and the stats to read. */
+async function runVictoryLap(winnerId: number, generation: number) {
+  if (!engine || reducedMotion()) return;
+  const lap = new GameEngine({
+    rows: engine.rows,
+    cols: engine.cols,
+    players: engine.players.map((p) => ({ ...p })),
+    kinds: engine.kinds,
+  });
+  lap.loadSnapshot(engine.getSnapshot());
+  const seat = lap.players.findIndex((p) => p.id === winnerId);
+  if (seat < 0) return;
+
+  while (generation === soundGeneration) {
+    await wait(VICTORY_LAP_MS);
+    const board = renderer;
+    if (generation !== soundGeneration || !board) return;
+    if (document.hidden) continue;
+
+    lap.gameOver = false;
+    lap.winner = null;
+    lap.currentPlayerIndex = seat;
+    const cell = pickVictoryCell(lap, winnerId);
+    if (!cell) return;
+    await board.playEvents(lap.applyMove(cell.row, cell.col).events).catch(() => {});
+  }
+}
+
+/** Prefers a cell one particle short of critical, so most placements actually
+ *  pop, but not every time — an unbroken string of explosions under the card
+ *  reads as a stuck animation rather than a board still alive. */
+function pickVictoryCell(lap: GameEngine, winnerId: number) {
+  const primed: { row: number; col: number }[] = [];
+  const held: { row: number; col: number }[] = [];
+  for (let r = 0; r < lap.rows; r++) {
+    for (let c = 0; c < lap.cols; c++) {
+      const cell = lap.getCell(r, c);
+      if (cell.owner !== winnerId || cell.orbs <= 0) continue;
+      (cell.orbs >= lap.criticalMass(r, c) - 1 ? primed : held).push({ row: r, col: c });
+    }
+  }
+  const pool = primed.length && (!held.length || Math.random() < 0.7) ? primed : held;
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** Thin particle traces settling out of the reaction — the winner's emission
@@ -1144,6 +1657,12 @@ const friendMsgEl = $('friend-msg');
 const myCodeEl = $('my-code');
 let boardTab: 'world' | 'friends' = 'world';
 
+/** Name of the tier above this rating, for the "N to Gold" hint. */
+function RANK_NEXT_NAME(rating: number): string {
+  const at = nextRankAt(rating);
+  return at === null ? '' : rankFor(at).name;
+}
+
 function renderAccountStrip() {
   const p = account.profile;
   if (!p) {
@@ -1151,10 +1670,18 @@ function renderAccountStrip() {
     return;
   }
   accountStripEl.classList.remove('hidden');
+  // The rating was always here and always meaningless on its own: "1043" says
+  // nothing about whether you are doing well. The tier is the same number with
+  // a meaning, and the bar says how far through it you are.
+  const rank = rankFor(p.rating);
+  const next = nextRankAt(p.rating);
   accountStripEl.innerHTML =
+    `<span class="brank" style="color:${rank.css}">${rank.name}</span>` +
     `<span>rating <span class="av">${p.rating}</span></span>` +
     `<span>${p.wins}W / ${p.losses}L</span>` +
-    `<span style="margin-left:auto">code <span class="av">${escapeHtml(p.friendCode)}</span></span>`;
+    `<span style="margin-left:auto">code <span class="av">${escapeHtml(p.friendCode)}</span></span>` +
+    `<div class="rank-bar" title="${next ? `${next - p.rating} to ${RANK_NEXT_NAME(p.rating)}` : 'Top tier'}">` +
+    `<span style="width:${Math.round(rankProgress(p.rating) * 100)}%;background:${rank.css}"></span></div>`;
 }
 
 /** Called when the player opens the online screen. Minting the account here
@@ -1188,10 +1715,11 @@ async function renderBoards() {
     boardRowsEl.innerHTML = rows
       .map((r, i) => {
         const mine = me && r.id === me.id;
+        const rank = rankFor(r.rating);
         return `<div class="board-row${mine ? ' me' : ''}">
           <span class="bpos">${String(i + 1).padStart(2, '0')}</span>
           <span class="bname">${escapeHtml(r.name)}</span>
-          <span class="bstat">${r.wins}W · ×${r.bestChain}</span>
+          <span class="bstat"><span class="brank" style="color:${rank.css}">${rank.name}</span> · ${r.wins}W · ×${r.bestChain}</span>
           <span class="brating">${r.rating}</span>
         </div>`;
       })
@@ -1620,11 +2148,18 @@ function wireNetHandlers(client: NetClient) {
     );
     showScreen(screenOnline);
   };
+  client.onTurnClock = (_player, ms) => {
+    runTurnClock(ms, false);
+  };
   client.onReconnecting = (attempt, max) => {
+    // Only the first attempt: the ladder makes up to nine, and nine events per
+    // bad connection would drown out everything else in the batch.
+    if (attempt === 1) telemetry.event('disconnect', { inMatch: engine !== null && !engine.gameOver });
     connStatusEl.classList.remove('hidden', 'ok', 'bad');
     connStatusEl.innerHTML = `<span class="spin"></span> reconnecting ${attempt}/${max}`;
   };
   client.onReconnected = () => {
+    telemetry.event('reconnected');
     connStatusEl.classList.remove('hidden', 'bad');
     connStatusEl.classList.add('ok');
     connStatusEl.textContent = 'back online';
@@ -1846,19 +2381,27 @@ function leaveOnlineGame() {
 }
 
 // ---------- Join-via-link ----------
-function checkRoomLinkParam() {
+/** True when a ?room= link took the player straight to the online screen, so
+ *  init knows not to open the title screen over the top of it. */
+function checkRoomLinkParam(): boolean {
   const room = new URLSearchParams(location.search).get('room');
-  if (room) {
-    joinCodeInput.value = room.toUpperCase();
-    showScreen(screenOnline);
-  }
+  if (!room) return false;
+  joinCodeInput.value = room.toUpperCase();
+  showScreen(screenOnline);
+  return true;
 }
 
 // ---------- init ----------
-selectMode(DEFAULT_MODE);
+selectMode(applyStoredPrefs());
 selectLobbyMode(DEFAULT_MODE);
 selectQuickMode(DEFAULT_MODE);
 buildTauntPalette();
+showHowtoPage(0);
 renderProfileStrip();
+renderSetupSummary();
 updateMuteIcon();
-checkRoomLinkParam();
+// showScreen does more than reveal a section now — it starts and stops attract
+// mode — so the title screen has to be entered through it like any other.
+if (!checkRoomLinkParam()) showScreen(screenMenu);
+telemetry.start();
+exposeDebug();

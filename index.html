@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- Apple has never supported an SVG touch icon. -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#07090c" />
@@ -12,13 +13,23 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="REACTON — a multiplayer orb-reaction strategy game. Drive cells past critical mass, propagate the cascade, capture the field. Local pass-and-play or online with a room code." />
 
+    <!-- Share cards need an absolute URL and a raster image: a relative path
+         resolves against the crawler, and almost no platform renders SVG.
+         Regenerate og-card.png with "npm run icons"; update the origin here
+         if the deployed domain changes. -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="REACTON" />
+    <meta property="og:url" content="https://chainreaction-sooty.vercel.app/" />
     <meta property="og:title" content="REACTON" />
     <meta property="og:description" content="Drive cells past critical mass. Propagate the cascade. Capture the field." />
-    <meta property="og:image" content="/favicon.svg" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://chainreaction-sooty.vercel.app/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The REACTON mark: a charged cell firing into its four neighbours." />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="REACTON" />
     <meta name="twitter:description" content="Drive cells past critical mass. Propagate the cascade. Capture the field." />
+    <meta name="twitter:image" content="https://chainreaction-sooty.vercel.app/og-card.png" />
 
     <title>REACTON — chain reaction strategy</title>
   </head>
@@ -29,19 +40,119 @@
            most needs to be visible. -->
       <div id="conn-status" class="conn-status hidden"></div>
 
-      <!-- MENU SCREEN -->
+      <!-- ATTRACT MODE — a real match plays itself behind the title screen.
+           A direct child of #app rather than of the menu section, so it can
+           never be dragged around by that section's own scrolling, and so a
+           screen change never has to re-parent a live WebGL canvas. -->
+      <div id="attract-host" class="attract-host hidden" aria-hidden="true"></div>
+
+      <!-- TITLE SCREEN — one decision. Everything that configures a match
+           lives in the setup sheet below, defaulted to whatever was played
+           last, so arriving at the game is not arriving at a form. -->
       <section id="screen-menu" class="screen">
+        <div id="level-chip" class="level-chip"></div>
+        <button id="settings-btn" class="icon-btn corner-btn corner-btn-2" aria-label="Settings">⚙</button>
         <button id="mute-btn-menu" class="icon-btn corner-btn" aria-label="Toggle sound">🔊</button>
-        <div class="menu-inner">
+
+        <div class="menu-inner title-inner">
           <div class="logo-wrap">
-            <div class="mark" aria-hidden="true">
-              <span class="mark-core"></span>
-              <span class="mark-ring"></span>
-              <span class="mark-ring mark-ring-2"></span>
-            </div>
+            <!-- The brand mark from favicon.svg, animated: the core charges,
+                 goes critical, and fires into its four neighbours. The logo
+                 demonstrates the mechanic. -->
+            <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+              <circle class="mark-shell" cx="32" cy="32" r="19" />
+              <g class="mark-traces">
+                <path d="M32 23V15" /><path d="M32 41v8" />
+                <path d="M23 32h-8" /><path d="M41 32h8" />
+              </g>
+              <g class="mark-nodes">
+                <circle cx="32" cy="12" r="3.4" /><circle cx="32" cy="52" r="3.4" />
+                <circle cx="12" cy="32" r="3.4" /><circle cx="52" cy="32" r="3.4" />
+              </g>
+              <circle class="mark-wave" cx="32" cy="32" r="10" />
+              <circle class="mark-core" cx="32" cy="32" r="10" />
+            </svg>
             <h1 class="logo">REACTON</h1>
             <p class="tagline">critical mass · propagation · capture</p>
           </div>
+
+          <div class="title-actions">
+            <button id="play-btn" class="primary-btn">Play</button>
+
+            <button id="setup-btn" class="setup-btn" aria-haspopup="dialog">
+              <span id="setup-summary" class="setup-summary">Classic · 11×6 · 2 players</span>
+              <span class="setup-cue" aria-hidden="true">setup</span>
+            </button>
+
+            <div class="title-row">
+              <button id="play-online-btn" class="ghost-btn">Play online</button>
+              <button id="howto-btn" class="ghost-btn">How to play</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="screen-settings" class="screen hidden overlay">
+        <div class="howto-card settings-card" role="dialog" aria-label="Settings">
+          <div class="win-eyebrow">calibration</div>
+          <h2>Settings</h2>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Master <span class="field-unit" id="volume-value">80%</span></div>
+              <input id="volume-range" class="range" type="range" min="0" max="100" step="1" value="80" aria-label="Master volume" />
+            </div>
+
+            <div class="field">
+              <div class="field-label">Ambience <span class="field-unit" id="music-value">45%</span></div>
+              <input id="music-range" class="range" type="range" min="0" max="100" step="1" value="45" aria-label="Ambience level" />
+              <p class="field-note">A low bed under the board. Zero switches it off rather than leaving it running silently.</p>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Haptics <span class="field-unit">vibration</span></div>
+              <div id="haptics-group" class="segmented">
+                <button class="segment active" data-haptics="1">On</button>
+                <button class="segment" data-haptics="0">Off</button>
+              </div>
+              <p id="haptics-note" class="field-note hidden">This device has no vibration motor, so this setting does nothing here.</p>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Motion</div>
+              <div id="motion-group" class="segmented">
+                <button class="segment active" data-motion="full">Full</button>
+                <button class="segment" data-motion="reduced">Reduced</button>
+              </div>
+              <p class="field-note">Reduced stops the title screen's board, the screen transitions and the cascade under the result card. Starts from your system setting.</p>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Diagnostics <span class="field-unit">anonymous</span></div>
+              <div id="telemetry-group" class="segmented">
+                <button class="segment active" data-telemetry="1">On</button>
+                <button class="segment" data-telemetry="0">Off</button>
+              </div>
+              <p id="telemetry-note" class="field-note">Counts and durations only — never your name, room codes or board positions.</p>
+            </div>
+          </div>
+
+          <p class="legal-row">
+            <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
+            <span aria-hidden="true">·</span>
+            <a href="/terms.html" target="_blank" rel="noopener">Terms</a>
+          </p>
+
+          <button id="settings-close-btn" class="primary-btn">Done</button>
+        </div>
+      </section>
+
+      <!-- MATCH SETUP — the old menu, one level down. -->
+      <section id="screen-setup" class="screen hidden overlay">
+        <div class="howto-card setup-card" role="dialog" aria-label="Match setup">
+          <div class="win-eyebrow">match setup</div>
+          <h2>Configure the run</h2>
 
           <div id="profile-strip" class="profile-strip"></div>
 
@@ -96,9 +207,10 @@
             </div>
           </div>
 
-          <button id="play-btn" class="primary-btn">Start reaction</button>
-          <button id="play-online-btn" class="ghost-btn wide-btn">Play online</button>
-          <button id="howto-btn" class="link-btn">How to play</button>
+          <div class="setup-actions">
+            <button id="setup-start-btn" class="primary-btn">Start reaction</button>
+            <button id="setup-close-btn" class="ghost-btn">Done</button>
+          </div>
         </div>
       </section>
 
@@ -229,7 +341,7 @@
                   <button class="segment" data-style="emoji">Reactive 🤯</button>
                 </div>
               </div>
-              <p class="field-note">Blitz, Tournament and Survival are local-only for now — they need a server-side clock, series state or an AI that the relay doesn't run yet.</p>
+              <p class="field-note">Tournament and Survival are local-only for now — they need series state, or an AI, that the relay doesn't run yet.</p>
             </div>
           </div>
 
@@ -270,7 +382,13 @@
         <div class="win-card">
           <div class="win-card-head">
             <div class="win-eyebrow">reaction complete</div>
-            <div id="win-title" class="win-title">Player 1 Wins</div>
+            <!-- Two parts, typeset differently: who it was, then what they did.
+                 One run-on sentence in the UI font is what made this read as a
+                 dialog label rather than a result. -->
+            <div id="win-title" class="win-title">
+              <span id="win-name" class="win-name">Player 1</span>
+              <span id="win-verb" class="win-verb">wins</span>
+            </div>
           </div>
           <div id="win-metrics" class="win-metrics"></div>
           <div id="win-leaderboard" class="win-leaderboard"></div>
@@ -309,18 +427,231 @@
         </div>
       </section>
 
-      <!-- HOW TO PLAY OVERLAY -->
+      <!-- HOW TO PLAY — five pages, one idea each. The diagrams are the real
+           board's geometry and palette so nothing has to be re-learned when
+           the player closes this and taps a cell. -->
       <section id="screen-howto" class="screen hidden overlay">
-        <div class="howto-card">
-          <div class="win-eyebrow">protocol</div>
-          <h2>How to play</h2>
-          <ol class="howto-list">
-            <li><b>Charge a cell.</b> Tap any empty cell, or one you already hold, to add a particle.</li>
-            <li><b>Reach critical mass.</b> A cell goes critical at 2 particles in a corner, 3 on an edge, 4 in the interior. Cells one particle short pulse — that's your warning.</li>
-            <li><b>Propagate.</b> A critical cell ejects one particle into each neighbour, converting them to your emission and possibly driving them critical too. That's the chain.</li>
-            <li><b>Capture the field.</b> Strip an opponent of every particle to eliminate them. Last emission standing wins.</li>
-          </ol>
-          <button id="howto-close-btn" class="primary-btn">Understood</button>
+        <div class="howto-card howto-paged" role="dialog" aria-label="How to play">
+          <div class="howto-head">
+            <div class="win-eyebrow">protocol</div>
+            <span id="howto-step" class="howto-step">1 / 5</span>
+          </div>
+
+          <div id="howto-pages" class="howto-pages">
+            <article class="howto-page">
+              <div class="howto-figure">
+                <svg viewBox="0 0 180 108" role="img" aria-label="A board almost entirely held by one colour, with a single opposing cell left">
+                  <g class="dia">
+                    <rect class="d-cell cy" x="3" y="3" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="18" cy="18" r="4.5" />
+                    <rect class="d-cell cy" x="39" y="3" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="49" cy="18" r="4.5" />
+                    <circle class="d-orb" cx="59" cy="18" r="4.5" />
+                    <rect class="d-cell cy" x="75" y="3" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="90" cy="18" r="4.5" />
+                    <rect class="d-cell cy" x="111" y="3" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="126" cy="18" r="4.5" />
+                    <rect class="d-cell cy" x="147" y="3" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="162" cy="18" r="4.5" />
+
+                    <rect class="d-cell cy" x="3" y="39" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="13" cy="54" r="4.5" />
+                    <circle class="d-orb" cx="23" cy="54" r="4.5" />
+                    <rect class="d-cell cy" x="39" y="39" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="54" cy="54" r="4.5" />
+                    <rect class="d-cell cy" x="75" y="39" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="90" cy="54" r="4.5" />
+                    <rect class="d-cell rd" x="111" y="39" width="30" height="30" rx="4" />
+                    <circle class="d-orb rd" cx="126" cy="54" r="4.5" />
+                    <rect class="d-cell cy" x="147" y="39" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="162" cy="54" r="4.5" />
+
+                    <rect class="d-cell cy" x="3" y="75" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="18" cy="90" r="4.5" />
+                    <rect class="d-cell cy" x="39" y="75" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="54" cy="90" r="4.5" />
+                    <rect class="d-cell cy" x="75" y="75" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="85" cy="90" r="4.5" />
+                    <circle class="d-orb" cx="95" cy="90" r="4.5" />
+                    <rect class="d-cell cy" x="111" y="75" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="126" cy="90" r="4.5" />
+                    <rect class="d-cell cy" x="147" y="75" width="30" height="30" rx="4" />
+                    <circle class="d-orb" cx="162" cy="90" r="4.5" />
+                  </g>
+                </svg>
+              </div>
+              <h3>Take the whole board</h3>
+              <p>Every particle on the board belongs to somebody. Knock out everyone else and the last colour standing wins.</p>
+              <p class="howto-tip"><b>One red cell left</b> — one move from over.</p>
+            </article>
+
+            <article class="howto-page">
+              <div class="howto-figure">
+                <svg viewBox="0 0 200 62" role="img" aria-label="An empty cell gains one particle when tapped, then a second">
+                  <g class="dia">
+                    <rect class="d-cell" x="8" y="9" width="44" height="44" rx="5" />
+                    <circle class="d-tap" cx="30" cy="31" r="13" />
+                    <circle class="d-tap-dot" cx="30" cy="31" r="3" />
+
+                    <path class="d-arrow" d="M62 31h12" />
+                    <path class="d-arrow" d="M70 27l5 4-5 4" />
+
+                    <rect class="d-cell cy" x="80" y="9" width="44" height="44" rx="5" />
+                    <circle class="d-orb" cx="102" cy="31" r="6" />
+
+                    <path class="d-arrow" d="M134 31h12" />
+                    <path class="d-arrow" d="M142 27l5 4-5 4" />
+
+                    <rect class="d-cell cy" x="152" y="9" width="44" height="44" rx="5" />
+                    <circle class="d-orb" cx="167" cy="31" r="6" />
+                    <circle class="d-orb" cx="181" cy="31" r="6" />
+                  </g>
+                </svg>
+              </div>
+              <h3>Tap to add a particle</h3>
+              <p>On your turn, tap an empty cell or one you already hold. That is the whole move. You can never add to a cell someone else owns.</p>
+              <p class="howto-tip"><b>Turns alternate</b> — one particle each, no passing.</p>
+            </article>
+
+            <article class="howto-page">
+              <div class="howto-figure">
+                <svg viewBox="0 0 180 108" role="img" aria-label="A corner cell holds two, an edge cell three, an interior cell four">
+                  <g class="dia">
+                    <rect class="d-cell hot" x="3" y="3" width="30" height="30" rx="4" />
+                    <text class="d-num" x="18" y="23">2</text>
+                    <rect class="d-cell" x="39" y="3" width="30" height="30" rx="4" />
+                    <rect class="d-cell hot" x="75" y="3" width="30" height="30" rx="4" />
+                    <text class="d-num" x="90" y="23">3</text>
+                    <rect class="d-cell" x="111" y="3" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="147" y="3" width="30" height="30" rx="4" />
+
+                    <rect class="d-cell" x="3" y="39" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="39" y="39" width="30" height="30" rx="4" />
+                    <rect class="d-cell hot" x="75" y="39" width="30" height="30" rx="4" />
+                    <text class="d-num" x="90" y="59">4</text>
+                    <rect class="d-cell" x="111" y="39" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="147" y="39" width="30" height="30" rx="4" />
+
+                    <rect class="d-cell" x="3" y="75" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="39" y="75" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="75" y="75" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="111" y="75" width="30" height="30" rx="4" />
+                    <rect class="d-cell" x="147" y="75" width="30" height="30" rx="4" />
+                  </g>
+                </svg>
+              </div>
+              <h3>Every cell has a limit</h3>
+              <p>A cell bursts the moment it reaches <b>2</b> particles in a corner, <b>3</b> along an edge, or <b>4</b> in the middle — one for each neighbour it touches.</p>
+              <p class="howto-tip"><b>Corners fill fastest.</b> A cell one particle short pulses — that is your warning.</p>
+            </article>
+
+            <article class="howto-page">
+              <div class="howto-figure">
+                <svg viewBox="0 0 224 94" role="img" aria-label="A full cell empties and sends one particle into each neighbour, turning them">
+                  <g class="dia">
+                    <rect class="d-cell" x="3" y="3" width="26" height="26" rx="4" />
+                    <rect class="d-cell rd" x="34" y="3" width="26" height="26" rx="4" />
+                    <circle class="d-orb rd" cx="47" cy="16" r="4" />
+                    <rect class="d-cell" x="65" y="3" width="26" height="26" rx="4" />
+
+                    <rect class="d-cell rd" x="3" y="34" width="26" height="26" rx="4" />
+                    <circle class="d-orb rd" cx="16" cy="47" r="4" />
+                    <rect class="d-cell cy hot" x="34" y="34" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="42" cy="43" r="4" />
+                    <circle class="d-orb" cx="52" cy="43" r="4" />
+                    <circle class="d-orb" cx="42" cy="52" r="4" />
+                    <circle class="d-orb" cx="52" cy="52" r="4" />
+                    <rect class="d-cell" x="65" y="34" width="26" height="26" rx="4" />
+
+                    <rect class="d-cell" x="3" y="65" width="26" height="26" rx="4" />
+                    <rect class="d-cell rd" x="34" y="65" width="26" height="26" rx="4" />
+                    <circle class="d-orb rd" cx="47" cy="78" r="4" />
+                    <rect class="d-cell" x="65" y="65" width="26" height="26" rx="4" />
+
+                    <path class="d-arrow" d="M101 47h16" />
+                    <path class="d-arrow" d="M112 42l6 5-6 5" />
+
+                    <g transform="translate(132,0)">
+                      <rect class="d-cell" x="3" y="3" width="26" height="26" rx="4" />
+                      <rect class="d-cell cy" x="34" y="3" width="26" height="26" rx="4" />
+                      <circle class="d-orb" cx="42" cy="16" r="4" />
+                      <circle class="d-orb" cx="52" cy="16" r="4" />
+                      <rect class="d-cell" x="65" y="3" width="26" height="26" rx="4" />
+
+                      <rect class="d-cell cy" x="3" y="34" width="26" height="26" rx="4" />
+                      <circle class="d-orb" cx="11" cy="47" r="4" />
+                      <circle class="d-orb" cx="21" cy="47" r="4" />
+                      <rect class="d-cell" x="34" y="34" width="26" height="26" rx="4" />
+                      <rect class="d-cell cy" x="65" y="34" width="26" height="26" rx="4" />
+                      <circle class="d-orb" cx="78" cy="47" r="4" />
+
+                      <rect class="d-cell" x="3" y="65" width="26" height="26" rx="4" />
+                      <rect class="d-cell cy" x="34" y="65" width="26" height="26" rx="4" />
+                      <circle class="d-orb" cx="42" cy="78" r="4" />
+                      <circle class="d-orb" cx="52" cy="78" r="4" />
+                      <rect class="d-cell" x="65" y="65" width="26" height="26" rx="4" />
+                    </g>
+                  </g>
+                </svg>
+              </div>
+              <h3>Full cells burst outward</h3>
+              <p>When a cell hits its number it empties, firing one particle into each neighbour — and every cell it lands in becomes <b>yours</b>, whoever held it a moment ago.</p>
+              <p class="howto-tip"><b>That is the whole game.</b> Territory changes hands by being hit, never by being outnumbered.</p>
+            </article>
+
+            <article class="howto-page">
+              <div class="howto-figure">
+                <svg viewBox="0 0 224 94" role="img" aria-label="One burst pushes neighbours over their own limits, cascading across the board">
+                  <g class="dia">
+                    <rect class="d-cell cy" x="3" y="3" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="16" cy="16" r="4" />
+                    <rect class="d-cell cy hot" x="34" y="3" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="42" cy="16" r="4" />
+                    <circle class="d-orb" cx="52" cy="16" r="4" />
+                    <rect class="d-cell cy" x="65" y="3" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="78" cy="16" r="4" />
+
+                    <rect class="d-cell cy hot" x="3" y="34" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="11" cy="47" r="4" />
+                    <circle class="d-orb" cx="21" cy="47" r="4" />
+                    <rect class="d-cell cy" x="34" y="34" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="47" cy="47" r="4" />
+                    <rect class="d-cell cy" x="65" y="34" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="78" cy="47" r="4" />
+
+                    <rect class="d-cell cy" x="3" y="65" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="16" cy="78" r="4" />
+                    <rect class="d-cell cy" x="34" y="65" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="47" cy="78" r="4" />
+                    <rect class="d-cell cy hot" x="65" y="65" width="26" height="26" rx="4" />
+                    <circle class="d-orb" cx="73" cy="78" r="4" />
+                    <circle class="d-orb" cx="83" cy="78" r="4" />
+
+                    <path class="d-arrow" d="M101 47h16" />
+                    <path class="d-arrow" d="M112 42l6 5-6 5" />
+
+                    <g transform="translate(132,0)">
+                      <circle class="d-blast" cx="47" cy="47" r="40" />
+                      <circle class="d-blast" cx="47" cy="47" r="27" />
+                      <circle class="d-blast" cx="47" cy="47" r="14" />
+                      <text class="d-chain" x="47" y="53">×7</text>
+                    </g>
+                  </g>
+                </svg>
+              </div>
+              <h3>One burst sets off the next</h3>
+              <p>The particles you fire can push those neighbours over <em>their</em> limits, and those over theirs. A single well-placed tap can roll across the whole board.</p>
+              <p class="howto-tip"><b>Chains win games.</b> Set them up before you set them off.</p>
+            </article>
+          </div>
+
+          <div id="howto-dots" class="howto-dots"></div>
+
+          <div class="howto-nav">
+            <button id="howto-prev" class="ghost-btn small-btn">Back</button>
+            <button id="howto-next" class="primary-btn small-btn">Next</button>
+          </div>
+          <button id="howto-close-btn" class="link-btn">Skip</button>
         </div>
       </section>
     </div>

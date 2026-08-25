@@ -63,6 +63,16 @@ body {
   background-size: 100% 100%, 34px 34px, 34px 34px;
 }
 
+/* The bench goes away while a board is on screen — a real one or the title
+   screen's attract match. The board draws its own lattice, and the page grid
+   behind a transparent WebGL canvas does not line up with it: two grids
+   slightly out of step read as a rendering fault rather than as texture, most
+   visibly in the margin around the plate where nothing covers them. The cyan
+   wash stays; only the ruled lines go. */
+body.board-showing {
+  background-image: radial-gradient(90% 60% at 50% -10%, rgba(58, 217, 255, 0.07), transparent 70%);
+}
+
 #app {
   position: fixed;
   inset: 0;
@@ -74,12 +84,70 @@ body {
 .screen {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
 }
 
+/* ---------- Attract mode ---------- */
+/* A real match plays itself behind the title screen — the brief's motion
+   language (§18) where the menu previously had none. Held well back: low
+   opacity plus a scrim pulled over the middle, so the reaction reads as
+   atmosphere and the type on top of it never has to fight it for contrast. */
+.attract-host {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(1.05);
+  transition: opacity 1.2s ease;
+}
+
+.attract-host.live {
+  opacity: 0.44;
+}
+
+.attract-host::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(56% 40% at 50% 46%, rgba(7, 9, 12, 0.95), rgba(7, 9, 12, 0.5) 60%, transparent 86%),
+    linear-gradient(rgba(7, 9, 12, 0.7), transparent 20%, transparent 76%, rgba(7, 9, 12, 0.85));
+}
+
 .hidden {
   display: none !important;
+}
+
+/* One screen handing over to the next, rather than replacing it. */
+.screen-in {
+  animation: screen-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.overlay:not(.hidden) {
+  animation: overlay-in 0.16s ease-out both;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ---------- Buttons ---------- */
@@ -118,6 +186,11 @@ body {
 .corner-btn-left {
   right: auto;
   left: 14px;
+}
+
+/* Second corner control, inboard of the first. */
+.corner-btn-2 {
+  right: 62px;
 }
 
 .primary-btn {
@@ -203,14 +276,32 @@ body {
   color: var(--text-dim);
 }
 
+/* Keyboard and controller navigation had no visible state anywhere: the only
+   focus rule in the stylesheet was on text inputs. Deliberately no
+   border-radius here — that property would override each control's own. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ---------- Menu / online / lobby shells ---------- */
-#screen-menu,
 #screen-online,
 #screen-lobby {
   align-items: center;
   justify-content: flex-start;
   padding: max(56px, calc(env(safe-area-inset-top) + 46px)) 18px max(24px, env(safe-area-inset-bottom));
   overflow-y: auto;
+}
+
+/* The title screen is the one screen that must never scroll: everything it
+   offers has to be reachable without a gesture, at every size. It can make
+   that promise because it only carries one decision — the rest moved into
+   the setup sheet. */
+#screen-menu {
+  align-items: center;
+  justify-content: center;
+  padding: max(64px, calc(env(safe-area-inset-top) + 54px)) 18px max(24px, env(safe-area-inset-bottom));
+  overflow: hidden;
 }
 
 .menu-inner {
@@ -228,52 +319,325 @@ body {
   margin-bottom: 2px;
 }
 
-/* Icon direction from the brief: one charged cell triggering a cascade. */
-.mark {
-  position: relative;
-  width: 46px;
-  height: 46px;
-  margin: 0 auto 14px;
+.title-inner {
+  max-width: 340px;
+  gap: 32px;
+  justify-content: center;
 }
 
-.mark-core,
-.mark-ring {
+.title-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* The settings that used to fill the title screen, reduced to the one line
+   that says what pressing Play will actually start — and doubling as the way
+   in to change it. */
+.setup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 15px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.setup-btn:hover {
+  border-color: var(--accent-line);
+  background: var(--panel-2);
+}
+
+.setup-btn:active {
+  transform: scale(0.99);
+}
+
+.setup-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.setup-cue {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.setup-cue::after {
+  content: ' \25B8';
+}
+
+.title-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.title-row .ghost-btn {
+  padding: 13px 8px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+}
+
+/* The one progression cue the title screen keeps. The full record moved into
+   the setup sheet — it is a thing to check, not a thing to read before
+   playing — but a returning player should still see they have one. */
+.level-chip {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: max(14px, env(safe-area-inset-top));
+  left: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  height: 40px;
+  padding: 0 13px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.level-chip .lv {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+
+/* ---------- Match setup sheet ---------- */
+.setup-card {
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setup-card h2 {
+  margin: 6px 0 0;
+}
+
+.setup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.setup-actions .primary-btn {
+  flex: 2;
+}
+
+.setup-actions .ghost-btn {
+  flex: 1;
+}
+
+/* ---------- Settings ---------- */
+.legal-row {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.legal-row a {
+  color: var(--text-faint);
+  text-decoration: none;
+  padding: 0 6px;
+}
+
+.legal-row a:hover {
+  color: var(--accent);
+}
+
+.settings-card {
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-card h2 {
+  margin: 6px 0 0;
+}
+
+/* Styled from scratch on both engines: the native track is the one control
+   that ignores the rest of the palette completely. */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: none;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+}
+
+.range::-moz-range-track {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  border: none;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(58, 217, 255, 0.55);
+}
+
+.range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(58, 217, 255, 0.55);
+}
+
+.range:active::-webkit-slider-thumb {
+  transform: scale(0.92);
+}
+
+/* Icon direction from the brief (§18): one charged cell triggering a
+   cascade. This is the favicon's own geometry rather than a second mark
+   invented for the screen — the strongest asset in the identity was the one
+   a player never saw. Animated, it demonstrates the mechanic: the core
+   charges, goes critical, and fires into its four neighbours. */
+.mark {
+  display: block;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 16px;
+  overflow: visible;
+}
+
+.mark-shell {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.2;
+}
+
+.mark-traces path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  animation: mark-trace 2.6s ease-out infinite;
+}
+
+.mark-nodes circle {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mark-node 2.6s ease-out infinite;
 }
 
 .mark-core {
-  width: 9px;
-  height: 9px;
-  background: var(--accent);
-  box-shadow: 0 0 14px 2px rgba(58, 217, 255, 0.8);
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 0 7px rgba(58, 217, 255, 0.8));
+  animation: mark-core 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-.mark-ring {
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--accent-line);
-  animation: mark-pulse 2.8s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+.mark-wave {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: mark-wave 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
 }
 
-.mark-ring-2 {
-  animation-delay: 1.4s;
-}
-
-@keyframes mark-pulse {
+@keyframes mark-core {
   0% {
-    width: 12px;
-    height: 12px;
-    opacity: 0.9;
+    transform: scale(0.7);
   }
-  70%,
+  42% {
+    transform: scale(0.97);
+  }
+  50% {
+    transform: scale(0.52);
+  }
+  72%,
   100% {
-    width: 46px;
-    height: 46px;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes mark-wave {
+  0%,
+  44% {
+    transform: scale(0.7);
     opacity: 0;
+  }
+  52% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.7);
+    opacity: 0;
+  }
+}
+
+@keyframes mark-node {
+  0%,
+  44% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  57% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes mark-trace {
+  0%,
+  44% {
+    opacity: 0.12;
+  }
+  55% {
+    opacity: 0.62;
+  }
+  100% {
+    opacity: 0.12;
   }
 }
 
@@ -629,7 +993,11 @@ body {
 }
 
 /* ---------- Game screen ---------- */
+/* And structurally, not only by that class: the game screen paints its own
+   ground, so nothing behind it can show through whatever route the player
+   took to get here. */
 #screen-game {
+  background-color: var(--bg);
   padding-top: env(safe-area-inset-top);
 }
 
@@ -1029,7 +1397,11 @@ body {
 /* ---------- Overlays ---------- */
 .overlay {
   align-items: center;
-  justify-content: center;
+  /* flex-start, not center: a card taller than the viewport gets its top
+     clipped and made unreachable under justify-content:center, however far
+     the container scrolls. The card auto-margins itself back to the middle
+     whenever there is room for it. */
+  justify-content: flex-start;
   background: rgba(4, 6, 9, 0.8);
   backdrop-filter: blur(8px);
   z-index: 20;
@@ -1057,28 +1429,218 @@ body {
   margin: 6px 0 18px;
 }
 
-.howto-list {
-  margin: 0 0 22px;
-  padding-left: 20px;
-  color: var(--text-dim);
-  line-height: 1.6;
-  font-size: 13.5px;
+/* ---------- How to play ---------- */
+/* Five pages, one idea each, rather than one wall of four rules. The
+   diagrams use the board's own geometry and palette so nothing has to be
+   re-learned the moment the player closes this and taps a cell. */
+.howto-paged {
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.howto-list li {
-  margin-bottom: 12px;
-  padding-left: 4px;
+.howto-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
-.howto-list li::marker {
-  color: var(--accent);
+.howto-step {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
-.howto-list b {
+.howto-page {
+  display: none;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.howto-page.on {
+  display: flex;
+  animation: howto-page-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes howto-page-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.howto-figure {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+}
+
+.howto-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.howto-page h3 {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: 0.005em;
+  color: var(--text);
+}
+
+.howto-page p {
+  margin: 0;
+  font-size: 13.8px;
+  line-height: 1.62;
+  color: var(--text-dim);
+}
+
+.howto-page p b {
   color: var(--text);
   font-weight: 600;
+}
+
+.howto-page em {
+  font-style: normal;
+  color: var(--text);
+}
+
+.howto-page p.howto-tip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  padding-left: 12px;
+  border-left: 1px solid var(--accent-line);
+}
+
+.howto-page p.howto-tip b {
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.howto-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+}
+
+.howto-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--hairline-strong);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.howto-dot.on {
+  background: var(--accent);
+  transform: scale(1.3);
+}
+
+.howto-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.howto-nav .ghost-btn {
+  flex: 1;
+}
+
+.howto-nav .primary-btn {
+  flex: 2;
+}
+
+.howto-paged .link-btn {
+  align-self: center;
+}
+
+/* Diagram vocabulary — one definition of each board element, shared by every
+   page, so a change to the board's colours only has to land in one place. */
+.dia .d-cell {
+  fill: #161b23;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+
+.dia .d-cell.cy {
+  fill: #0f2c37;
+  stroke: rgba(58, 217, 255, 0.34);
+}
+
+.dia .d-cell.rd {
+  fill: #33121a;
+  stroke: rgba(255, 51, 85, 0.34);
+}
+
+.dia .d-cell.hot {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.dia .d-orb {
+  fill: var(--accent);
+}
+
+.dia .d-orb.rd {
+  fill: var(--danger);
+}
+
+.dia .d-num {
+  fill: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.dia .d-tap {
+  fill: none;
+  stroke: var(--accent-line);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+
+.dia .d-tap-dot {
+  fill: var(--accent);
+  opacity: 0.75;
+}
+
+.dia .d-arrow {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dia .d-blast {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  opacity: 0.32;
+}
+
+.dia .d-chain {
+  fill: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 600;
+  text-anchor: middle;
 }
 
 /* ---------- Result card ---------- */
@@ -1121,12 +1683,39 @@ body {
   color: var(--text-faint);
 }
 
+/* Two parts, typeset differently: who it was, then what they did. A single
+   run-on line in the UI font is what made a win read as a dialog label.
+   Colour comes from --win-* set on the card, so one value drives the name,
+   its glow and the rule under it. */
+.win-card-head {
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--win-line, var(--hairline));
+}
+
 .win-title {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.win-name {
   font-family: var(--font-ui);
-  font-weight: 300;
-  font-size: 21px;
-  letter-spacing: 0.08em;
-  margin-top: 5px;
+  font-weight: 200;
+  font-size: clamp(27px, 8.6vw, 35px);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: var(--win-color, var(--text));
+  text-shadow: 0 0 30px var(--win-glow, transparent);
+}
+
+.win-verb {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
 .win-metrics {
@@ -1142,14 +1731,16 @@ body {
 
 .win-metric {
   background: var(--bg-elev);
-  padding: 9px 6px;
+  padding: 11px 6px;
   text-align: center;
 }
 
 .win-metric .mv {
   display: block;
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-weight: 500;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
   color: var(--accent);
   line-height: 1.1;
 }
@@ -1312,7 +1903,8 @@ body {
 .account-strip {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   margin-top: 10px;
   padding: 9px 12px;
   border: 1px solid var(--hairline);
@@ -1323,6 +1915,32 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.brank {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* How far through the tier the rating sits. The bar is the part that makes a
+   tier feel like progress rather than a label. */
+.rank-bar {
+  flex-basis: 100%;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+  overflow: hidden;
+}
+
+.rank-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
 }
 
 .account-strip .av {
@@ -1703,6 +2321,10 @@ body {
     display: none;
   }
 
+  .title-inner {
+    gap: 22px;
+  }
+
   .logo {
     font-size: 30px;
   }
@@ -1754,15 +2376,52 @@ body {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .mark-ring,
-  .confetti-piece,
-  .board-flash.pulse,
-  .chain-readout.show {
-    animation: none !important;
+/* Wide and tall. The old menu answered a desktop monitor with a 420px phone
+   column and two thirds of the screen left empty; the attract board is what
+   fills it now, so the hero only has to grow into it. */
+@media (min-width: 900px) and (min-height: 620px) {
+  .title-inner {
+    max-width: 400px;
+    gap: 40px;
   }
 
-  .confetti-layer {
-    display: none;
+  .title-inner .logo {
+    font-size: 60px;
   }
+
+  .title-inner .mark {
+    width: 66px;
+    height: 66px;
+  }
+
+  .attract-host.live {
+    opacity: 0.5;
+  }
+}
+
+
+/* Reduced motion is a class rather than a bare media query, so the in-app
+   Motion setting can drive the same rules. main.ts sets it at boot from
+   prefers-reduced-motion and again whenever the player changes it. */
+.reduce-motion .screen-in,
+.reduce-motion .howto-page.on,
+.reduce-motion .overlay:not(.hidden),
+.reduce-motion .win-card,
+.reduce-motion .mark-core,
+.reduce-motion .mark-wave,
+.reduce-motion .mark-nodes circle,
+.reduce-motion .mark-traces path,
+.reduce-motion .confetti-piece,
+.reduce-motion .board-flash.pulse,
+.reduce-motion .chain-readout.show {
+  animation: none !important;
+}
+
+/* Attract mode is not started at all under this setting — see main.ts. */
+.reduce-motion .attract-host {
+  transition: none;
+}
+
+.reduce-motion .confetti-layer {
+  display: none;
 }

@@ -2,8 +2,18 @@
 export class Haptics {
   private supported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 
+  /** Vibration used to be unconditional, which left the players who dislike it
+   *  no way out except muting a different sense entirely. */
+  enabled = true;
+
+  /** False where the device has no vibration motor at all, so the settings
+   *  sheet can say so rather than offering a switch that does nothing. */
+  get available() {
+    return this.supported;
+  }
+
   private fire(pattern: number | number[]) {
-    if (!this.supported) return;
+    if (!this.supported || !this.enabled) return;
     try {
       navigator.vibrate(pattern);
     } catch {
