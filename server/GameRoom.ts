@@ -711,7 +711,28 @@ export class GameRoom extends DurableObject<Env> {
 
     try {
       const stub = this.env.PLAYER_HUB.getByName(PLAYER_HUB_SINGLETON);
-      await stub.fetch('https://hub/result', { method: 'POST', body: JSON.stringify({ players }) });
+      const res = await stub.fetch('https://hub/result', {
+        method: 'POST',
+        body: JSON.stringify({ players }),
+      });
+      const body = (await res.json()) as {
+        ok?: boolean;
+        ratings?: { id: string; rating: number; delta: number }[];
+      };
+      if (!body.ok || !body.ratings) return;
+
+      // Back from account ids to seat ids: the client knows the board, not the
+      // ladder's identifiers.
+      const bySeat = body.ratings
+        .map((row) => {
+          const seat = this.engine?.players.find(
+            (p) => this.roster.get(p.id)?.accountId === row.id
+          );
+          return seat ? { player: seat.id, rating: row.rating, delta: row.delta } : null;
+        })
+        .filter((row): row is { player: number; rating: number; delta: number } => row !== null);
+
+      if (bySeat.length > 0) this.broadcastAll({ type: 'rated', results: bySeat });
     } catch (err) {
       // A match must never fail because the ladder was unreachable.
       console.error('result report failed:', String(err));

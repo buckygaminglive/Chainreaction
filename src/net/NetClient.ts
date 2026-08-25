@@ -99,6 +99,8 @@ export class NetClient {
    *  moment the message arrives, so the countdown starts on receipt rather
    *  than being read against a clock this device may have set wrong. */
   onTurnClock: (player: number, ms: number) => void = () => {};
+  /** Ranked result: how the finished match moved each seat's rating. */
+  onRated: (results: { player: number; rating: number; delta: number }[]) => void = () => {};
   /** Fired when the relay hands back a match already in progress, after this
    *  client reconnected into it. */
   onResume: (
@@ -365,6 +367,9 @@ export class NetClient {
         break;
       case 'turnClock':
         this.onTurnClock(msg.player, msg.ms);
+        break;
+      case 'rated':
+        this.onRated(msg.results);
         break;
       case 'error':
         this.onError(msg.message);

@@ -116,6 +116,13 @@ export type ServerMsg =
       player: number;
       ms: number;
     }
+  | {
+      /** How a finished ranked match moved each seat. Only ever sent for
+       *  public rooms — a private game between friends never touches the
+       *  ladder, so there is nothing to report. */
+      type: 'rated';
+      results: { player: number; rating: number; delta: number }[];
+    }
   | { type: 'taunt'; from: number; emoji: number }
   /** Who has asked for a rematch, and how many are needed. */
   | { type: 'rematch'; votes: number[]; needed: number }

@@ -273,6 +273,10 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
       if (chain > p.bestChain) p.bestChain = chain;
     }
 
+    // Captured before any rating moves, so the delta reported back is the one
+    // this match actually caused.
+    const before = loaded.map((p) => p.rating);
+
     if (loaded.length === 2) {
       const [a, b] = loaded;
       const scoreA = won[0] ? 1 : 0;
@@ -283,6 +287,12 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
     }
 
     for (const p of loaded) await this.savePlayer(p);
-    return { ok: true, ratings: loaded.map((p) => ({ id: p.id, rating: p.rating })) };
+    // The delta, not just the new number: "1043" tells a player nothing about
+    // the match they just played, and recomputing it client-side would mean
+    // trusting a client to remember what its rating was before.
+    return {
+      ok: true,
+      ratings: loaded.map((p, i) => ({ id: p.id, rating: p.rating, delta: p.rating - before[i] })),
+    };
   }
 }
