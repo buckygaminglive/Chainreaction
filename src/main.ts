@@ -2560,3 +2560,18 @@ updateMuteIcon();
 if (!checkRoomLinkParam()) showScreen(screenMenu);
 telemetry.start();
 exposeDebug();
+
+// Registered in production only: in dev the worker would serve yesterday's
+// bundle over Vite's, which looks exactly like a broken hot reload. This is
+// what makes the game installable — a Play Store TWA is an installed PWA in a
+// native wrapper, and Chrome will not offer installation without a fetch
+// handler, so without this there is no Android app.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch((err) => {
+      // Never fatal: the game runs perfectly well unregistered, it just is not
+      // installable and does not survive losing the connection.
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}

@@ -308,6 +308,24 @@ player closes the overlay and taps a cell. The last page starts a game rather
 than returning to the title screen: someone who has just read how to play
 wants to play.
 
+### Installable, and packageable
+
+`public/sw.js` is the service worker. It exists for two reasons, in this order:
+Chrome will not offer installation without a fetch handler, and a Play Store
+Trusted Web Activity *is* an installed PWA in a native wrapper — so without it
+there is no Android app. Second, everything except online play runs on the
+device, so a bad connection has no business producing a browser error page.
+
+It is registered in production builds only: in dev it would serve yesterday's
+bundle over Vite's, which looks exactly like a broken hot reload.
+
+Two routes are deliberately left alone. Relay calls are cross-origin and every
+answer is about right now, so a cached room list is a wrong one. The soundtrack
+is served with Range requests, and answering one from the cache with a full 200
+is how audio breaks in ways that are very hard to trace.
+
+Packaging steps live in [ANDROID.md](ANDROID.md).
+
 ### Online features
 
 **Quick match** brokers a room code and nothing else; the caller then joins over
