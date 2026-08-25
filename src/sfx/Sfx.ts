@@ -1,9 +1,13 @@
-/** Small synthesized sound effects via Web Audio — no external audio assets needed.
+/** Sound effects are synthesized via Web Audio — no assets. The background
+ *  track is the one exception (public/audio/quantum-lab-protocol.mp3),
+ *  streamed through the same graph rather than a bare <audio> tag so it
+ *  shares the mute switch, the volume sliders and the in-match duck with
+ *  everything else here.
  *
- *  Two buses hang off the master gain rather than one: effects and the ambient
- *  bed have to be mixable against each other, and a player who wants the room
- *  tone without the explosions (or the reverse) has no way to say so if they
- *  share a fader. */
+ *  Two buses hang off the master gain rather than one: effects and the music
+ *  have to be mixable against each other, and a player who wants the track
+ *  without the explosions (or the reverse) has no way to say so if they share
+ *  a fader. */
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -18,7 +22,12 @@ export class Sfx {
   private duck = 1;
 
   private bedWanted = false;
-  private bed: { nodes: AudioScheduledSourceNode[]; gain: GainNode } | null = null;
+  /** Built once, lazily, on the first attempt to play it — an <audio> element
+   *  can only ever be handed to createMediaElementSource one time, so unlike
+   *  the old oscillator bed this graph is created once and started/stopped
+   *  rather than torn down and rebuilt on every play. */
+  private musicEl: HTMLAudioElement | null = null;
+  private musicGain: GainNode | null = null;
 
   get muted() {
     return this._muted;
@@ -37,8 +46,8 @@ export class Sfx {
     this.applyGains();
   }
 
-  /** Ambient bed level relative to master, 0–1. Zero stops it outright rather
-   *  than leaving three oscillators running into a silent gain node. */
+  /** Music level relative to master, 0–1. Zero pauses playback outright
+   *  rather than leaving the track running into a silent gain node. */
   get musicVolume() {
     return this._musicVolume;
   }
@@ -86,16 +95,15 @@ export class Sfx {
     this.musicBus.gain.setTargetAtTime(this._musicVolume * this.duck, t, 0.4);
   }
 
-  // ---------- Ambient bed ----------
-  /** A low drone and its fifth under a slowly sweeping lowpass. Three
-   *  oscillators and a filter — no asset, no bundle cost, and nothing to
-   *  loop-seam. §6 asks for restrained background music; this is the most
-   *  restrained thing that still stops a screen being silent. */
+  // ---------- Background music ----------
+  /** §6 asks for restrained background music. `startBed`/`stopBed` are the
+   *  same two calls the old synthesized drone answered to — main.ts starts
+   *  the track once at boot and never has to know what changed. */
   startBed() {
     this.bedWanted = true;
     // Deliberately not ensure(): building an AudioContext before a user
-    // gesture only earns an autoplay warning and a suspended context. The bed
-    // comes up on the first unlock() like everything else.
+    // gesture only earns an autoplay warning and a suspended context. The
+    // track comes up on the first unlock() like everything else.
     this.tryStartBed();
   }
 
@@ -104,81 +112,59 @@ export class Sfx {
     this.teardownBed();
   }
 
-  /** 'menu' lets the bed sit forward; 'match' pushes it under the effects. */
+  /** 'menu' lets the track sit forward; 'match' pushes it under the effects. */
   setBedMood(mood: 'menu' | 'match') {
     this.duck = mood === 'match' ? 0.45 : 1;
     this.applyGains();
   }
 
-  private tryStartBed() {
-    if (!this.bedWanted || this.bed || this._musicVolume <= 0) return;
-    if (!this.ctx || !this.musicBus || this.ctx.state !== 'running') return;
-    const ctx = this.ctx;
-    const t0 = ctx.currentTime;
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.linearRampToValueAtTime(0.09, t0 + 3.5);
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 260;
-    filter.Q.value = 0.7;
-    filter.connect(gain);
+  /** Builds the <audio> element and routes it into musicBus exactly once.
+   *  `createMediaElementSource` throws if called twice on the same element,
+   *  so the graph is assembled lazily on first use and reused after that —
+   *  starting and stopping the track from here on is play()/pause(), not a
+   *  rebuild. */
+  private ensureMusicGraph() {
+    if (this.musicEl || !this.ctx || !this.musicBus) return;
+    const el = new Audio('/audio/quantum-lab-protocol.mp3');
+    el.loop = true;
+    // Nothing about the title screen should wait on a 5MB download — the
+    // element only starts fetching once a match is actually wanted to play,
+    // via the explicit load() in tryStartBed.
+    el.preload = 'none';
+    const source = this.ctx.createMediaElementSource(el);
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    source.connect(gain);
     gain.connect(this.musicBus);
+    this.musicEl = el;
+    this.musicGain = gain;
+  }
 
-    // A1, its fifth, and a barely-there octave for air.
-    const voices: [number, OscillatorType, number][] = [
-      [55, 'sine', 0.5],
-      [82.41, 'sine', 0.3],
-      [110, 'triangle', 0.1],
-    ];
-    const nodes: AudioScheduledSourceNode[] = [];
-    voices.forEach(([freq, type, level], i) => {
-      const osc = ctx.createOscillator();
-      osc.type = type;
-      osc.frequency.value = freq;
-      // A few cents apart so the voices beat against each other instead of
-      // phase-locking into one flat tone.
-      osc.detune.value = (i - 1) * 5;
-      const vg = ctx.createGain();
-      vg.gain.value = level;
-      osc.connect(vg);
-      vg.connect(filter);
-      osc.start(t0);
-      nodes.push(osc);
-    });
+  private tryStartBed() {
+    if (!this.bedWanted || this._musicVolume <= 0) return;
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    this.ensureMusicGraph();
+    if (!this.musicEl || !this.musicGain || !this.ctx) return;
+    if (!this.musicEl.paused) return; // already playing — nothing to do
 
-    // ~40s round trip on the filter — slow enough that it reads as the room
-    // breathing rather than as an effect.
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.025;
-    const lfoDepth = ctx.createGain();
-    lfoDepth.gain.value = 130;
-    lfo.connect(lfoDepth);
-    lfoDepth.connect(filter.frequency);
-    lfo.start(t0);
-    nodes.push(lfo);
-
-    this.bed = { nodes, gain };
+    const t0 = this.ctx.currentTime;
+    this.musicGain.gain.cancelScheduledValues(t0);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t0);
+    this.musicGain.gain.linearRampToValueAtTime(1, t0 + 2.2);
+    if (this.musicEl.readyState === 0) this.musicEl.load();
+    // Blocked without a gesture on some browsers — unlock() calls back in on
+    // every button tap until one lands, so a rejection here is not an error.
+    void this.musicEl.play().catch(() => {});
   }
 
   private teardownBed() {
-    if (!this.bed || !this.ctx) return;
-    const { nodes, gain } = this.bed;
-    this.bed = null;
+    if (!this.musicEl || !this.musicGain || !this.ctx) return;
+    const el = this.musicEl;
     const t = this.ctx.currentTime;
-    gain.gain.cancelScheduledValues(t);
-    gain.gain.setValueAtTime(gain.gain.value, t);
-    gain.gain.linearRampToValueAtTime(0.0001, t + 0.6);
-    for (const node of nodes) {
-      try {
-        node.stop(t + 0.7);
-      } catch {
-        /* already stopped */
-      }
-    }
+    this.musicGain.gain.cancelScheduledValues(t);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t);
+    this.musicGain.gain.linearRampToValueAtTime(0, t + 0.6);
+    setTimeout(() => el.pause(), 650);
   }
 
   // ---------- Effects ----------
