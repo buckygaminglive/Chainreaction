@@ -5,7 +5,9 @@
       "namespace": "android_app",
       "package_name": "com.designdynastystudios.fissile",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_SHA256_FROM_PLAY_CONSOLE"
+        "F8:4E:F1:44:70:06:48:9D:58:2C:92:01:67:80:D9:34:9C:B8:CC:EE:27:4F:B4:CF:29:69:DC:BE:7C:56:FD:96",
+        "40:4E:38:3C:86:98:E3:F5:11:4B:85:29:10:86:49:B4:BB:7D:37:C3:87:27:ED:82:2C:CD:21:59:20:29:52:85",
+        "00:B4:37:F1:07:CE:A8:7A:48:EC:50:59:30:6D:EF:E3:39:47:93:F5:5F:46:9C:F4:23:5B:B2:10:FC:65:BE:5C"
       ]
     }
   }
