@@ -1,4 +1,4 @@
-# REACTON
+# FISSILE
 
 A multiplayer orb-reaction strategy game. Charge cells past **critical mass**,
 propagate the cascade, capture the field. Play locally on one device
@@ -8,7 +8,7 @@ propagate the cascade, capture the field. Play locally on one device
 
 The product direction — art direction, modes, platform plan, naming — lives in
 [Chain_Reaction_Game_Product_Roadmap.md](Chain_Reaction_Game_Product_Roadmap.md).
-REACTON is the shortlisted name from §17; the name is **not yet cleared** for
+FISSILE is the shortlisted name from §17; the name is **not yet cleared** for
 trademark, app store, domain or social handles, so treat it as a working brand
 until that check is done (roadmap §15).
 

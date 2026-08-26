@@ -4,9 +4,12 @@ Draft copy and form answers. The data-safety section is derived from what the
 code actually does — if that changes, this has to change with it, because the
 form is a declaration and Google checks it against observed behaviour.
 
-> **The name is still uncleared.** Everything below says REACTON. The package
-> id you choose at `bubblewrap init` can never be changed afterwards, so settle
-> the name first — see the naming notes in the roadmap (§15).
+> **Name: FISSILE.** Chosen after checking Reacton, Orbix, Popline, Blastix,
+> Cellix, Kriton, Shockwave and Ripple Rush — all of which were taken or sat
+> beside an existing mark in the same category. Casual searches found nothing
+> for FISSILE in games; that is **not** a trademark clearance, and USPTO
+> classes 9 and 41 remain the check that counts before the package id is
+> locked at `bubblewrap init`.
 
 ---
 
@@ -15,19 +18,13 @@ form is a declaration and Google checks it against observed behaviour.
 Max 30 characters. Google counts the whole string including any subtitle.
 
 ```
-REACTON
+FISSILE: Chain Reactor
 ```
 
-Alternatives if the bare name reads too thin in search results:
-
-```
-REACTON: Chain Reaction
-REACTON — Orb Strategy
-```
-
-The second word is doing discovery work, not branding work. "Chain reaction" is
-the phrase people actually search, and putting it here costs nothing while the
-name itself stays distinct.
+22 of 30 characters. The subtitle is doing discovery work, not branding work:
+"chain reaction" is the phrase people actually search for, and carrying it here
+costs nothing while the name itself stays distinct and ownable. The wordmark,
+the icon and the home-screen label stay the bare **FISSILE**.
 
 ## Short description
 
@@ -47,7 +44,7 @@ Max 4000 characters.
 ```
 Charge a cell past critical mass and watch it go.
 
-REACTON is a chain-reaction strategy game. Tap a cell to add a particle. Fill
+FISSILE is a chain-reaction strategy game. Tap a cell to add a particle. Fill
 it past its limit — 2 in a corner, 3 on an edge, 4 in the middle — and it
 bursts, firing one particle into every neighbour and turning each of them
 yours. Those cells can burst too. A single well-placed tap can roll across the

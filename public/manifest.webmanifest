@@ -1,6 +1,6 @@
 {
-  "name": "REACTON",
-  "short_name": "REACTON",
+  "name": "FISSILE: Chain Reactor",
+  "short_name": "FISSILE",
   "description": "Drive cells past critical mass, propagate the cascade, capture the field. Local pass-and-play or online with a room code.",
   "start_url": "/",
   "scope": "/",

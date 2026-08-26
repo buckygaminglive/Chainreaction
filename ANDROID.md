@@ -1,4 +1,4 @@
-# Packaging REACTON for Google Play
+# Packaging FISSILE for Google Play
 
 The Android app is a **Trusted Web Activity**: a thin native shell that runs
 this site inside the user's own Chrome. The engine, the Three.js renderer and
@@ -28,7 +28,7 @@ to. Don't take it until something actually requires it.
 
 ## What is not
 
-- **The name is not cleared.** REACTON has not been checked for trademark, app
+- **The name is not cleared.** FISSILE has not been checked for trademark, app
   store or domain conflicts (roadmap §15). A Play listing is a public,
   permanent, first-use-in-commerce record under that name, and the package id
   below can never be changed once published. Clear the name first.

@@ -205,6 +205,33 @@ function glyph(letter, x, y, w, h) {
         [[x, y], [x + w, y + h]],
         [[x + w, y + h], [x + w, y]],
       ];
+    case 'F':
+      return [
+        [[x, y], [x, y + h]],
+        [[x, y], [x + w, y]],
+        [[x, y + h / 2], [x + w * 0.82, y + h / 2]],
+      ];
+    case 'I':
+      // A bare stem, centred in its advance width. No serifs or crossbars:
+      // this is a monoline geometric face, and an I with arms would be the
+      // only letter in the word pretending to be something else.
+      return [[[x + w / 2, y], [x + w / 2, y + h]]];
+    case 'L':
+      return [
+        [[x, y], [x, y + h]],
+        [[x, y + h], [x + w, y + h]],
+      ];
+    case 'S':
+      // Two three-quarter bowls, the lower one mirrored. Drawn as arcs rather
+      // than a spline so it stays in the same vocabulary as C and O.
+      // The bowls are mirrored through the letter's centre, not copies of each
+      // other: two bowls curving the same way stack into a C over a U. The
+      // upper one ends at its own bottom and the lower one starts at its own
+      // top, which is the same point, so the stroke reads as continuous.
+      return [
+        arc(x + w / 2, y + h * 0.26, w / 2, h * 0.26, -45, -270, 34),
+        arc(x + w / 2, y + h * 0.74, w / 2, h * 0.26, -90, 135, 34),
+      ];
     default:
       return [[[x, y], [x + r, y]]];
   }
@@ -395,8 +422,8 @@ for (const size of [192, 512]) {
   const cap = 72;
   const tracking = 26;
   const textX = 552;
-  const width = wordmarkWidth('REACTON', cap, tracking);
-  drawWordmark(s, 'REACTON', textX, glowY - cap / 2 - 22, cap, 4.2, tracking, TEXT);
+  const width = wordmarkWidth('FISSILE', cap, tracking);
+  drawWordmark(s, 'FISSILE', textX, glowY - cap / 2 - 22, cap, 4.2, tracking, TEXT);
 
   // Rule and strapline, kept to shapes: dots, not letters.
   paint(s, stroke([[textX, glowY + cap / 2 + 18], [textX + width, glowY + cap / 2 + 18]], 1.5), ACCENT, 0.35);
@@ -439,8 +466,8 @@ for (const size of [192, 512]) {
   const cap = 56;
   const tracking = 20;
   const textX = 320;
-  const width = wordmarkWidth('REACTON', cap, tracking);
-  drawWordmark(s, 'REACTON', textX, glowY - cap / 2 - 20, cap, 3.6, tracking, TEXT);
+  const width = wordmarkWidth('FISSILE', cap, tracking);
+  drawWordmark(s, 'FISSILE', textX, glowY - cap / 2 - 20, cap, 3.6, tracking, TEXT);
 
   paint(s, stroke([[textX, glowY + cap / 2 + 14], [textX + width, glowY + cap / 2 + 14]], 1.5), ACCENT, 0.35);
   const dotY = glowY + cap / 2 + 44;
