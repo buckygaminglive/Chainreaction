@@ -99,11 +99,19 @@ Yes — but only if a player uses online mode.
 |---|---|---|---|---|
 | Name | Yes | No | Optional | The display name the player chooses. Shown to opponents and on leaderboards. Never a real name unless they type one. |
 | User IDs | Yes | No | Required for online | A random guest account id. No email, no password, no sign-in. |
-| In-app actions | Yes | No | Optional | Match results feeding the ladder: wins, losses, rating, best chain. |
+| In-app actions | Yes | No | Optional | Match results feeding the ladder: wins, losses, rating, best chain, and the last 25 ranked matches — each holding the opponent's display name, the rating change and a timestamp. |
 | Approximate location | No | — | — | Never requested. |
 | Personal info (email, phone, address) | No | — | — | There is no sign-up. |
 | Financial info | No | — | — | No purchases. |
 | Device or other IDs | No | — | — | No advertising id, no device fingerprint. |
+
+**Avatars are generated, not uploaded.** A player picks one of 24 emblems
+drawn in code and the relay stores a two-character key. No image ever leaves
+the device, because none is ever chosen from it. This is what keeps **User-
+generated content: display names only** true in the content rating
+questionnaire, and keeps **Photos** off this form. Accepting real uploads would
+change both answers, and would need a moderation and reporting path before it
+could ship.
 
 **Security practices**
 
@@ -130,12 +138,22 @@ Answer honestly and it lands at the lowest rating. The relevant answers:
 - **User interaction: yes** — players can play online with strangers.
 - **Do users share personal information: no** — no free-text chat, no profile
   fields beyond a display name.
-- **User-generated content: display names only.** There is no chat; in-game
-  reactions are a fixed set of twelve icons that cannot be extended.
+- **User-generated content: display names only.** Players can send emoji
+  reactions and short quick-chat phrases, but both are fixed lists chosen at
+  build time. Neither can be extended by a player.
 
-That last point matters: a fixed reaction palette rather than open chat is what
-keeps this out of the "user-generated content" rating tier, and it was a
-deliberate design decision, not an omission.
+That last point matters, and it is enforced by the wire format rather than by
+policy: a reaction is sent as `{ type: 'taunt', emoji: 3 }` and a message as
+`{ type: 'chat', phrase: 12 }` — an index into a list the relay validates
+against. There is no field anywhere in the protocol that carries player-authored
+text, so there is nothing to moderate and no way for one player to put arbitrary
+words on another's screen.
+
+Adding real free-text chat would change three answers on this page at once —
+user-generated content, messages collected, and the content rating tier — and
+Play would additionally require per-message reporting, per-player blocking and a
+stated moderation policy before it would pass review. That is the trade being
+made here, not an omission.
 
 ## Required assets
 

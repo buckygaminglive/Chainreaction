@@ -111,6 +111,7 @@ export class NetClient {
     snapshot: EngineSnapshot
   ) => void = () => {};
   onTaunt: (from: number, emoji: number) => void = () => {};
+  onChat: (from: number, phrase: number) => void = () => {};
   onRematch: (votes: number[], needed: number) => void = () => {};
   onRoomScore: (score: Map<number, number>) => void = () => {};
   onError: (message: string) => void = () => {};
@@ -135,14 +136,20 @@ export class NetClient {
   /** Asks the matchmaker for a room. `waiting` means nobody was queued on
    *  these settings, so this code is now the one *other* people will be
    *  matched into — the caller sits in it until someone arrives. */
+  /** `accountId` is only a hint about *who* is queuing — the relay looks the
+   *  rating up itself, so nothing here decides what opponents are offered. The
+   *  secret is deliberately not sent: a rating is already public on the
+   *  leaderboard, so proving ownership would buy nothing and would spread the
+   *  credential across another endpoint. */
   static async quickMatch(
     mode: GameModeKey,
-    boardSize: BoardSizeKey
+    boardSize: BoardSizeKey,
+    accountId?: string
   ): Promise<{ code: string; waiting: boolean }> {
     const res = await fetch(`${RELAY_BASE}/api/quickmatch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, boardSize }),
+      body: JSON.stringify({ mode, boardSize, accountId }),
     });
     // 404 specifically means the relay predates matchmaking — worth telling
     // apart from an outage, because the fix is a deploy, not a retry.
@@ -364,6 +371,9 @@ export class NetClient {
       case 'taunt':
         this.onTaunt(msg.from, msg.emoji);
         break;
+      case 'chat':
+        this.onChat(msg.from, msg.phrase);
+        break;
       case 'rematch':
         this.onRematch(msg.votes, msg.needed);
         break;
@@ -436,6 +446,10 @@ export class NetClient {
 
   sendTaunt(emoji: number): boolean {
     return this.send({ type: 'taunt', emoji });
+  }
+
+  sendChat(phrase: number): boolean {
+    return this.send({ type: 'chat', phrase });
   }
 
   disconnect() {

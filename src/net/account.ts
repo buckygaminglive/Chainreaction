@@ -1,4 +1,4 @@
-import type { LeaderboardRow, PlayerProfile } from './protocol';
+import type { LeaderboardRow, MatchRecord, PlayerProfile } from './protocol';
 
 /**
  * The device's guest account.
@@ -103,11 +103,65 @@ class Account {
     }
   }
 
+  /**
+   * Loads the stored account if there is one. Never mints a new one.
+   *
+   * `ensure` is right at the moment a player commits to going online, because
+   * a missing account there has to become a real one. This is right anywhere
+   * the account is merely being *shown*: the profile screen is reachable from
+   * the title, and opening it must not quietly create an account for someone
+   * who only ever plays locally.
+   *
+   * Also the reason the profile screen used to read "No account yet" for
+   * players who plainly had one — `profile` is only populated by a round trip,
+   * and nothing had made that round trip yet.
+   */
+  async load(): Promise<PlayerProfile | null> {
+    if (this.profile) return this.profile;
+    if (!this.stored) return null;
+    try {
+      const res = await post<{ player?: PlayerProfile }>('me', this.stored);
+      if (res.player) this.profile = res.player;
+    } catch {
+      // Offline, or the relay is down. The caller renders what it can rather
+      // than failing whole — and crucially does not register a replacement,
+      // which would strand the real account behind a new set of credentials.
+    }
+    return this.profile;
+  }
+
   async rename(name: string): Promise<PlayerProfile | null> {
     if (!this.stored) return null;
     const res = await post<{ player?: PlayerProfile }>('rename', { ...this.stored, name });
     if (res.player) this.profile = res.player;
     return this.profile;
+  }
+
+  /** Changes the avatar. The relay validates the key against the drawable set,
+   *  so a stale client cannot store one this build cannot render. */
+  async setAvatar(avatar: string): Promise<PlayerProfile | null> {
+    if (!this.stored) return null;
+    const res = await post<{ player?: PlayerProfile }>('setAvatar', { ...this.stored, avatar });
+    if (res.player) this.profile = res.player;
+    return this.profile;
+  }
+
+  /**
+   * This account's finished ranked matches, newest first.
+   *
+   * Fetched on demand rather than cached with the profile: it is only ever
+   * read on one screen, and a stale history is worse than a brief spinner.
+   */
+  async history(): Promise<MatchRecord[]> {
+    if (!this.stored) return [];
+    try {
+      const res = await post<{ matches?: MatchRecord[] }>('history', this.stored);
+      return res.matches ?? [];
+    } catch {
+      // A profile that cannot reach the relay should still render everything
+      // it already knows, rather than failing whole.
+      return [];
+    }
   }
 
   async addFriend(friendCode: string): Promise<{ added?: PlayerProfile | null; error?: string }> {

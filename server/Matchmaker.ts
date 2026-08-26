@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { BoardSizeKey, PublicRoom } from '../src/net/protocol';
 import type { GameModeKey } from '../src/game/modes';
+import { DEFAULT_RATING, ratingBand } from '../src/net/matchmaking';
 
 /**
  * One instance for the whole game, holding the quick-match queue and the list
@@ -22,11 +23,15 @@ const QUEUE_TTL_MS = 90_000;
  *  anything this stale means the room died without telling us. */
 const LISTING_TTL_MS = 120_000;
 
+
 interface QueueEntry {
   code: string;
   mode: GameModeKey;
   boardSize: BoardSizeKey;
   at: number;
+  /** Verified by the worker before it gets here — never a number a client
+   *  sent. Absent on entries queued by an older client. */
+  rating?: number;
 }
 
 interface Listing extends PublicRoom {
@@ -70,8 +75,17 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
     const url = new URL(request.url);
 
     if (url.pathname.endsWith('/queue')) {
-      const body = (await request.json()) as { code: string; mode: GameModeKey; boardSize: BoardSizeKey };
-      return Response.json(await this.takeOrQueue(body));
+      const body = (await request.json()) as {
+        code: string;
+        mode: GameModeKey;
+        boardSize: BoardSizeKey;
+        // Already verified against the hub by the worker; this object never
+        // sees a rating a client chose.
+        rating?: number;
+      };
+      return Response.json(
+        await this.takeOrQueue({ ...body, rating: Number(body.rating) || DEFAULT_RATING })
+      );
     }
     if (url.pathname.endsWith('/dequeue')) {
       const { code } = (await request.json()) as { code: string };
@@ -115,22 +129,49 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
    * The heart of quick match. Either hands back somebody else's waiting room or
    * parks the caller's own and tells them to sit tight.
    *
-   * Matching is on mode and board size, because being dropped into a match with
-   * rules you did not pick is worse than waiting a few more seconds.
+   * Mode and board size are hard filters, because being dropped into a match
+   * with rules you did not pick is worse than waiting a few more seconds.
+   * Rating is a soft one: the closest opponent inside the waiting player's
+   * current band wins, and the band widens the longer they have waited.
    */
-  private async takeOrQueue(req: { code: string; mode: GameModeKey; boardSize: BoardSizeKey }) {
-    const idx = this.queue.findIndex(
-      (q) => q.mode === req.mode && q.boardSize === req.boardSize && q.code !== req.code
-    );
+  private async takeOrQueue(req: {
+    code: string;
+    mode: GameModeKey;
+    boardSize: BoardSizeKey;
+    rating: number;
+  }) {
+    const now = Date.now();
+    const best = this.queue
+      .map((q, i) => ({ q, i }))
+      .filter(({ q }) => q.mode === req.mode && q.boardSize === req.boardSize && q.code !== req.code)
+      .map(({ q, i }) => ({
+        q,
+        i,
+        gap: Math.abs((q.rating ?? DEFAULT_RATING) - req.rating),
+        // The band belongs to whoever has been waiting: the newcomer has waited
+        // no time at all, so judging by their band would keep a long-waiting
+        // player unmatched next to somebody they should have been given.
+        band: ratingBand(now - q.at),
+      }))
+      .filter((c) => c.gap <= c.band)
+      // Closest rating first; a longer wait breaks ties, so nobody is
+      // repeatedly passed over by later arrivals.
+      .sort((a, b) => a.gap - b.gap || a.q.at - b.q.at)[0];
 
-    if (idx !== -1) {
-      const [entry] = this.queue.splice(idx, 1);
+    if (best) {
+      this.queue.splice(best.i, 1);
       await this.persist();
-      return { code: entry.code, waiting: false };
+      return { code: best.q.code, waiting: false };
     }
 
     this.queue = this.queue.filter((q) => q.code !== req.code);
-    this.queue.push({ code: req.code, mode: req.mode, boardSize: req.boardSize, at: Date.now() });
+    this.queue.push({
+      code: req.code,
+      mode: req.mode,
+      boardSize: req.boardSize,
+      at: now,
+      rating: req.rating,
+    });
     await this.persist();
     return { code: req.code, waiting: true };
   }

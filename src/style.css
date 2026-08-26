@@ -2619,3 +2619,461 @@ body.board-showing {
     border-color: var(--hairline-strong);
   }
 }
+
+/* ---------- profile ---------- */
+/* Identity, rank and record. Reuses .howto-card for the sheet and
+   .win-metrics for the stat rows, so the profile inherits the card metrics the
+   rest of the game already uses rather than inventing a second set. */
+
+.profile-card {
+  max-width: 520px;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 4px;
+}
+
+/* The avatar is a button because it opens the picker; it must not inherit the
+   pill styling every other button in this card has. */
+.profile-avatar {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: transparent;
+  line-height: 0;
+  cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.16s ease;
+}
+
+.profile-avatar:hover,
+.profile-avatar:focus-visible {
+  border-color: var(--accent-line);
+  transform: translateY(-1px);
+}
+
+.profile-id {
+  min-width: 0;
+}
+
+.profile-id h2 {
+  margin: 0 0 2px;
+  font-size: 1.5rem;
+  /* A 16-character name on a narrow phone would otherwise push the friend code
+     out of the card. */
+  overflow-wrap: anywhere;
+}
+
+.profile-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.profile-code-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+}
+
+.profile-code code {
+  font-family: var(--mono, ui-monospace, monospace);
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.mini-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.mini-btn:hover,
+.mini-btn:focus-visible {
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+/* Auto-fill rather than a fixed column count: the same grid then works on a
+   360px phone and a 520px card without a breakpoint. */
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.avatar-option {
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  line-height: 0;
+  cursor: pointer;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+
+.avatar-option:hover,
+.avatar-option:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--hairline);
+}
+
+.avatar-option.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.profile-rank {
+  display: flex;
+  /* `.panel` is already a column flex container, so the direction has to be
+     stated rather than assumed — inheriting `column` stacked the badge above
+     the tier name instead of setting it beside. */
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-badge {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.profile-rank-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.profile-rank-name {
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile-rating {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  margin: 1px 0 7px;
+}
+
+.rank-track {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.rank-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.profile-metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Six columns of wildly different natural widths; fixed tracks keep the
+   numbers aligned down the list instead of jittering row to row. */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 28px 3.1rem 1fr auto 3rem 4.2rem;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg-elev);
+  font-size: 0.8rem;
+}
+
+.history-avatar {
+  line-height: 0;
+}
+
+.history-outcome {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.history-row.won .history-outcome {
+  color: var(--accent);
+}
+
+.history-row.lost .history-outcome {
+  color: var(--text-faint);
+}
+
+.history-opponent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.history-chain,
+.history-when {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.history-delta {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-delta.up {
+  color: #3ce6a4;
+}
+
+.history-delta.down {
+  color: #ff6b81;
+}
+
+.profile-local .win-metrics {
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+}
+
+/* Below this the six-column history row stops fitting: the opponent name
+   collapses to nothing before the numbers do. Dropping the two softest
+   columns keeps the outcome, the name and the rating change. */
+@media (max-width: 430px) {
+  .history-row {
+    grid-template-columns: 28px 2.8rem 1fr 3rem;
+  }
+
+  .history-chain,
+  .history-when {
+    display: none;
+  }
+
+  .profile-metrics,
+  .profile-local .win-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* The sheet's sections had no separation of their own: consecutive .field
+   blocks ran into each other, so "recent matches" and "on this device" read as
+   one list with a stray heading in the middle. */
+.profile-card > .field {
+  margin-top: 16px;
+}
+
+.profile-card > .panel {
+  margin-top: 4px;
+}
+
+.profile-card > .ghost-btn {
+  margin-top: 18px;
+  width: 100%;
+}
+
+/* ---------- profile: empty states and section rhythm ---------- */
+
+/* With no rows to separate, the list's own chrome — filled background, solid
+   border, tight padding — makes a single line of text look like a disabled
+   input. Emptiness should look like room, not like a control. */
+.history-list.is-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 26px 18px;
+  background: none;
+  border: 1px dashed var(--hairline);
+  text-align: center;
+}
+
+.history-list.is-empty p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.history-list.is-empty .empty-hint {
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+/* The mark from the game itself: a cell one particle short of going off,
+   which is exactly what an empty history is. */
+.empty-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-line);
+  position: relative;
+  opacity: 0.55;
+}
+
+.empty-mark::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.spin-mark {
+  animation: empty-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes empty-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin-mark {
+    animation: none;
+  }
+}
+
+/* The ranked record and the device record were running together, so the
+   second heading read as part of the first block. A rule and more air make
+   the two tallies visibly separate things, which is the whole point of
+   keeping them apart. */
+#profile-local {
+  margin-top: 2px;
+}
+
+.profile-card > .field + .field {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.profile-card .field-label {
+  margin-bottom: 10px;
+}
+
+/* ---------- quick chat ---------- */
+/* Preset phrases, not a text field. The wire format is an index into
+   CHAT_PHRASES, so there is nothing here for free text to be typed into —
+   see src/net/taunts.ts for why that is deliberate rather than unfinished. */
+
+.taunt-bar {
+  /* Two toggles now instead of one. */
+  gap: 10px;
+}
+
+/* Wider than the emoji grid because phrases are words, and capped so it never
+   covers more of the board than it has to. Scrolls if the phrase list grows. */
+.chat-palette {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(56vh, 380px);
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  background: rgba(13, 17, 22, 0.97);
+  box-shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.9);
+  animation: taunt-in 0.16s ease-out;
+  text-align: left;
+}
+
+.chat-group-label {
+  margin: 8px 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.chat-group-label:first-child {
+  margin-top: 2px;
+}
+
+.chat-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chat-phrase {
+  padding: 7px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+
+.chat-phrase:hover,
+.chat-phrase:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.chat-phrase:active {
+  transform: scale(0.96);
+}
+
+/* A sentence needs to wrap and to be readable, so the pill shape and the
+   nowrap that suit a one-emoji taunt are both dropped here. */
+.chat-bubble {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: min(260px, calc(100vw - 48px));
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  animation: taunt-float 4.2s ease-out forwards;
+}
+
+.chat-bubble .tn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  max-width: 100%;
+}
+
+.chat-bubble .cp {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: normal;
+}

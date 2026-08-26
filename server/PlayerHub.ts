@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { LeaderboardRow, PlayerProfile } from '../src/net/protocol';
+import type { LeaderboardRow, MatchRecord, PlayerProfile } from '../src/net/protocol';
+import { defaultAvatarFor, isAvatarKey } from '../src/render/avatar';
 
 /**
  * Player identity, friends and leaderboards, in one durable object.
@@ -24,6 +25,10 @@ const STARTING_RATING = 1000;
  *  takes fifty matches to place someone reads as broken rather than rigorous. */
 const K_FACTOR = 24;
 const MAX_FRIENDS = 100;
+/** How many finished matches a profile keeps. Deep enough to show a run of
+ *  form, shallow enough that the record stays small and bounded — a player who
+ *  never stops playing must not be able to grow their own row without limit. */
+const HISTORY_SIZE = 25;
 
 interface StoredPlayer extends PlayerProfile {
   secret: string;
@@ -111,6 +116,7 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
       wins: player.wins,
       matches: player.matches,
       bestChain: player.bestChain,
+      avatar: player.avatar ?? defaultAvatarFor(player.id),
     };
     const idx = board.findIndex((r) => r.id === player.id);
     if (idx !== -1) board[idx] = row;
@@ -121,7 +127,46 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
 
   private publicOf(player: StoredPlayer): PlayerProfile {
     const { secret: _secret, ...rest } = player;
-    return rest;
+    // Records written before avatars existed have no key at all; filling it on
+    // read means no migration pass and no player ever seeing a blank square.
+    return { ...rest, avatar: rest.avatar ?? defaultAvatarFor(rest.id) };
+  }
+
+  /** The finished matches this player has a record of, newest first. */
+  private async historyOf(id: string): Promise<MatchRecord[]> {
+    return (await this.ctx.storage.get<MatchRecord[]>(`history:${id}`)) ?? [];
+  }
+
+  /**
+   * Prepends one match and trims to HISTORY_SIZE.
+   *
+   * Newest first because that is the only order the profile renders, and
+   * sorting on every read to undo a convenient write order would be work done
+   * for nobody.
+   */
+  private async pushHistory(id: string, entry: MatchRecord) {
+    const history = await this.historyOf(id);
+    history.unshift(entry);
+    await this.ctx.storage.put(`history:${id}`, history.slice(0, HISTORY_SIZE));
+  }
+
+  /** Changes the avatar. Validated against the drawable set rather than
+   *  stored as given: an unknown key would render as nothing at all. */
+  private async setAvatar(body: Record<string, unknown>) {
+    const player = await this.authed(String(body.id ?? ''), String(body.secret ?? ''));
+    if (!player) return { ok: false, error: 'unauthorised' };
+    const avatar = body.avatar;
+    if (!isAvatarKey(avatar)) return { ok: false, error: 'unknown avatar' };
+    player.avatar = avatar;
+    await this.savePlayer(player);
+    return { ok: true, player: this.publicOf(player) };
+  }
+
+  /** A player's own history. Authenticated: a profile is not public. */
+  private async history(body: Record<string, unknown>) {
+    const player = await this.authed(String(body.id ?? ''), String(body.secret ?? ''));
+    if (!player) return { ok: false, error: 'unauthorised' };
+    return { ok: true, matches: await this.historyOf(player.id) };
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -146,6 +191,18 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
         return Response.json({
           rows: ((await this.ctx.storage.get<LeaderboardRow[]>('leaderboard')) ?? []).slice(0, 100),
         });
+      // Internal only — deliberately absent from HUB_ROUTES, so it is not
+      // reachable from the public surface. Returns a rating for matchmaking.
+      // No secret required: a rating is already public on the leaderboard, and
+      // asking for one here grants nothing else.
+      case 'rating': {
+        const player = await this.getPlayer(String((body as { id?: unknown }).id ?? ''));
+        return Response.json({ rating: player?.rating ?? STARTING_RATING });
+      }
+      case 'setAvatar':
+        return Response.json(await this.setAvatar(body as Record<string, unknown>));
+      case 'history':
+        return Response.json(await this.history(body as Record<string, unknown>));
       case 'result':
         return Response.json(await this.recordResult(body as Record<string, unknown>));
       default:
@@ -172,6 +229,9 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
       losses: 0,
       matches: 0,
       bestChain: 0,
+      // Seeded from the id rather than fixed, so a lobby of players who all
+      // skipped the picker still looks like several people.
+      avatar: defaultAvatarFor(id),
     };
     await this.ctx.storage.put(`code:${code}`, id);
     await this.savePlayer(player);
@@ -252,6 +312,7 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
         wins: p.wins,
         matches: p.matches,
         bestChain: p.bestChain,
+        avatar: p.avatar ?? defaultAvatarFor(p.id),
       });
     }
     rows.sort((a, b) => b.rating - a.rating || b.wins - a.wins);
@@ -309,6 +370,28 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
     }
 
     for (const p of loaded) await this.savePlayer(p);
+
+    // History is written only for head-to-head matches, because "opponent" is
+    // the field that makes an entry worth reading and it has no single answer
+    // in a four-player game. Written after the ratings settle so the stored
+    // delta is the real one, and from `loaded` rather than from the request so
+    // a client cannot write its own history.
+    if (loaded.length === 2) {
+      const at = Date.now();
+      for (let i = 0; i < 2; i++) {
+        const self = loaded[i];
+        const other = loaded[1 - i];
+        await this.pushHistory(self.id, {
+          at,
+          won: won[i],
+          opponent: other.name,
+          opponentAvatar: other.avatar ?? defaultAvatarFor(other.id),
+          delta: self.rating - before[i],
+          rating: self.rating,
+          bestChain: Number(entries[i].bestChain) || 0,
+        });
+      }
+    }
     // The delta, not just the new number: "1043" tells a player nothing about
     // the match they just played, and recomputing it client-side would mean
     // trusting a client to remember what its rating was before.

@@ -24,6 +24,33 @@ export interface PlayerProfile {
   losses: number;
   matches: number;
   bestChain: number;
+  /** Key into the generated avatar set — see `src/render/avatar.ts`. Four
+   *  bytes rather than an image, which is what keeps this out of the
+   *  user-generated-content tier on the store listing. */
+  avatar: string;
+}
+
+/**
+ * One finished ranked match, as the profile page shows it.
+ *
+ * Stored per player rather than per match: a profile only ever renders its own
+ * owner's history, and duplicating a handful of fields is cheaper than joining
+ * two records on every read — it also means an entry survives the opponent
+ * later renaming themselves.
+ */
+export interface MatchRecord {
+  /** Unix ms. Rendered relative, so no timezone travels with it. */
+  at: number;
+  won: boolean;
+  /** Opponent's display name at the time the match ended. */
+  opponent: string;
+  opponentAvatar: string;
+  /** Rating change this match caused; negative on a loss. */
+  delta: number;
+  /** Rating after the change. */
+  rating: number;
+  /** Longest chain this player set off in the match. */
+  bestChain: number;
 }
 
 export interface LeaderboardRow {
@@ -33,6 +60,7 @@ export interface LeaderboardRow {
   wins: number;
   matches: number;
   bestChain: number;
+  avatar: string;
 }
 
 /** A room advertising itself in the public list. Deliberately just a pointer —
@@ -73,6 +101,9 @@ export type ClientMsg =
    *  connected player has asked. */
   | { type: 'rematchVote' }
   | { type: 'taunt'; emoji: number }
+  // An index into CHAT_PHRASES, never a string. The wire format is what makes
+  // free text impossible by construction rather than by policy.
+  | { type: 'chat'; phrase: number }
   /** Host-only lobby settings. The relay needs these before the game starts,
    *  not just at kick-off, or a public listing advertises whatever the room
    *  defaulted to rather than what the host actually picked. */
@@ -151,6 +182,7 @@ export type ServerMsg =
       results: { player: number; rating: number; delta: number }[];
     }
   | { type: 'taunt'; from: number; emoji: number }
+  | { type: 'chat'; from: number; phrase: number }
   /** Who has asked for a rematch, and how many are needed. */
   | { type: 'rematch'; votes: number[]; needed: number }
   /** Running head-to-head across rematches in this room. Lives only as long as

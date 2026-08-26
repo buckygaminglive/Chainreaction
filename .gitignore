@@ -28,3 +28,8 @@ manifest-checksum.txt
 # Google to reset the upload key; leaking it is worse.
 *.keystore
 *.jks
+
+# Wrangler writes these during deploy. Tooling artifacts, not source.
+certificates/
+# Machine-specific Android SDK path, written by bubblewrap.
+local.properties

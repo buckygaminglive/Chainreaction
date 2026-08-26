@@ -51,6 +51,11 @@ const HUB_ROUTES = new Set([
   'removeFriend',
   'friends',
   'leaderboard',
+  // A profile reads its own history and sets its own avatar. Both are
+  // authenticated inside the hub; this list only decides what is reachable
+  // from the public surface at all.
+  'history',
+  'setAvatar',
 ]);
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — avoids look-alikes
@@ -104,14 +109,46 @@ export default {
     if (url.pathname === '/api/quickmatch' && request.method === 'POST') {
       const wait = await allow(env, request, 'quickmatch');
       if (wait) return tooMany(wait);
-      const body = await request.json().catch(() => ({}));
+      const body = (await request.json().catch(() => ({}))) as { accountId?: unknown };
       const { mode, boardSize } = sanitize(body);
+
+      // The rating used for matchmaking is read from the hub, never taken from
+      // the request. A client that could name its own rating could pick which
+      // opponents it is offered, and the whole point of banding is that it is
+      // not the player's choice. An unknown or absent id simply gets the
+      // starting rating, which is what an unranked player should be matched as.
+      const accountId = typeof body.accountId === 'string' ? body.accountId.slice(0, 64) : '';
+      let rating = 1000;
+      if (accountId) {
+        try {
+          const hub = env.PLAYER_HUB.getByName(PLAYER_HUB_SINGLETON);
+          const lookup = await hub.fetch('https://hub/rating', {
+            method: 'POST',
+            body: JSON.stringify({ id: accountId }),
+          });
+          rating = Number(((await lookup.json()) as { rating?: number }).rating) || 1000;
+        } catch {
+          // A hub hiccup should not stop someone getting a game; an unbanded
+          // match is far better than no match.
+        }
+      }
+
       const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
       const res = await stub.fetch('https://mm/queue', {
         method: 'POST',
-        body: JSON.stringify({ code: generateRoomCode(), mode, boardSize }),
+        body: JSON.stringify({ code: generateRoomCode(), mode, boardSize, rating }),
       });
-      const result = await res.json();
+      const result = (await res.json()) as { code?: string; waiting?: boolean };
+
+      // Mark the room ranked here, where the code provably came from the
+      // matchmaker. Doing it from the client — or inferring it from the room's
+      // own public flag — would let anyone declare their own room rated.
+      // Idempotent: joining an already-queued room marks it a second time.
+      if (result.code) {
+        const room = env.GAME_ROOM.getByName(result.code);
+        await room.fetch('https://room/rank', { method: 'POST' });
+      }
+
       return Response.json(result, { headers: corsHeaders() });
     }
 

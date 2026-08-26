@@ -89,11 +89,77 @@
           <nav class="title-actions" aria-label="Main menu">
             <button id="play-btn" class="primary-btn" aria-haspopup="dialog">Play local</button>
             <button id="play-online-btn" class="ghost-btn wide-btn">Play online</button>
+            <button id="profile-btn" class="ghost-btn wide-btn">Profile</button>
             <button id="settings-btn" class="ghost-btn wide-btn">Options</button>
             <button id="howto-btn" class="ghost-btn wide-btn">How to play</button>
           </nav>
 
           <p id="level-chip" class="profile-line"></p>
+        </div>
+      </section>
+
+      <!-- PROFILE — identity, rank and record in one place.
+           An overlay rather than a screen: it is opened from the title and
+           from the online lobby, and both want to be returned to afterwards
+           rather than replaced. -->
+      <section id="screen-profile" class="screen hidden overlay">
+        <div class="howto-card profile-card" role="dialog" aria-label="Profile">
+          <div class="win-eyebrow">operator file</div>
+
+          <!-- IDENTITY -->
+          <div class="profile-head">
+            <button id="profile-avatar-btn" class="profile-avatar" aria-label="Change avatar" aria-haspopup="true"></button>
+            <div class="profile-id">
+              <h2 id="profile-name">Player</h2>
+              <p class="profile-code">
+                <span class="profile-code-label">friend code</span>
+                <code id="profile-code">------</code>
+                <button id="profile-copy-btn" class="mini-btn" aria-label="Copy friend code">copy</button>
+              </p>
+              <button id="profile-rename-btn" class="mini-btn">Change name</button>
+            </div>
+          </div>
+
+          <!-- AVATAR PICKER — collapsed until asked for, so the profile opens
+               as a summary rather than as a form. -->
+          <div id="profile-avatar-picker" class="avatar-picker hidden" role="group" aria-label="Choose an avatar"></div>
+
+          <!-- RANK -->
+          <div class="panel profile-rank">
+            <div id="profile-badge" class="profile-badge"></div>
+            <div class="profile-rank-body">
+              <div class="profile-rank-name" id="profile-rank-name">Bronze</div>
+              <div class="profile-rating"><span id="profile-rating">1000</span> <span class="field-unit">rating</span></div>
+              <div class="rank-track" role="progressbar" aria-label="Progress to next rank" aria-valuemin="0" aria-valuemax="100">
+                <div id="profile-rank-fill" class="rank-fill"></div>
+              </div>
+              <p class="field-note" id="profile-rank-note">Play ranked matches to climb.</p>
+            </div>
+          </div>
+
+          <!-- RECORD -->
+          <div class="win-metrics profile-metrics">
+            <div class="win-metric"><span class="mv" id="profile-wins">0</span><span class="mk">wins</span></div>
+            <div class="win-metric"><span class="mv" id="profile-losses">0</span><span class="mk">losses</span></div>
+            <div class="win-metric"><span class="mv" id="profile-winrate">—</span><span class="mk">win rate</span></div>
+            <div class="win-metric"><span class="mv" id="profile-chain">×0</span><span class="mk">best chain</span></div>
+          </div>
+
+          <!-- HISTORY -->
+          <div class="field">
+            <div class="field-label">Recent matches <span class="field-unit">ranked only</span></div>
+            <div id="profile-history" class="history-list"></div>
+          </div>
+
+          <!-- LOCAL RECORD — kept visibly separate from the ranked record.
+               One is this device's own tally and the other is the account's;
+               adding them together would be a number that means nothing. -->
+          <div class="field">
+            <div class="field-label">On this device <span class="field-unit">local play</span></div>
+            <div id="profile-local" class="profile-local"></div>
+          </div>
+
+          <button id="profile-close-btn" class="ghost-btn">Back</button>
         </div>
       </section>
 
@@ -244,9 +310,27 @@
             <p id="account-offline" class="field-note hidden">
               Offline — your rank and friend code arrive once the server is reachable.
             </p>
+            <button id="online-profile-btn" class="ghost-btn wide-btn">My profile</button>
             <button id="leaderboard-btn" class="ghost-btn wide-btn">Leaderboards &amp; friends</button>
           </div>
 
+          <!-- PRIVATE ROOM — first of the two ways in. Playing with someone you
+               already know is the more common reason to open this screen, and
+               it asks nothing of the queue. -->
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Play with a friend <span class="field-unit">private room</span></div>
+              <button id="create-room-btn" class="primary-btn">Create a private room</button>
+              <div class="join-row" style="margin-top:10px">
+                <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
+                <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
+              </div>
+              <p class="field-note">Private rooms never appear in a public list and never affect anyone's rating.</p>
+            </div>
+          </div>
+
+          <!-- RANKED — below the private room, but no less prominent: same
+               panel, same primary button. This is the one that moves rank. -->
           <div class="panel">
             <div class="field">
               <div class="field-label">Ranked match <span class="field-unit">find anyone</span></div>
@@ -269,20 +353,6 @@
             </div>
             <p class="field-note">Matched on mode and board size against whoever is queued. These are the only games that move your rank.</p>
             <div id="presence-strip" class="presence-strip"></div>
-          </div>
-
-          <!-- PRIVATE ROOM — the other way in, given the same weight as quick
-               match rather than looking like an afterthought below it. -->
-          <div class="panel">
-            <div class="field">
-              <div class="field-label">Play with a friend <span class="field-unit">private room</span></div>
-              <button id="create-room-btn" class="primary-btn">Create a private room</button>
-              <div class="join-row" style="margin-top:10px">
-                <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
-                <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
-              </div>
-              <p class="field-note">Private rooms never appear in a public list and never affect anyone's rating.</p>
-            </div>
           </div>
 
           <div class="panel">
@@ -357,9 +427,6 @@
             </div>
           </div>
 
-          <div id="lobby-bot-offer" class="hidden">
-            <button id="lobby-bot-offer-btn" class="ghost-btn wide-btn">Play a bot</button>
-          </div>
           <button id="lobby-start-btn" class="primary-btn">Start reaction</button>
           <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host…</p>
         </div>
@@ -384,7 +451,13 @@
         </div>
         <div id="taunt-bar" class="taunt-bar hidden">
           <button id="taunt-toggle" class="taunt-toggle" aria-label="Send a reaction" aria-expanded="false">😀</button>
+          <!-- Quick chat sits beside the reactions rather than inside them:
+               one is punctuation, the other is a sentence, and they carry
+               separate cooldowns. Phrases are a fixed list — see
+               src/net/taunts.ts for why there is no text field here. -->
+          <button id="chat-toggle" class="taunt-toggle" aria-label="Send a message" aria-expanded="false">💬</button>
           <div id="taunt-palette" class="taunt-palette hidden"></div>
+          <div id="chat-palette" class="chat-palette hidden" role="group" aria-label="Quick chat"></div>
         </div>
       </section>
 

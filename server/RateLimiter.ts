@@ -33,6 +33,9 @@ export const RATE_LIMITS: Record<string, RateLimitRule> = {
   quickmatch: { limit: 60, windowMs: 10 * 60_000 },
   addFriend: { limit: 30, windowMs: 60 * 60_000 },
   rename: { limit: 20, windowMs: 60 * 60_000 },
+  // Cosmetic and cheap, but it writes to storage and rewrites a leaderboard
+  // row, so it is not free to hammer.
+  setAvatar: { limit: 60, windowMs: 60 * 60_000 },
   // Generous on purpose: the reconnect ladder makes up to nine attempts on a
   // bad connection, and cutting someone off mid-match for having poor wifi
   // would be a far worse bug than the abuse this guards against.

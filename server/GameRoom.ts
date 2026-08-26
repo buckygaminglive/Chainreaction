@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { GameEngine } from '../src/game/GameEngine';
 import { layoutForMode, randomSeed } from '../src/game/cells';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
-import { TAUNT_COOLDOWN_MS, isValidTaunt } from '../src/net/taunts';
+import { TAUNT_COOLDOWN_MS, isValidTaunt, CHAT_COOLDOWN_MS, isValidChat } from '../src/net/taunts';
 import type { Matchmaker } from './Matchmaker';
 import type { PlayerHub } from './PlayerHub';
 import type { RateLimiter } from './RateLimiter';
@@ -71,6 +71,9 @@ interface Meta {
   roster: [number, RosterEntry][];
   roomScore?: [number, number][];
   isPublic?: boolean;
+  /** Whether results from this room move anyone's rating. Deliberately not the
+   *  same thing as `isPublic` — see the field on the class. */
+  ranked?: boolean;
   roomCode?: string;
   /** Both deadlines have to survive hibernation. The WebSocket hibernation
    *  API means a room with players connected can still be evicted between
@@ -131,9 +134,27 @@ export class GameRoom extends DurableObject<Env> {
   /** Last taunt timestamp per seat, for the cooldown. In memory only — losing
    *  it to a hibernation just means one taunt gets through early. */
   private lastTaunt = new Map<number, number>();
+  /** The same, for quick chat. Kept separate from the taunt clock so that
+   *  sending an emoji does not eat the budget for saying "good game", and so
+   *  the two can carry different cooldowns. */
+  private lastChat = new Map<number, number>();
   /** Rooms are private by default: a code you shared with a friend must never
    *  end up on a public list because of a default. */
   private isPublic = false;
+  /**
+   * Whether a result here moves ratings.
+   *
+   * Separate from `isPublic`, which only decides whether the room appears in
+   * the browsable list. Conflating the two was a rating exploit: `isPublic` is
+   * settable by a client — through `?public=1` on the socket URL and through
+   * the host's own `setLobby` — so any player could declare their own room
+   * ranked, hand the code to a second device and farm the ladder.
+   *
+   * This flag is set only by the worker, only for a code the matchmaker
+   * issued, over an internal path that the public router cannot reach. There
+   * is no message a client can send that turns it on.
+   */
+  private ranked = false;
   /** The DO is addressed by room code but is never told what it is, so it is
    *  captured from the first request that reaches it. */
   private roomCode = '';
@@ -161,6 +182,7 @@ export class GameRoom extends DurableObject<Env> {
         this.roster = new Map(meta.roster);
         this.roomScore = new Map(meta.roomScore ?? []);
         this.isPublic = meta.isPublic ?? false;
+        this.ranked = meta.ranked ?? false;
         this.roomCode = meta.roomCode ?? '';
         this.turnDeadline = meta.turnDeadline ?? 0;
         this.absentDeadline = meta.absentDeadline ?? 0;
@@ -176,6 +198,19 @@ export class GameRoom extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     await this.ready;
+
+    // Internal: the worker marks a room ranked when the matchmaker issues its
+    // code. Unreachable from outside — the public router only ever forwards
+    // paths matching /api/room/CODE, so this pathname cannot arrive from a
+    // client. That is the whole security property, so it must stay true if
+    // the router's routes are ever widened.
+    const internal = new URL(request.url);
+    if (internal.pathname === '/rank') {
+      this.ranked = true;
+      await this.persistMeta();
+      return Response.json({ ok: true });
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
     }
@@ -186,7 +221,8 @@ export class GameRoom extends DurableObject<Env> {
     const fromPath = url.pathname.match(/\/api\/room\/([A-Z0-9]{4,8})$/i);
     if (fromPath) this.roomCode = fromPath[1].toUpperCase();
     // Quick match parks a room in the queue before anyone is in it, so the
-    // first arrival can be told to advertise it.
+    // first arrival can be told to advertise it. This controls listing only —
+    // whether the match is *rated* is decided by the relay, never here.
     if (url.searchParams.get('public') === '1') this.isPublic = true;
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
     const token = url.searchParams.get('token');
@@ -316,6 +352,8 @@ export class GameRoom extends DurableObject<Env> {
       await this.handleRematchVote(att);
     } else if (msg.type === 'taunt') {
       this.handleTaunt(att, msg.emoji);
+    } else if (msg.type === 'chat') {
+      this.handleChat(att, msg.phrase);
     } else if (msg.type === 'setLobby') {
       if (att.id !== this.hostId || this.started) return;
       if (msg.isPublic !== undefined) this.isPublic = !!msg.isPublic;
@@ -698,12 +736,16 @@ export class GameRoom extends DurableObject<Env> {
   /**
    * Sends a finished match to the player hub.
    *
-   * Only public rooms count. A private room is people who chose each other, so
-   * rating it is an open invitation to farm a ladder against a second device —
-   * and a friendly game between friends should not move anyone's rank anyway.
+   * Only matchmade rooms count. A room entered by code is people who chose
+   * each other, so rating it is an open invitation to farm a ladder against a
+   * second device — and a friendly game between friends should not move
+   * anyone's rank anyway.
+   *
+   * Gated on `ranked` rather than `isPublic`: the latter is client-settable
+   * and was therefore never a safe basis for deciding what counts.
    */
   private async reportResult(winnerId: number) {
-    if (!this.isPublic || !this.engine) return;
+    if (!this.ranked || !this.engine) return;
     const players = this.engine.players
       .map((p) => {
         const entry = this.roster.get(p.id);
@@ -776,6 +818,23 @@ export class GameRoom extends DurableObject<Env> {
     if (now - last < TAUNT_COOLDOWN_MS) return;
     this.lastTaunt.set(att.id, now);
     this.broadcastAll({ type: 'taunt', from: att.id, emoji });
+  }
+
+  /**
+   * Quick chat. Same shape as a taunt, on its own cooldown.
+   *
+   * The index is validated against the phrase list rather than trusted: the
+   * whole reason this is an index and not a string is that a client cannot
+   * then put arbitrary text on someone else's screen, and that only holds if
+   * the relay checks the number is one it recognises.
+   */
+  private handleChat(att: Attachment, phrase: number) {
+    if (!isValidChat(phrase)) return;
+    const now = Date.now();
+    const last = this.lastChat.get(att.id) ?? 0;
+    if (now - last < CHAT_COOLDOWN_MS) return;
+    this.lastChat.set(att.id, now);
+    this.broadcastAll({ type: 'chat', from: att.id, phrase });
   }
 
   /**
@@ -933,6 +992,7 @@ export class GameRoom extends DurableObject<Env> {
       roster: Array.from(this.roster.entries()),
       roomScore: Array.from(this.roomScore.entries()),
       isPublic: this.isPublic,
+      ranked: this.ranked,
       roomCode: this.roomCode,
       turnDeadline: this.turnDeadline,
       absentDeadline: this.absentDeadline,

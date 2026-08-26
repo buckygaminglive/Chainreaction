@@ -26,8 +26,15 @@ import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import { account } from './net/account';
+import { initProfile, renderProfile } from './ui/profile';
 import { telemetry } from './net/telemetry';
-import { TAUNTS, TAUNT_COOLDOWN_MS } from './net/taunts';
+import {
+  TAUNTS,
+  TAUNT_COOLDOWN_MS,
+  CHAT_GROUPS,
+  CHAT_PHRASES,
+  CHAT_COOLDOWN_MS,
+} from './net/taunts';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -173,6 +180,7 @@ const screenOnline = $('screen-online');
 const screenLobby = $('screen-lobby');
 const screenSetup = $('screen-setup');
 const screenSettings = $('screen-settings');
+const screenProfile = $('screen-profile');
 const attractHost = $('attract-host');
 const volumeRange = $<HTMLInputElement>('volume-range');
 const volumeValueEl = $('volume-value');
@@ -213,6 +221,8 @@ const tauntBarEl = $('taunt-bar');
 const tauntToggleEl = $<HTMLButtonElement>('taunt-toggle');
 const tauntPaletteEl = $('taunt-palette');
 const tauntFeedEl = $('taunt-feed');
+const chatToggleEl = $<HTMLButtonElement>('chat-toggle');
+const chatPaletteEl = $('chat-palette');
 const rematchStateEl = $('rematch-state');
 const winCardEl = document.querySelector('.win-card') as HTMLElement;
 const winNameEl = $('win-name');
@@ -244,8 +254,6 @@ const presenceStripEl = $('presence-strip');
 const quickFallbackEl = $('quick-fallback');
 const quickFallbackMsg = $('quick-fallback-msg');
 const quickFallbackBtn = $<HTMLButtonElement>('quick-fallback-btn');
-const lobbyBotOfferEl = $('lobby-bot-offer');
-const lobbyBotOfferBtn = $<HTMLButtonElement>('lobby-bot-offer-btn');
 const lobbyVisibilityGroup = $('lobby-visibility-group');
 const lobbyVisibilityField = $('lobby-visibility-field');
 const roomCodeBtn = $('room-code-btn');
@@ -839,6 +847,24 @@ $('setup-close-btn').addEventListener('click', () => {
   hideOverlay(screenSetup);
 });
 
+// Two entry points, one overlay: the title screen and the online screen. Both
+// are places a player asks "how am I doing", and an overlay returns them to
+// whichever one they came from rather than replacing it.
+['profile-btn', 'online-profile-btn'].forEach((id) => $(id).addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  showOverlay(screenProfile);
+  // Fired rather than awaited: the overlay is already on screen and the
+  // history fetch fills in a section of it, so blocking the open on the
+  // network would make a local action feel like a remote one.
+  void renderProfile();
+}));
+
+$('profile-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenProfile);
+});
+
 $('settings-btn').addEventListener('click', () => {
   sfx.unlock();
   sfx.buttonTap();
@@ -860,6 +886,7 @@ function showScreen(el: HTMLElement) {
   hideOverlay(screenWin);
   hideOverlay(screenSetup);
   hideOverlay(screenSettings);
+  hideOverlay(screenProfile);
   el.classList.remove('hidden');
   // The bed sits forward everywhere except over a live board, where the
   // effects need the room.
@@ -1146,6 +1173,7 @@ function hideChain() {
 /** Room head-to-head, kept by the relay and pushed down. */
 let roomScore = new Map<number, number>();
 let lastTauntAt = 0;
+let lastChatAt = 0;
 
 function buildTauntPalette() {
   tauntPaletteEl.innerHTML = '';
@@ -1159,9 +1187,87 @@ function buildTauntPalette() {
   });
 }
 
+/** Quick chat, grouped so it can be scanned. The index sent on the wire is
+ *  the position in CHAT_PHRASES, so the buttons are built from that flattened
+ *  list rather than from a per-group counter. */
+function buildChatPalette() {
+  chatPaletteEl.innerHTML = '';
+  let index = 0;
+  for (const group of CHAT_GROUPS) {
+    const heading = document.createElement('div');
+    heading.className = 'chat-group-label';
+    heading.textContent = group.label;
+    chatPaletteEl.appendChild(heading);
+
+    const row = document.createElement('div');
+    row.className = 'chat-group';
+    for (const phrase of group.phrases) {
+      const i = index++;
+      const btn = document.createElement('button');
+      btn.className = 'chat-phrase';
+      btn.textContent = phrase;
+      btn.addEventListener('click', () => sendChat(i));
+      row.appendChild(btn);
+    }
+    chatPaletteEl.appendChild(row);
+  }
+}
+
 function setTauntPaletteOpen(open: boolean) {
   tauntPaletteEl.classList.toggle('hidden', !open);
   tauntToggleEl.setAttribute('aria-expanded', String(open));
+  // Only one palette at a time: they occupy the same corner, and two open at
+  // once would cover most of the board.
+  if (open) setChatPaletteOpen(false);
+}
+
+function setChatPaletteOpen(open: boolean) {
+  chatPaletteEl.classList.toggle('hidden', !open);
+  chatToggleEl.setAttribute('aria-expanded', String(open));
+  if (open) setTauntPaletteOpen(false);
+}
+
+function sendChat(index: number) {
+  if (!net || !onlineMode) return;
+  const now = performance.now();
+  // Mirrors the relay's cooldown so the button visibly goes dead rather than
+  // the message vanishing silently — the relay is still the one enforcing it.
+  if (now - lastChatAt < CHAT_COOLDOWN_MS) return;
+  if (!net.sendChat(index)) return;
+  lastChatAt = now;
+  sfx.buttonTap();
+  setChatPaletteOpen(false);
+  chatToggleEl.disabled = true;
+  setTimeout(() => {
+    chatToggleEl.disabled = false;
+  }, CHAT_COOLDOWN_MS);
+  // Shown locally too. Without it the sender has no confirmation the message
+  // went anywhere, and the room reads as one-sided.
+  showChat(myPlayerId, index);
+}
+
+/**
+ * A speech bubble from one player, coloured as their seat.
+ *
+ * Reuses the taunt feed so emoji and sentences stack in one column in the
+ * order they were said — two separate feeds would let a reply appear above the
+ * thing it was replying to.
+ */
+function showChat(fromPlayerId: number, index: number) {
+  const phrase = CHAT_PHRASES[index];
+  if (!phrase) return;
+  const who = engine?.players.find((p) => p.id === fromPlayerId);
+  const theme = colorOf(fromPlayerId);
+  const bubble = document.createElement('div');
+  bubble.className = 'taunt-bubble chat-bubble';
+  bubble.style.borderColor = `${theme.css}66`;
+  bubble.innerHTML =
+    `<span class="tn" style="color:${theme.css}">${escapeHtml(who?.name ?? 'Player')}</span>` +
+    `<span class="cp">${escapeHtml(phrase)}</span>`;
+  tauntFeedEl.appendChild(bubble);
+  while (tauntFeedEl.childElementCount > 4) tauntFeedEl.firstElementChild?.remove();
+  // Longer than a taunt: a sentence takes longer to read than an emoji.
+  setTimeout(() => bubble.remove(), 4200);
 }
 
 function sendTaunt(index: number) {
@@ -1202,11 +1308,19 @@ tauntToggleEl.addEventListener('click', () => {
   setTauntPaletteOpen(tauntPaletteEl.classList.contains('hidden'));
 });
 
+chatToggleEl.addEventListener('click', () => {
+  sfx.buttonTap();
+  setChatPaletteOpen(chatPaletteEl.classList.contains('hidden'));
+});
+
 // Tapping the board (or anywhere else) closes the palette.
 document.addEventListener('pointerdown', (e) => {
-  if (tauntPaletteEl.classList.contains('hidden')) return;
+  // Cheap guard first: this fires on every board tap, and with both palettes
+  // already closed there is nothing to do but four needless DOM writes.
+  if (tauntPaletteEl.classList.contains('hidden') && chatPaletteEl.classList.contains('hidden')) return;
   if (tauntBarEl.contains(e.target as Node)) return;
   setTauntPaletteOpen(false);
+  setChatPaletteOpen(false);
 });
 
 function renderRematchState(votes: number[], needed: number) {
@@ -2053,7 +2167,11 @@ async function startQuickMatch() {
   wireNetHandlers(client);
   net = client;
   try {
-    const { code, waiting } = await NetClient.quickMatch(quickMode, quickBoardSize);
+    const { code, waiting } = await NetClient.quickMatch(
+      quickMode,
+      quickBoardSize,
+      account.credentials?.id
+    );
     queuedCode = waiting ? code : null;
     // Quick-match rooms are listed, so a browser can fill one that is still
     // waiting on the queue — two routes into the same room.
@@ -2066,15 +2184,19 @@ async function startQuickMatch() {
       // Publish the settings we queued on, so the listing matches the queue.
       client.setLobby({ mode: quickMode, boardSize: quickBoardSize, isPublic: true });
       quickMatchPending = true;
-      enterLobby();
-      setQuickSearching(false);
+      // Deliberately *not* the lobby. A room is created behind the scenes so
+      // an opponent has somewhere to be matched into, but showing it would put
+      // the player in a one-person lobby with a Start button — which reads as
+      // "set up a game" when what they asked for was to be matched. The honest
+      // state is still searching, so that is what stays on screen.
+      setQuickSearching(true);
       startBotFallbackTimer();
     } else {
       // Somebody was already waiting — we joined their room and the host's
-      // client starts it as soon as it sees us.
+      // client starts it as soon as it sees us. Still no lobby: the game is
+      // about to begin on its own.
       quickMatchPending = true;
-      enterLobby();
-      setQuickSearching(false);
+      setQuickSearching(true, 'Opponent found — starting…');
     }
     exposeDebug();
   } catch (err) {
@@ -2124,24 +2246,33 @@ function startBotFallbackTimer() {
   botFallbackTimer = setTimeout(() => {
     if (!quickMatchPending) return;
     const bot = pickBot(account.profile?.rating ?? null);
-    lobbyHintEl.textContent = `no one around — ${bot.name} (bot) is ready`;
-    lobbyBotOfferEl.classList.remove('hidden');
-    lobbyBotOfferBtn.textContent = `Play ${bot.name} (bot)`;
-    lobbyBotOfferBtn.onclick = () => {
+    // Offered on the search, not in the lobby. A queued player now waits on the
+    // online screen, so an offer rendered into the lobby would sit on a screen
+    // nobody is looking at — a solo player would simply wait forever.
+    quickFallbackMsg.textContent = `No one is queued on these settings yet. Keep waiting, or play ${bot.name} now.`;
+    quickFallbackBtn.textContent = `Play ${bot.name} (bot)`;
+    quickFallbackBtn.onclick = () => {
       stopBotFallbackTimer();
       if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
       queuedCode = null;
+      // Cleared before disconnecting: the socket closing triggers a roster
+      // render, and a stale pending flag would have it try to start a match
+      // that is being abandoned.
+      quickMatchPending = false;
       disconnectNet();
-      lobbyBotOfferEl.classList.add('hidden');
+      hideQuickFallback();
+      setQuickSearching(false);
       void startBotMatch(bot);
     };
+    // The search stays running underneath: the offer is an alternative, not a
+    // replacement, and a real opponent arriving still wins.
+    quickFallbackEl.classList.remove('hidden');
   }, BOT_FALLBACK_MS);
 }
 
 async function cancelQuickMatch() {
   sfx.buttonTap();
   stopBotFallbackTimer();
-  lobbyBotOfferEl.classList.add('hidden');
   if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
   queuedCode = null;
   quickMatchPending = false;
@@ -2366,6 +2497,11 @@ function wireNetHandlers(client: NetClient) {
     void resumeOnlineGame(rows, cols, style, mode, snapshot);
   };
   client.onTaunt = (from, emoji) => showTaunt(from, emoji);
+  // Own messages are already shown on send, so echoing the broadcast back
+  // would double every bubble the sender posts.
+  client.onChat = (from, phrase) => {
+    if (from !== myPlayerId) showChat(from, phrase);
+  };
   client.onRematch = (votes, needed) => renderRematchState(votes, needed);
   client.onRoomScore = (score) => {
     roomScore = score;
@@ -2453,7 +2589,6 @@ lobbyStartBtn.addEventListener('click', () => {
 $('lobby-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
   stopBotFallbackTimer();
-  lobbyBotOfferEl.classList.add('hidden');
   // Leaving the lobby also gives up any queue slot, or the next quick-matcher
   // gets sent into an empty room.
   if (queuedCode) void NetClient.cancelQuickMatch(queuedCode);
@@ -2504,11 +2639,16 @@ function renderLobby(players: NetPlayer[], hostId: number) {
   // of it is that you asked to play and then you are playing.
   if (quickMatchPending) {
     if (!enoughForMode) {
+      // The player is watching the search, not this lobby, so the status they
+      // can actually see is the one worth updating.
+      setQuickSearching(true);
       lobbyHintEl.textContent = 'waiting for an opponent…';
       return;
     }
     quickMatchPending = false;
     queuedCode = null;
+    stopBotFallbackTimer();
+    setQuickSearching(true, 'Opponent found — starting…');
     if (isHost) net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode, lobbyLandscape);
   }
 }
@@ -2564,7 +2704,6 @@ async function startOnlineGame(
 ) {
   if (!net) return;
   stopBotFallbackTimer();
-  lobbyBotOfferEl.classList.add('hidden');
   // A real opponent turned up, so nothing here is a bot match any more.
   activeBot = null;
   onlineMode = true;
@@ -2650,7 +2789,23 @@ function checkRoomLinkParam(): boolean {
 selectMode(applyStoredPrefs());
 selectLobbyMode(DEFAULT_MODE);
 selectQuickMode(DEFAULT_MODE);
+initProfile({
+  tap: () => sfx.buttonTap(),
+  // The name field already exists on the online screen, with its own
+  // validation and its own save button. Sending the player there beats a
+  // second rename control that has to be kept in step with the first.
+  onRename: () => {
+    hideOverlay(screenProfile);
+    $('play-online-btn').click();
+    nameInput.focus();
+    nameInput.select();
+  },
+  // The title screen shows a summary line that includes the account, so it
+  // has to be redrawn when the account changes underneath it.
+  onChanged: () => renderProfileStrip(),
+});
 buildTauntPalette();
+buildChatPalette();
 showHowtoPage(0);
 renderProfileStrip();
 updateMuteIcon();
