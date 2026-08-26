@@ -9,12 +9,16 @@
     "preview": "vite preview",
     "test": "node --test src/game/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p server/tsconfig.json",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "assets": "node scripts/make-icons.mjs && node scripts/make-icon-3d.mjs && node scripts/make-app-icons.mjs && node scripts/make-store-graphics.mjs && node scripts/make-pc-assets.mjs",
+    "shots": "node scripts/make-screenshots.mjs",
+    "icons:app": "node scripts/make-app-icons.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260818.1",
     "@types/node": "^24.13.3",
     "@types/three": "^0.185.4",
+    "sharp": "^0.35.4",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
     "wrangler": "^4.124.0"

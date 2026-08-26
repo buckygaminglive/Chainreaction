@@ -3,8 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <!-- Apple has never supported an SVG touch icon. -->
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- PNG fallbacks for the browsers and OS surfaces that still ignore SVG
+         favicons. Ordered small first; the browser picks by `sizes`. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <!-- Apple has never supported an SVG touch icon, and iOS applies its own
+         rounded mask — so this one is full-bleed and 180px, not the plated
+         192px manifest icon it used to borrow. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#07090c" />
@@ -138,6 +144,8 @@
           </div>
 
           <p class="legal-row">
+            <a href="/feedback.html" target="_blank" rel="noopener">Feedback</a>
+            <span aria-hidden="true">·</span>
             <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
             <span aria-hidden="true">·</span>
             <a href="/terms.html" target="_blank" rel="noopener">Terms</a>

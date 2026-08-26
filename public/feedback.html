@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Tester Feedback — FISSILE</title>
+    <style>
+      :root {
+        --bg: #07090c;
+        --panel: rgba(255, 255, 255, 0.035);
+        --panel-focus: rgba(255, 255, 255, 0.06);
+        --hairline: rgba(255, 255, 255, 0.09);
+        --text: #e8edf4;
+        --dim: #8c97a8;
+        --faint: #4c5665;
+        --accent: #3ad9ff;
+        --accent-dim: rgba(58, 217, 255, 0.15);
+        --accent-glow: rgba(58, 217, 255, 0.35);
+        --warn: #ffb020;
+        --success: #3aff9e;
+        --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 0 20px 80px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 15px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 620px; margin: 0 auto; }
+      header { padding: 48px 0 24px; border-bottom: 1px solid var(--hairline); margin-bottom: 28px; }
+      .brand {
+        font-size: 14px;
+        font-weight: 300;
+        letter-spacing: 0.34em;
+        text-indent: 0.34em;
+        text-decoration: none;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+      h1 { margin: 16px 0 6px; font-size: clamp(26px, 5vw, 34px); font-weight: 400; letter-spacing: 0.01em; }
+      .subtitle { margin: 0; font-size: 14px; color: var(--dim); }
+      
+      .form-group {
+        margin-bottom: 22px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #b3bfd0;
+        margin-bottom: 8px;
+      }
+      .label-desc {
+        font-size: 12px;
+        color: var(--dim);
+        font-weight: normal;
+        text-transform: none;
+        margin-left: 6px;
+      }
+
+      /* Radio Categories */
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip-label {
+        cursor: pointer;
+        padding: 7px 14px;
+        background: var(--panel);
+        border: 1px solid var(--hairline);
+        border-radius: 20px;
+        font-size: 13px;
+        color: var(--dim);
+        transition: all 0.15s ease;
+        text-transform: none;
+        margin-bottom: 0;
+      }
+      .chip-input {
+        display: none;
+      }
+      .chip-input:checked + .chip-label {
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* Stars Rating */
+      .star-rating {
+        display: flex;
+        gap: 6px;
+        font-size: 26px;
+        cursor: pointer;
+      }
+      .star {
+        color: #384252;
+        transition: color 0.15s ease, transform 0.1s ease;
+      }
+      .star.active {
+        color: var(--warn);
+      }
+      .star:hover {
+        transform: scale(1.15);
+      }
+
+      /* Inputs & Textareas */
+      input[type="text"], input[type="email"], textarea, select {
+        width: 100%;
+        background: var(--panel);
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: var(--text);
+        font-size: 14.5px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      input[type="text"]:focus, input[type="email"]:focus, textarea:focus {
+        border-color: var(--accent);
+        background: var(--panel-focus);
+        box-shadow: 0 0 0 2px var(--accent-glow);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 120px;
+        line-height: 1.5;
+      }
+
+      /* File upload / Screenshot drop */
+      .file-drop {
+        border: 2px dashed var(--hairline);
+        border-radius: 10px;
+        padding: 22px 16px;
+        text-align: center;
+        background: var(--panel);
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .file-drop:hover, .file-drop.dragover {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+      }
+      .file-drop p {
+        margin: 0;
+        font-size: 13.5px;
+        color: var(--dim);
+      }
+      .file-drop .browse-btn {
+        color: var(--accent);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      #file-input { display: none; }
+      
+      /* Preview container */
+      .preview-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .thumb-wrap {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid var(--hairline);
+      }
+      .thumb-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .remove-thumb {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        font-size: 11px;
+        cursor: pointer;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Diagnostic details box */
+      .diagnostics-box {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        padding: 12px 14px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--dim);
+        line-height: 1.7;
+      }
+
+      /* Buttons */
+      .btn-row {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 28px;
+      }
+      @media (min-width: 480px) {
+        .btn-row { flex-direction: row; }
+      }
+      .primary-btn {
+        flex: 1;
+        background: var(--accent);
+        color: #07090c;
+        border: none;
+        border-radius: 8px;
+        padding: 14px 20px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+        text-align: center;
+        text-decoration: none;
+        transition: transform 0.1s ease, filter 0.15s ease;
+      }
+      .primary-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+      .primary-btn:active { transform: translateY(0); }
+
+      .secondary-btn {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        padding: 14px 18px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: center;
+        transition: background 0.15s ease;
+      }
+      .secondary-btn:hover { background: rgba(255, 255, 255, 0.08); }
+
+      .toast {
+        display: none;
+        background: rgba(58, 255, 158, 0.12);
+        border: 1px solid var(--success);
+        color: var(--success);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 16px;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--hairline); font-size: 13.5px; text-align: center; color: var(--dim); }
+      footer a { color: var(--accent); text-decoration: none; }
+      footer a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">FISSILE</a>
+        <h1>Closed Tester Feedback</h1>
+        <p class="subtitle">Design Dynasty Studios · Help us refine and polish the game</p>
+      </header>
+
+      <form id="feedback-form" onsubmit="handleSubmit(event)">
+        
+        <!-- Category -->
+        <div class="form-group">
+          <label>Feedback Category</label>
+          <div class="chips">
+            <input type="radio" id="cat-bug" name="category" value="Bug Report" class="chip-input" checked />
+            <label for="cat-bug" class="chip-label">🐛 Bug Report</label>
+
+            <input type="radio" id="cat-gameplay" name="category" value="Gameplay & Balance" class="chip-input" />
+            <label for="cat-gameplay" class="chip-label">⚖️ Gameplay & Balance</label>
+
+            <input type="radio" id="cat-feature" name="category" value="Feature Suggestion" class="chip-input" />
+            <label for="cat-feature" class="chip-label">💡 Feature Idea</label>
+
+            <input type="radio" id="cat-perf" name="category" value="Performance / Lag" class="chip-input" />
+            <label for="cat-perf" class="chip-label">⚡ Performance</label>
+
+            <input type="radio" id="cat-other" name="category" value="General Feedback" class="chip-input" />
+            <label for="cat-other" class="chip-label">💬 General</label>
+          </div>
+        </div>
+
+        <!-- Rating -->
+        <div class="form-group">
+          <label>Overall Experience <span class="label-desc">(Rate the current build)</span></label>
+          <div class="star-rating" id="star-group">
+            <span class="star active" data-value="1">★</span>
+            <span class="star active" data-value="2">★</span>
+            <span class="star active" data-value="3">★</span>
+            <span class="star active" data-value="4">★</span>
+            <span class="star active" data-value="5">★</span>
+          </div>
+          <input type="hidden" id="rating-val" value="5" />
+        </div>
+
+        <!-- Description -->
+        <div class="form-group">
+          <label for="feedback-text">Your Feedback / Bug Description <span style="color:var(--warn)">*</span></label>
+          <textarea id="feedback-text" required placeholder="What happened? What did you like? What needs improvement or felt off?"></textarea>
+        </div>
+
+        <!-- Email (Optional) -->
+        <div class="form-group">
+          <label for="user-email">Your Email <span class="label-desc">(Optional, if you'd like a response)</span></label>
+          <input type="email" id="user-email" placeholder="tester@gmail.com" />
+        </div>
+
+        <!-- Screenshots / Attachments -->
+        <div class="form-group">
+          <label>Screenshots / Screen Recordings <span class="label-desc">(Optional)</span></label>
+          <div class="file-drop" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <p>📷 Drag & drop screenshots here, or <span class="browse-btn">browse files</span></p>
+          </div>
+          <input type="file" id="file-input" accept="image/*" multiple onchange="handleFiles(this.files)" />
+          <div class="preview-container" id="preview-list"></div>
+        </div>
+
+        <!-- System Diagnostics -->
+        <div class="form-group">
+          <label>Device Diagnostics <span class="label-desc">(Auto-captured to help reproduce bugs)</span></label>
+          <div class="diagnostics-box" id="diag-box">
+            Detecting device information...
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="submit" class="primary-btn">Send Feedback via Email</button>
+          <button type="button" class="secondary-btn" onclick="copyReport()">📋 Copy Report</button>
+        </div>
+
+        <div id="toast-msg" class="toast"></div>
+      </form>
+
+      <footer>
+        <a href="/">← Return to FISSILE</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a>
+      </footer>
+    </main>
+
+    <script>
+      // Rating Stars Handler
+      let currentRating = 5;
+      const stars = document.querySelectorAll('.star');
+      stars.forEach(star => {
+        star.addEventListener('click', () => {
+          currentRating = parseInt(star.getAttribute('data-value'));
+          document.getElementById('rating-val').value = currentRating;
+          updateStars();
+        });
+      });
+
+      function updateStars() {
+        stars.forEach(star => {
+          const val = parseInt(star.getAttribute('data-value'));
+          star.classList.toggle('active', val <= currentRating);
+        });
+      }
+
+      // Diagnostics Detection
+      let diagText = '';
+      function initDiagnostics() {
+        const ua = navigator.userAgent;
+        const screenRes = `${window.screen.width}x${window.screen.height} (DPR: ${window.devicePixelRatio || 1})`;
+        const viewport = `${window.innerWidth}x${window.innerHeight}`;
+        const platform = navigator.platform || 'Unknown';
+        const lang = navigator.language || 'en';
+        
+        diagText = `OS/Platform: ${platform}\nScreen: ${screenRes} | Viewport: ${viewport}\nUser-Agent: ${ua}\nLanguage: ${lang}\nTimestamp: ${new Date().toISOString()}`;
+        document.getElementById('diag-box').innerText = diagText;
+      }
+      initDiagnostics();
+
+      // Drag & Drop Image Handling
+      const attachedImages = [];
+      const dropZone = document.getElementById('drop-zone');
+      dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+      });
+
+      function handleFiles(files) {
+        for (const file of files) {
+          if (!file.type.startsWith('image/')) continue;
+          attachedImages.push(file);
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const container = document.getElementById('preview-list');
+            const wrap = document.createElement('div');
+            wrap.className = 'thumb-wrap';
+            wrap.innerHTML = `<img src="${e.target.result}" alt="Preview" /><button class="remove-thumb" onclick="removeImage(${attachedImages.length - 1}, this)">×</button>`;
+            container.appendChild(wrap);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+
+      function removeImage(idx, btn) {
+        attachedImages.splice(idx, 1);
+        btn.parentElement.remove();
+      }
+
+      function generateReport() {
+        const category = document.querySelector('input[name="category"]:checked').value;
+        const rating = document.getElementById('rating-val').value;
+        const text = document.getElementById('feedback-text').value.trim();
+        const email = document.getElementById('user-email').value.trim() || 'Not provided';
+        const imageCount = attachedImages.length;
+
+        return `[FISSILE CLOSED TEST FEEDBACK]\n----------------------------------\nCategory: ${category}\nRating: ${rating}/5 Stars\nTester Email: ${email}\nAttached Screenshots: ${imageCount > 0 ? imageCount + ' file(s) attached' : 'None'}\n\nFEEDBACK:\n${text}\n\n----------------------------------\nDIAGNOSTICS:\n${diagText}`;
+      }
+
+      function handleSubmit(e) {
+        e.preventDefault();
+        const category = document.querySelector('input[name="category"]:checked').value;
+        const text = document.getElementById('feedback-text').value.trim();
+        if (!text) return;
+
+        const subject = encodeURIComponent(`[FISSILE Feedback] ${category} - ${currentRating}/5 Stars`);
+        const body = encodeURIComponent(generateReport() + (attachedImages.length > 0 ? '\n\n*Note: Please attach your screenshots to this email if desired.*' : ''));
+
+        // Trigger mailto
+        window.location.href = `mailto:Designxdynastystudios@gmail.com?subject=${subject}&body=${body}`;
+
+        showToast('✓ Email client opened! Attach your screenshot(s) and click Send.');
+      }
+
+      function copyReport() {
+        const report = generateReport();
+        navigator.clipboard.writeText(report).then(() => {
+          showToast('✓ Full feedback report copied to clipboard! You can paste it into Discord or WhatsApp.');
+        });
+      }
+
+      function showToast(msg) {
+        const t = document.getElementById('toast-msg');
+        t.innerText = msg;
+        t.style.display = 'block';
+        setTimeout(() => { t.style.display = 'none'; }, 6000);
+      }
+    </script>
+  </body>
+</html>
