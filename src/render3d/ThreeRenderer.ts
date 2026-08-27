@@ -39,6 +39,7 @@ import { EMOJI_STAGES, stageForRemaining } from '../render/emoji';
 import { emojiTexture } from './emojiTexture';
 import { orbSurfaceTexture } from './orbSurfaceTexture';
 import { burst3d, ring3d, shakeCamera, travelOrb3d } from './fx3d';
+import { FrameWatcher, QUALITY, initialTier, nextTierDown, type QualityTier } from './quality';
 import { EXPLOSION_SPIN_UP_MS } from './timing';
 
 export type OrbStyle = 'dots' | 'emoji';
@@ -110,6 +111,10 @@ export class ThreeRenderer {
   private t = 0;
   private baseCameraPos = new Vector3();
   private dirLight!: DirectionalLight;
+  /** Current render quality. Starts as a guess and is lowered by measurement;
+   *  never raised — see quality.ts. */
+  private tier: QualityTier = initialTier();
+  private frames = new FrameWatcher();
 
   private cells: CellView[][] = [];
   private tileMeshes: Mesh[] = [];
@@ -194,13 +199,21 @@ export class ThreeRenderer {
   }
 
   private createRenderer(): WebGLRenderer {
-    const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    const q = QUALITY[this.tier];
+    // Antialiasing is decided here and can never be revisited: it is fixed when
+    // the WebGL context is created. That is the reason touch devices do not
+    // start with it — a runtime step-down could not take it away again.
+    const renderer = new WebGLRenderer({
+      antialias: q.antialias,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio));
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = q.shadows;
     renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -215,12 +228,56 @@ export class ThreeRenderer {
   }
 
   private startLoop() {
-    const loop = () => {
+    const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
+      if (this.frames.sample(now)) this.stepDownQuality();
       this.tick();
       this.renderer.render(this.scene, this.camera);
     };
-    loop();
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  /**
+   * Drops a quality tier after sustained bad frame times.
+   *
+   * Everything here is changeable on a live context. Antialiasing is not, which
+   * is why it is not in this list — it was decided when the context was made.
+   *
+   * One way only. Climbing back up when frames recover means the recovery
+   * itself makes things heavy again, and the renderer spends the match
+   * oscillating; a step change in quality is much more noticeable than the
+   * quality difference it is chasing.
+   */
+  private stepDownQuality() {
+    const next = nextTierDown(this.tier);
+    if (!next) return;
+    this.tier = next;
+    const q = QUALITY[next];
+
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio));
+    this.renderer.shadowMap.enabled = q.shadows;
+    if (this.dirLight) {
+      this.dirLight.castShadow = q.shadows;
+      this.dirLight.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+      // The existing depth target was allocated at the old size; without
+      // dropping it Three keeps rendering into the old one and the change does
+      // nothing at all.
+      this.dirLight.shadow.map?.dispose();
+      this.dirLight.shadow.map = null as unknown as typeof this.dirLight.shadow.map;
+    }
+    // Materials compiled against the old shadow configuration still carry it.
+    this.scene.traverse((o) => {
+      const mesh = o as { material?: { needsUpdate?: boolean } | { needsUpdate?: boolean }[] };
+      if (!mesh.material) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        m.needsUpdate = true;
+      }
+    });
+
+    // Judge the new settings on their own merits rather than on frames drawn
+    // under the old ones.
+    this.frames.reset();
+    console.info(`[render] stepped down to ${next} — sustained low frame rate`);
   }
 
   /** Mobile GPUs reclaim the WebGL context when backgrounded/low on memory —
@@ -261,7 +318,7 @@ export class ThreeRenderer {
     this.dirLight = new DirectionalLight(0xf2f8ff, 1.25);
     this.dirLight.position.set(2.4, 6, 3.2);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(1024, 1024);
+    this.dirLight.shadow.mapSize.set(QUALITY[this.tier].shadowMapSize, QUALITY[this.tier].shadowMapSize);
     this.dirLight.shadow.bias = -0.002;
     this.scene.add(this.dirLight, this.dirLight.target);
 
@@ -512,7 +569,7 @@ export class ThreeRenderer {
     // HiDPI and a standard monitor, and when the browser zooms. A renderer
     // holding the ratio it saw at startup draws at the wrong scale for the
     // buffer it is drawing into.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[this.tier].maxPixelRatio));
     this.renderer.setSize(w, h, false);
 
     const rows = this.engine.rows;

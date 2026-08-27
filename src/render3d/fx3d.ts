@@ -145,18 +145,33 @@ export function travelOrb3d(
   });
 }
 
+/** The shake currently driving the camera, if any. Held so it can be killed
+ *  outright rather than merely having its tweens removed. */
+let activeShake: gsap.core.Timeline | null = null;
+
 export function shakeCamera(camera: OrthographicCamera, basePos: Vector3, amount = 0.12) {
-  // A fast cascade fires this once per wave in quick succession. Without
-  // killing the previous shake's tween first, two overlapping shakes fight
-  // over camera.position each frame and the camera visibly stutters/jumps —
-  // this keeps only one shake driving the camera at a time.
-  gsap.killTweensOf(camera.position);
+  // A fast cascade fires this once per wave in quick succession, so the
+  // previous shake has to be stopped before the next begins.
+  //
+  // `gsap.killTweensOf(camera.position)` was doing that job and doing it
+  // wrongly: it removes the tweens but leaves the *timeline* running, so the
+  // old timeline still reaches its `onComplete` and snaps the camera back to
+  // base — in the middle of the new shake. Once per wave, that reads exactly
+  // as the board glitching and jumping around during a long chain.
+  //
+  // Killing the timeline itself ends it for good, and the position is restored
+  // here rather than in a callback that a kill would skip.
+  activeShake?.kill();
+  camera.position.copy(basePos);
+
   const start = basePos.clone();
   const tl = gsap.timeline({
     onComplete: () => {
       camera.position.copy(start);
+      activeShake = null;
     },
   });
+  activeShake = tl;
   const baseAngle = Math.random() * Math.PI * 2;
   const p1 = start.clone().add(new Vector3(Math.cos(baseAngle) * amount, 0, Math.sin(baseAngle) * amount));
   const p2 = start.clone().add(new Vector3(Math.cos(baseAngle + 2.4) * amount * 0.6, 0, Math.sin(baseAngle + 2.4) * amount * 0.6));

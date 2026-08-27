@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { LeaderboardRow, MatchRecord, PlayerProfile } from '../src/net/protocol';
+import type { LeaderboardRow, MatchRecord, PlayerProfile, RoomInvite } from '../src/net/protocol';
 import { defaultAvatarFor, isAvatarKey } from '../src/render/avatar';
 
 /**
@@ -29,6 +29,13 @@ const MAX_FRIENDS = 100;
  *  form, shallow enough that the record stays small and bounded — a player who
  *  never stops playing must not be able to grow their own row without limit. */
 const HISTORY_SIZE = 25;
+/** A room invite is only worth showing while the room plausibly still exists.
+ *  Rooms are torn down after half an hour idle, and an invite that outlives its
+ *  room sends someone to a dead code. */
+const INVITE_TTL_MS = 10 * 60_000;
+/** Enough for a group of friends inviting at once, few enough that a pending
+ *  list cannot be grown without limit. */
+const MAX_INVITES = 10;
 
 interface StoredPlayer extends PlayerProfile {
   secret: string;
@@ -162,6 +169,67 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
     return { ok: true, player: this.publicOf(player) };
   }
 
+  /**
+   * Invites someone to a room.
+   *
+   * Only friends, and only mutual ones — the list is mutual by construction,
+   * so checking the sender's own list is enough. Without that check this would
+   * be an open channel for a stranger to push a room code at anybody whose id
+   * they had guessed, which is a spam surface with no upside.
+   */
+  private async invite(body: Record<string, unknown>) {
+    const player = await this.authed(body.id, body.secret);
+    if (!player) return { ok: false, error: 'unauthorised' };
+
+    const friendId = String(body.friendId ?? '').slice(0, 64);
+    const code = String(body.code ?? '').trim().toUpperCase().slice(0, 8);
+    if (!/^[A-Z0-9]{4,8}$/.test(code)) return { ok: false, error: 'bad room code' };
+
+    const friends = (await this.ctx.storage.get<string[]>(`friends:${player.id}`)) ?? [];
+    if (!friends.includes(friendId)) return { ok: false, error: 'not on your friends list' };
+
+    const pending = await this.invitesFor(friendId);
+    // One live invite per sender: repeatedly pressing the button should update
+    // where you are inviting someone, not fill their list with your name.
+    const others = pending.filter((i) => i.fromId !== player.id);
+    others.unshift({
+      code,
+      fromId: player.id,
+      fromName: player.name,
+      fromAvatar: player.avatar ?? defaultAvatarFor(player.id),
+      at: Date.now(),
+    });
+    await this.ctx.storage.put(`invites:${friendId}`, others.slice(0, MAX_INVITES));
+    return { ok: true };
+  }
+
+  /** Live invites for a player, with expired ones dropped. */
+  private async invitesFor(id: string): Promise<RoomInvite[]> {
+    const all = (await this.ctx.storage.get<RoomInvite[]>(`invites:${id}`)) ?? [];
+    const now = Date.now();
+    return all.filter((i) => now - i.at < INVITE_TTL_MS);
+  }
+
+  /** A player's own pending invites. Expired entries are pruned on read rather
+   *  than on a timer: nothing else ever needs to look at them. */
+  private async invites(body: Record<string, unknown>) {
+    const player = await this.authed(body.id, body.secret);
+    if (!player) return { ok: false, error: 'unauthorised' };
+    const live = await this.invitesFor(player.id);
+    await this.ctx.storage.put(`invites:${player.id}`, live);
+    return { ok: true, invites: live };
+  }
+
+  /** Dismisses one invite, so acting on it does not leave it on the list. */
+  private async dismissInvite(body: Record<string, unknown>) {
+    const player = await this.authed(body.id, body.secret);
+    if (!player) return { ok: false, error: 'unauthorised' };
+    const fromId = String(body.fromId ?? '').slice(0, 64);
+    const live = (await this.invitesFor(player.id)).filter((i) => i.fromId !== fromId);
+    await this.ctx.storage.put(`invites:${player.id}`, live);
+    return { ok: true, invites: live };
+  }
+
   /** A player's own history. Authenticated: a profile is not public. */
   private async history(body: Record<string, unknown>) {
     const player = await this.authed(String(body.id ?? ''), String(body.secret ?? ''));
@@ -199,6 +267,12 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
         const player = await this.getPlayer(String((body as { id?: unknown }).id ?? ''));
         return Response.json({ rating: player?.rating ?? STARTING_RATING });
       }
+      case 'invite':
+        return Response.json(await this.invite(body as Record<string, unknown>));
+      case 'invites':
+        return Response.json(await this.invites(body as Record<string, unknown>));
+      case 'dismissInvite':
+        return Response.json(await this.dismissInvite(body as Record<string, unknown>));
       case 'setAvatar':
         return Response.json(await this.setAvatar(body as Record<string, unknown>));
       case 'history':

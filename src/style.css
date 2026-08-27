@@ -3077,3 +3077,142 @@ body.board-showing {
   line-height: 1.35;
   white-space: normal;
 }
+
+/* ---------- friend invites ---------- */
+/* Two directions, one row shape: friends you can pull into this room, and
+   invites waiting for you on the online screen. */
+
+.invite-list,
+.invite-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.invite-inbox {
+  margin: 10px 0 4px;
+  /* An invite is the most actionable thing on this screen, so it is allowed to
+     announce itself rather than sit in the same grey as everything else. */
+  border-color: var(--accent-line);
+}
+
+.invite-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  font-size: 0.82rem;
+}
+
+.invite-row.incoming {
+  grid-template-columns: 26px 1fr auto auto;
+  background: var(--accent-soft);
+}
+
+.invite-avatar {
+  line-height: 0;
+}
+
+.invite-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.invite-row.incoming .invite-name strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Wide enough that "Sent" and "Invite" do not resize the row when the label
+   changes — a button that jumps as you press it feels broken. */
+.invite-send {
+  min-width: 62px;
+  text-align: center;
+}
+
+.invite-send:disabled {
+  opacity: 0.55;
+  cursor: default;
+  border-color: var(--hairline);
+}
+
+.invite-join {
+  min-width: 52px;
+  text-align: center;
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.invite-dismiss {
+  padding: 3px 7px;
+  line-height: 1;
+}
+
+/* ---------- online hub: collapsed identity, ranked as its own screen ---------- */
+
+/* The player's name now leads the rank card, because the input that used to
+   carry it is collapsed by default. */
+.rank-who {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.rank-player {
+  font-size: 1.02rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Present but quiet: editing your name is a rare, deliberate act, and a button
+   competing with the rank beside it would be the loudest thing in the card. */
+.rank-who .mini-btn {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  padding: 2px 7px;
+  opacity: 0.7;
+}
+
+.rank-who .mini-btn:hover,
+.rank-who .mini-btn:focus-visible {
+  opacity: 1;
+}
+
+/* The ranked screen borrows the menu column, so it only needs its heading. */
+.screen-title {
+  margin: 0 0 2px;
+  font-size: 1.5rem;
+  letter-spacing: 0.16em;
+  font-weight: 300;
+  text-align: center;
+}
+
+/* The menu column is left-aligned by default — the title screen centres its
+   own contents through `.title-inner`. Both the heading and its tagline have
+   to say so here. The padding matters too: the tagline carries wide
+   letter-spacing and was rendering hard against x=0 with its first letter
+   clipped off the edge of the screen. */
+#screen-ranked .menu-inner {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+#screen-ranked .tagline {
+  text-align: center;
+}
+
+#screen-ranked .menu-inner > .panel {
+  margin-top: 16px;
+}

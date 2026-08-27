@@ -56,6 +56,9 @@ const HUB_ROUTES = new Set([
   // from the public surface at all.
   'history',
   'setAvatar',
+  'invite',
+  'invites',
+  'dismissInvite',
 ]);
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — avoids look-alikes

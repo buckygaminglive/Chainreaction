@@ -1,4 +1,4 @@
-import type { LeaderboardRow, MatchRecord, PlayerProfile } from './protocol';
+import type { LeaderboardRow, MatchRecord, PlayerProfile, RoomInvite } from './protocol';
 
 /**
  * The device's guest account.
@@ -172,6 +172,48 @@ class Account {
   async removeFriend(friendId: string): Promise<void> {
     if (!this.stored) return;
     await post('removeFriend', { ...this.stored, friendId });
+  }
+
+  /** Asks a friend to join `code`. Refused by the relay unless they really are
+   *  on your friends list, so this cannot be aimed at a stranger. */
+  async invite(friendId: string, code: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.stored) return { ok: false, error: 'No account yet.' };
+    try {
+      return await post<{ ok: boolean; error?: string }>('invite', {
+        ...this.stored,
+        friendId,
+        code,
+      });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Could not send that.' };
+    }
+  }
+
+  /** Invites waiting for this player. Polled rather than pushed — someone who
+   *  is not in a room has no socket to push down. */
+  async invites(): Promise<RoomInvite[]> {
+    if (!this.stored) return [];
+    try {
+      const res = await post<{ invites?: RoomInvite[] }>('invites', this.stored);
+      return res.invites ?? [];
+    } catch {
+      // An unreachable relay should leave the rest of the screen working.
+      return [];
+    }
+  }
+
+  /** Clears one invite, so acting on it does not leave it sitting there. */
+  async dismissInvite(fromId: string): Promise<RoomInvite[]> {
+    if (!this.stored) return [];
+    try {
+      const res = await post<{ invites?: RoomInvite[] }>('dismissInvite', {
+        ...this.stored,
+        fromId,
+      });
+      return res.invites ?? [];
+    } catch {
+      return [];
+    }
   }
 
   async friendsBoard(): Promise<LeaderboardRow[]> {

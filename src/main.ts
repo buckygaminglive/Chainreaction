@@ -27,6 +27,7 @@ import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import { account } from './net/account';
 import { initProfile, renderProfile } from './ui/profile';
+import { avatarSvg, defaultAvatarFor } from './render/avatar';
 import { telemetry } from './net/telemetry';
 import {
   TAUNTS,
@@ -181,6 +182,8 @@ const screenLobby = $('screen-lobby');
 const screenSetup = $('screen-setup');
 const screenSettings = $('screen-settings');
 const screenProfile = $('screen-profile');
+const screenRanked = $('screen-ranked');
+const nameFieldEl = $('name-field');
 const attractHost = $('attract-host');
 const volumeRange = $<HTMLInputElement>('volume-range');
 const volumeValueEl = $('volume-value');
@@ -191,7 +194,7 @@ const hapticsNoteEl = $('haptics-note');
 const motionGroup = $('motion-group');
 const telemetryGroup = $('telemetry-group');
 const telemetryNoteEl = $('telemetry-note');
-const ALL_SCREENS = [screenMenu, screenGame, screenOnline, screenLobby];
+const ALL_SCREENS = [screenMenu, screenGame, screenOnline, screenLobby, screenRanked];
 
 const playersCountEl = $('players-count');
 const playersFieldEl = $('players-field');
@@ -243,6 +246,10 @@ const joinRoomBtn = $('join-room-btn');
 const onlineErrorEl = $('online-error');
 const quickModeGroup = $('quick-mode-group');
 const quickSizeGroup = $('quick-size-group');
+const quickPreviewEl = $('quick-preview');
+const quickCaptionEl = $('quick-caption');
+const quickLegendEl = $('quick-legend');
+const quickModeBlurbEl = $('quick-mode-blurb');
 const quickMatchBtn = $<HTMLButtonElement>('quick-match-btn');
 const quickStatusEl = $('quick-status');
 const quickStatusText = $('quick-status-text');
@@ -266,6 +273,9 @@ const lobbyOrbStyleGroup = $('lobby-orb-style-group');
 const lobbyModeGroup = $('lobby-mode-group');
 const lobbyModeBlurbEl = $('lobby-mode-blurb');
 const lobbyStartBtn = $<HTMLButtonElement>('lobby-start-btn');
+const lobbyInviteField = $('lobby-invite-field');
+const lobbyInviteListEl = $('lobby-invite-list');
+const inviteInboxEl = $('invite-inbox');
 const lobbyWaitMsg = $('lobby-wait-msg');
 const connStatusEl = $('conn-status');
 
@@ -601,6 +611,25 @@ function selectLobbyMode(key: GameModeKey) {
 function selectQuickMode(key: GameModeKey) {
   quickMode = key;
   renderModeGrid(quickModeGroup, quickMode, true, selectQuickMode);
+  renderQuickPreview();
+}
+
+/**
+ * The board a ranked queue would actually produce.
+ *
+ * Drawn by the same generator the local setup uses, from the same mode table,
+ * so the two previews cannot drift into showing different things for the same
+ * mode. It matters more here than in local setup: a ranked match starts the
+ * moment an opponent is found, so this is the last point at which the choice
+ * can still be changed.
+ */
+function renderQuickPreview() {
+  const size = boardDims(quickBoardSize);
+  const { svg, caption, hasSpecials } = modePreview(quickMode, size.rows, size.cols);
+  quickPreviewEl.innerHTML = svg;
+  quickCaptionEl.textContent = caption;
+  quickLegendEl.classList.toggle('hidden', !hasSpecials);
+  quickModeBlurbEl.textContent = GAME_MODES[quickMode].blurb;
 }
 
 function stepPlayers(delta: number) {
@@ -1983,6 +2012,12 @@ function renderAccountStrip() {
   accountStripEl.innerHTML =
     `<div class="rank-emblem">${rankBadgeSvg(rank, 62)}</div>` +
     `<div class="rank-meta">` +
+    // The name leads now: with the input collapsed, this card is the only
+    // place the player can confirm who they are about to play as.
+    `<div class="rank-who">` +
+    `<span class="rank-player">${escapeHtml(p.name)}</span>` +
+    `<button id="name-edit-btn" class="mini-btn" aria-controls="name-field">Edit</button>` +
+    `</div>` +
     `<div class="rank-name" style="color:${rank.css}">${rank.name}</div>` +
     `<div class="rank-stats"><span class="av">${p.rating}</span> rating · ${p.wins}W / ${p.losses}L</div>` +
     `<div class="rank-bar"><span style="width:${progress}%;background:${rank.css}"></span></div>` +
@@ -1991,6 +2026,27 @@ function renderAccountStrip() {
     }</div>` +
     `</div>` +
     `<div class="rank-code">friend code<b>${escapeHtml(p.friendCode)}</b></div>`;
+
+  // Rebuilt with the strip, so it is bound here rather than once at boot.
+  document.getElementById('name-edit-btn')?.addEventListener('click', () => {
+    sfx.buttonTap();
+    setNameFieldOpen(true);
+  });
+}
+
+/**
+ * Shows or hides the name editor.
+ *
+ * Open when there is no name yet — that is the one moment it is the most
+ * important thing on the screen — and closed afterwards, because a filled-in
+ * form is clutter sitting where the rank card should be.
+ */
+function setNameFieldOpen(open: boolean) {
+  nameFieldEl.classList.toggle('hidden', !open);
+  if (open) {
+    nameInput.focus();
+    nameInput.select();
+  }
 }
 
 /** Called when the player opens the online screen. Minting the account here
@@ -2009,6 +2065,12 @@ async function ensureAccount() {
     }
   }
   renderAccountStrip();
+  // Open only for someone who has never chosen a name — that one moment is
+  // when the field is the most useful thing here. Everyone else gets the rank
+  // card, and Edit if they want it back. `renderAccountStrip` has to run first:
+  // with no account there is no strip, and hiding the field as well would leave
+  // an offline player nothing at all.
+  setNameFieldOpen(!account.profile || !callsign);
 }
 
 async function renderBoards() {
@@ -2131,6 +2193,31 @@ function flashNameNote(message: string) {
 nameSaveBtn.addEventListener('click', () => {
   sfx.buttonTap();
   void saveCallsign(true);
+  // Saving is the end of the interaction, so the field gets out of the way.
+  setNameFieldOpen(false);
+});
+
+// The ranked flow is its own screen. It has one decision, one action, and a
+// live searching state that wants the room — as a panel it was permanently the
+// tallest thing on the hub.
+$('open-ranked-btn').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  clearOnlineError();
+  setQuickSearching(false);
+  hideQuickFallback();
+  renderQuickPreview();
+  showScreen(screenRanked);
+  void renderPresence();
+});
+
+$('ranked-back-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  // Leaving the screen abandons the search rather than leaving it running
+  // invisibly, which would drop the player into a match from a screen they
+  // had walked away from.
+  if (quickMatchPending || queuedCode) void cancelQuickMatch();
+  showScreen(screenOnline);
 });
 
 // Blurring the field saves too — the button is reassurance, not the only way.
@@ -2284,6 +2371,7 @@ quickCancelBtn.addEventListener('click', () => void cancelQuickMatch());
 
 onSegmentPick(quickSizeGroup, (el) => {
   quickBoardSize = el.dataset.size as BoardSizeKey;
+  renderQuickPreview();
 });
 
 // ---------- Bot matches ----------
@@ -2408,6 +2496,7 @@ $('play-online-btn').addEventListener('click', () => {
   hideQuickFallback();
   void refreshRooms();
   void renderPresence();
+  void renderInvites();
   // Minting the guest account on entering the online screen, not at boot: a
   // player who only ever plays locally never gets one.
   void ensureAccount();
@@ -2564,7 +2653,122 @@ function enterLobby() {
   showScreen(screenLobby);
   roomCodeBtn.textContent = net?.roomCode ?? '-----';
   hideLobbyStatus();
+  void renderLobbyInvites();
 }
+
+/**
+ * The friends who can be pulled straight into this room.
+ *
+ * The room already has a shareable code, but sharing it means leaving the game
+ * to go and find the person. The people already on your list get a button
+ * instead. Hidden entirely when there is nobody to show: a panel promising a
+ * feature you cannot use is worse than no panel.
+ */
+async function renderLobbyInvites() {
+  const code = net?.roomCode;
+  if (!code || !account.credentials) {
+    lobbyInviteField.classList.add('hidden');
+    return;
+  }
+
+  const rows = await account.friendsBoard();
+  // friendsBoard puts you on your own board, which is right for a leaderboard
+  // and wrong for a list of people to invite.
+  const friends = rows.filter((r) => r.id !== account.profile?.id);
+  if (!friends.length) {
+    lobbyInviteField.classList.add('hidden');
+    return;
+  }
+
+  lobbyInviteField.classList.remove('hidden');
+  lobbyInviteListEl.innerHTML = friends
+    .map((f) => {
+      const avatar = avatarSvg(f.avatar || defaultAvatarFor(f.id), 26);
+      return [
+        '<div class="invite-row">',
+        `<span class="invite-avatar">${avatar}</span>`,
+        `<span class="invite-name">${escapeHtml(f.name)}</span>`,
+        `<button class="mini-btn invite-send" data-friend="${escapeHtml(f.id)}">Invite</button>`,
+        '</div>',
+      ].join('');
+    })
+    .join('');
+}
+
+lobbyInviteListEl.addEventListener('click', async (e) => {
+  const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.invite-send');
+  const friendId = button?.dataset.friend;
+  if (!button || !friendId || !net?.roomCode) return;
+  sfx.buttonTap();
+  // Disabled while in flight, then left saying what happened. The only
+  // feedback an invite can give is on the sender's screen — the result of it
+  // lands on somebody else's.
+  button.disabled = true;
+  const res = await account.invite(friendId, net.roomCode);
+  button.textContent = res.ok ? 'Sent' : (res.error ?? 'Failed');
+  if (!res.ok) {
+    setTimeout(() => {
+      button.textContent = 'Invite';
+      button.disabled = false;
+    }, 2400);
+  }
+});
+
+/**
+ * Invites waiting for this player, shown on the online screen.
+ *
+ * Collected rather than pushed: someone who is not in a room has no socket to
+ * push down, and this screen is the only place an invite is actionable anyway.
+ */
+async function renderInvites() {
+  if (!account.credentials) {
+    inviteInboxEl.classList.add('hidden');
+    return;
+  }
+  const invites = await account.invites();
+  if (!invites.length) {
+    inviteInboxEl.classList.add('hidden');
+    inviteInboxEl.innerHTML = '';
+    return;
+  }
+  inviteInboxEl.classList.remove('hidden');
+  inviteInboxEl.innerHTML = invites
+    .map((i) => {
+      const avatar = avatarSvg(i.fromAvatar || defaultAvatarFor(i.fromId), 26);
+      const from = escapeHtml(i.fromId);
+      return [
+        '<div class="invite-row incoming">',
+        `<span class="invite-avatar">${avatar}</span>`,
+        `<span class="invite-name"><strong>${escapeHtml(i.fromName)}</strong> invited you</span>`,
+        `<button class="mini-btn invite-join" data-code="${escapeHtml(i.code)}" data-from="${from}">Join</button>`,
+        `<button class="mini-btn invite-dismiss" data-from="${from}" aria-label="Dismiss">×</button>`,
+        '</div>',
+      ].join('');
+    })
+    .join('');
+}
+
+inviteInboxEl.addEventListener('click', async (e) => {
+  const target = e.target as HTMLElement;
+  const join = target.closest<HTMLButtonElement>('.invite-join');
+  const dismiss = target.closest<HTMLButtonElement>('.invite-dismiss');
+
+  if (join?.dataset.code && join.dataset.from) {
+    sfx.buttonTap();
+    // Cleared before joining rather than after: coming back to this screen
+    // later and being invited into a room you are already in reads as a bug.
+    void account.dismissInvite(join.dataset.from);
+    inviteInboxEl.classList.add('hidden');
+    await joinRoomByCode(join.dataset.code);
+    return;
+  }
+
+  if (dismiss?.dataset.from) {
+    sfx.buttonTap();
+    await account.dismissInvite(dismiss.dataset.from);
+    void renderInvites();
+  }
+});
 
 roomCodeBtn.addEventListener('click', async () => {
   if (!net) return;

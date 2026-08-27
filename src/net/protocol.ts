@@ -53,6 +53,23 @@ export interface MatchRecord {
   bestChain: number;
 }
 
+/**
+ * A pending "come and play" from a friend.
+ *
+ * Held on the invited player rather than pushed, because a player who is not
+ * in a room has no socket to push down. They collect it the next time they
+ * look at the online screen, which is also the only moment it is useful.
+ */
+export interface RoomInvite {
+  /** Room code to join. */
+  code: string;
+  fromId: string;
+  fromName: string;
+  fromAvatar: string;
+  /** Unix ms, for the short expiry — a room invite goes stale quickly. */
+  at: number;
+}
+
 export interface LeaderboardRow {
   id: string;
   name: string;

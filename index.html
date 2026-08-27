@@ -296,20 +296,33 @@
             <p class="tagline">private room · server authoritative</p>
           </div>
 
-          <!-- PROFILE — the name and record this device plays under. -->
+          <!-- IDENTITY — who you are and where you rank, then the one thing
+               most people came here to press.
+
+               The name field used to sit open at the top of this screen on
+               every visit. It is needed once. After that it is a form you have
+               already filled in, taking the most valuable space on the screen
+               to ask a question you have answered — so it collapses behind
+               Edit and the rank card stands in its place. -->
           <div class="panel">
-            <div class="field">
-              <div class="field-label">Profile <span class="field-unit">saved on this device</span></div>
+            <div id="account-strip" class="account-strip hidden"></div>
+            <p id="account-offline" class="field-note hidden">
+              Offline — your rank and friend code arrive once the server is reachable.
+            </p>
+
+            <div class="field hidden" id="name-field">
+              <div class="field-label">Your name <span class="field-unit">saved on this device</span></div>
               <div class="join-row">
                 <input id="name-input" class="text-input" maxlength="16" placeholder="Your name" autocomplete="off" />
                 <button id="name-save-btn" class="ghost-btn small-btn">SAVE</button>
               </div>
               <p id="name-note" class="field-note"></p>
             </div>
-            <div id="account-strip" class="account-strip hidden"></div>
-            <p id="account-offline" class="field-note hidden">
-              Offline — your rank and friend code arrive once the server is reachable.
-            </p>
+
+            <div id="invite-inbox" class="invite-inbox hidden"></div>
+
+            <!-- Directly under the rank, because that is what it moves. -->
+            <button id="open-ranked-btn" class="primary-btn">Ranked match</button>
             <button id="online-profile-btn" class="ghost-btn wide-btn">My profile</button>
             <button id="leaderboard-btn" class="ghost-btn wide-btn">Leaderboards &amp; friends</button>
           </div>
@@ -329,16 +342,56 @@
             </div>
           </div>
 
-          <!-- RANKED — below the private room, but no less prominent: same
-               panel, same primary button. This is the one that moves rank. -->
           <div class="panel">
             <div class="field">
-              <div class="field-label">Ranked match <span class="field-unit">find anyone</span></div>
+              <div class="field-label">
+                Open rooms
+                <button id="rooms-refresh-btn" class="link-btn" style="margin-left:auto">Refresh</button>
+              </div>
+              <div id="rooms-list" class="rooms-list"></div>
+            </div>
+          </div>
+          <div id="online-error" class="online-error hidden"></div>
+        </div>
+      </section>
+
+      <!-- ONLINE: LOBBY -->
+
+      <!-- RANKED MATCH — its own screen rather than a panel on the online
+           hub. Everything here is one decision (what to be matched on) and
+           one action, and it has a live state of its own to occupy the
+           screen while searching. Folded into the hub it was simply the
+           tallest thing there, permanently open. -->
+      <section id="screen-ranked" class="screen hidden">
+        <button id="ranked-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Back">←</button>
+        <div class="menu-inner">
+          <h2 class="screen-title">RANKED MATCH</h2>
+          <p class="tagline">moves your rank</p>
+
+          <div class="panel">
+            <div class="field">
               <div id="quick-mode-group" class="mode-grid"></div>
               <div id="quick-size-group" class="segmented" style="margin-top:8px">
                 <button class="segment" data-size="small">9×5</button>
                 <button class="segment active" data-size="medium">11×6</button>
                 <button class="segment" data-size="large">13×7</button>
+              </div>
+
+              <!-- The board you are queueing for, drawn from the same generator
+                   the match itself uses. Ranked is the one place you cannot
+                   change your mind after seeing it, so seeing it first matters
+                   more here than in local setup. -->
+              <p id="quick-mode-blurb" class="field-note"></p>
+              <div class="preview-row">
+                <div id="quick-preview" class="mode-preview"></div>
+                <div class="preview-side">
+                  <p id="quick-caption" class="preview-caption"></p>
+                  <ul id="quick-legend" class="preview-legend hidden">
+                    <li><span class="key key-catalyst"></span>catalyst — goes critical a particle early</li>
+                    <li><span class="key key-damper"></span>damper — holds one particle more</li>
+                    <li><span class="key key-void"></span>dead site — off the lattice entirely</li>
+                  </ul>
+                </div>
               </div>
             </div>
             <button id="quick-match-btn" class="primary-btn">Find a match</button>
@@ -354,21 +407,10 @@
             <p class="field-note">Matched on mode and board size against whoever is queued. These are the only games that move your rank.</p>
             <div id="presence-strip" class="presence-strip"></div>
           </div>
-
-          <div class="panel">
-            <div class="field">
-              <div class="field-label">
-                Open rooms
-                <button id="rooms-refresh-btn" class="link-btn" style="margin-left:auto">Refresh</button>
-              </div>
-              <div id="rooms-list" class="rooms-list"></div>
-            </div>
-          </div>
-          <div id="online-error" class="online-error hidden"></div>
         </div>
       </section>
 
-      <!-- ONLINE: LOBBY -->
+
       <section id="screen-lobby" class="screen hidden">
         <button id="lobby-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Leave room">←</button>
         <div class="menu-inner">
@@ -425,6 +467,14 @@
               </div>
               <p class="field-note">Tournament and Survival are local-only for now — they need series state, or an AI, that the relay doesn't run yet.</p>
             </div>
+          </div>
+
+          <!-- INVITE A FRIEND — the room already has a shareable code, but
+               sending it means leaving the game to find the person. This puts
+               the people you have already added one tap away. -->
+          <div class="field" id="lobby-invite-field">
+            <div class="field-label">Invite a friend <span class="field-unit">straight into this room</span></div>
+            <div id="lobby-invite-list" class="invite-list"></div>
           </div>
 
           <button id="lobby-start-btn" class="primary-btn">Start reaction</button>
