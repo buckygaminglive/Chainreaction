@@ -1016,22 +1016,44 @@ function scheduleAttract() {
     void startAttract();
   };
 
-  // Idle alone is not enough, and measuring said so: under CPU throttling the
-  // idle callback fired at 605ms while first paint was still 47ms away, so the
-  // engine was being fetched before the menu had appeared at all. The browser
-  // considers itself idle in the gap before it paints.
+  const thenIdle = () => {
+    attractIdle = idle ? idle(begin, { timeout: 2000 }) : window.setTimeout(begin, 200);
+  };
+
+  // Waiting for the actual first-contentful-paint entry, rather than guessing
+  // at it. Two things were tried first and both were measured to be wrong:
   //
-  // Two frames guarantee a paint has actually happened — the first callback
-  // runs before the coming paint, the second after it — and only then is idle
-  // worth asking about. The timeout is what stops a permanently busy main
-  // thread from meaning the board never arrives.
+  //   Idle alone   — the browser is idle in the gap before it paints, so under
+  //                  CPU throttling this fired 47ms *before* first paint.
+  //   Two frames   — fine locally, where the stylesheet is already there. On
+  //                  the deployed site, with render-blocking CSS still in
+  //                  flight, frames are committed before any content is
+  //                  painted, and this fired 26ms too early again.
+  //
+  // The paint entry is the thing actually being waited for, so it is what gets
+  // observed. If it has already happened, there is nothing to wait for.
+  const painted = performance
+    .getEntriesByType('paint')
+    .some((e) => e.name === 'first-contentful-paint');
+
+  if (painted || typeof PerformanceObserver === 'undefined') {
+    attractIdle = window.setTimeout(thenIdle, 0);
+    return;
+  }
+
+  const observer = new PerformanceObserver((list) => {
+    if (!list.getEntries().some((e) => e.name === 'first-contentful-paint')) return;
+    observer.disconnect();
+    thenIdle();
+  });
+  observer.observe({ type: 'paint', buffered: true });
+
+  // A browser that never reports the entry must not mean the board never
+  // arrives; this is the floor, not the expected path.
   attractIdle = window.setTimeout(() => {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        attractIdle = idle ? idle(begin, { timeout: 2000 }) : window.setTimeout(begin, 200);
-      })
-    );
-  }, 0);
+    observer.disconnect();
+    thenIdle();
+  }, 2500);
 }
 
 function cancelScheduledAttract() {
