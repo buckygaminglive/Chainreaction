@@ -51,11 +51,18 @@ export function nextTierDown(tier: QualityTier): QualityTier | null {
  * the game feels good — are the worst ones, which is precisely backwards.
  */
 export function initialTier(): QualityTier {
-  if (typeof window === 'undefined') return 'high';
+  // Reached through `globalThis` rather than the DOM globals directly: this
+  // module is imported by a Node test, which has no DOM library, and pulling
+  // one in just to typecheck a browser-only branch would be the wrong fix.
+  const env = globalThis as unknown as {
+    matchMedia?: (query: string) => { matches: boolean };
+    navigator?: { deviceMemory?: number; hardwareConcurrency?: number };
+  };
+  if (!env.navigator) return 'high';
 
-  const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-  const memory = (navigator as { deviceMemory?: number }).deviceMemory;
-  const cores = navigator.hardwareConcurrency ?? 8;
+  const coarse = env.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const memory = env.navigator.deviceMemory;
+  const cores = env.navigator.hardwareConcurrency ?? 8;
 
   // These two are worth believing when present, because both indicate a
   // genuinely small device rather than merely a touch screen.

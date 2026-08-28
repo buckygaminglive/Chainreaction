@@ -57,7 +57,8 @@ function renderRank(profile: PlayerProfile) {
 
   const progress = Math.round(rankProgress(profile.rating) * 100);
   const fill = $('profile-rank-fill');
-  fill.style.width = `${progress}%`;
+  // scaleX rather than width, so the fill animates on the compositor.
+  fill.style.transform = `scaleX(${progress / 100})`;
   fill.style.background = rank.css;
   fill.parentElement?.setAttribute('aria-valuenow', String(progress));
 

@@ -19,6 +19,30 @@
   --text-dim: #7d8899;
   --text-faint: #4c5665;
 
+  /* ---------- motion ----------
+     Durations and curves were previously chosen per rule: nine different
+     durations across the file and every one of them on the browser default
+     `ease`. That default front-loads its slow part and stops abruptly, which
+     is what made small interactions feel like they snapped rather than moved.
+
+     Three curves, three durations, used everywhere:
+
+     --ease-out   decelerating, no overshoot. The workhorse: hovers, colour
+                  changes, anything that settles into place.
+     --ease-soft  a gentler tail for larger moves — panels, screens — where
+                  the eye has time to notice the ending.
+     --ease-pop   a small overshoot, for things that should feel physical
+                  under a finger: presses, toggles, selections.
+
+     Kept short deliberately. Smooth is a matter of the curve and of animating
+     the right properties; long durations just make an interface feel slow. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.33, 1, 0.4, 1);
+  --ease-pop: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --t-fast: 140ms;
+  --t-base: 220ms;
+  --t-slow: 340ms;
+
   --accent: #3ad9ff;
   --accent-soft: rgba(58, 217, 255, 0.13);
   --accent-line: rgba(58, 217, 255, 0.32);
@@ -173,7 +197,7 @@ body.board-showing {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .icon-btn:hover {
@@ -213,7 +237,7 @@ body.board-showing {
   background: linear-gradient(180deg, #6ee6ff, var(--accent) 55%, #12b6e0);
   box-shadow: 0 0 0 1px rgba(58, 217, 255, 0.5), 0 8px 26px -10px rgba(58, 217, 255, 0.75);
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.2s ease;
+  transition: transform var(--t-fast) var(--ease-pop), box-shadow var(--t-base) var(--ease-out);
 }
 
 .primary-btn:hover:not(:disabled) {
@@ -242,7 +266,7 @@ body.board-showing {
   border-radius: var(--r-md);
   padding: 14px 18px;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .ghost-btn:hover:not(:disabled) {
@@ -413,7 +437,7 @@ body.board-showing {
   border: 1px solid var(--hairline);
   border-radius: var(--r-md);
   background: var(--panel);
-  transition: border-color 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out);
 }
 
 .roster-row:focus-within {
@@ -786,7 +810,7 @@ body.board-showing {
   font-size: 19px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .stepper-btn:hover {
@@ -826,7 +850,7 @@ body.board-showing {
   letter-spacing: 0.05em;
   padding: 11px 4px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .segment:last-child {
@@ -864,7 +888,7 @@ body.board-showing {
   padding: 10px 8px;
   cursor: pointer;
   text-align: center;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
 
 .mode-chip:hover:not(.active):not(:disabled) {
@@ -995,7 +1019,7 @@ body.board-showing {
   color: rgba(0, 0, 0, 0.62);
   border: 1px solid rgba(255, 255, 255, 0.18);
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform var(--t-fast) var(--ease-pop), opacity var(--t-fast) var(--ease-out);
 }
 
 .swatch:active {
@@ -1049,7 +1073,7 @@ body.board-showing {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-dim);
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: color var(--t-base) var(--ease-out), border-color var(--t-base) var(--ease-out), background var(--t-base) var(--ease-out);
 }
 
 .pill .dot {
@@ -1212,7 +1236,7 @@ body.board-showing {
   backdrop-filter: blur(4px);
   opacity: 0;
   font-family: var(--font-mono);
-  transition: opacity 0.18s ease;
+  transition: opacity var(--t-fast) var(--ease-out);
 }
 
 .chain-readout.show {
@@ -1289,7 +1313,7 @@ body.board-showing {
   font-size: 19px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.12s ease;
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .taunt-toggle:hover {
@@ -1338,7 +1362,7 @@ body.board-showing {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.12s ease, transform 0.12s ease;
+  transition: background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .taunt-palette button:hover {
@@ -1564,7 +1588,7 @@ body.board-showing {
   border-radius: 50%;
   background: var(--hairline-strong);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .howto-dot.on {
@@ -1940,7 +1964,7 @@ body.board-showing {
   font-weight: 500;
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out);
 }
 
 .text-input::placeholder {
@@ -2091,9 +2115,15 @@ body.board-showing {
 
 .rank-bar span {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 2px;
-  transition: width 0.4s ease;
+  /* Filled by scaling rather than by animating width. Width is a layout
+     property: animating it re-runs layout on every frame of the fill. A
+     transform runs on the compositor and looks identical. */
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform var(--t-slow) var(--ease-soft);
 }
 
 .account-strip .av {
@@ -2282,7 +2312,7 @@ body.board-showing {
   text-align: left;
   font-family: var(--font-ui);
   color: var(--text);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .room-row:hover {
@@ -2568,6 +2598,21 @@ body.board-showing {
   animation: none !important;
 }
 
+/* The list above names keyframe animations one at a time, which was workable
+   when there were a handful. Transitions are now on every interactive element
+   in the interface, so they are covered by rule rather than by enumeration —
+   a new hover state should not be able to slip past the motion setting simply
+   because nobody remembered to add it here.
+   `1ms` rather than `0s`: a zero-length transition never fires transitionend,
+   and anything waiting on one would hang. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+
 /* Attract mode is not started at all under this setting — see main.ts. */
 .reduce-motion .attract-host {
   transition: none;
@@ -2646,7 +2691,7 @@ body.board-showing {
   background: transparent;
   line-height: 0;
   cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.16s ease;
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .profile-avatar:hover,
@@ -2727,7 +2772,7 @@ body.board-showing {
   background: transparent;
   line-height: 0;
   cursor: pointer;
-  transition: border-color 0.14s ease, transform 0.14s ease;
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .avatar-option:hover,
@@ -2781,9 +2826,15 @@ body.board-showing {
 }
 
 .rank-fill {
+  width: 100%;
   height: 100%;
   border-radius: 999px;
-  transition: width 0.4s ease;
+  /* Filled by scaling rather than by animating width. Width is a layout
+     property: animating it re-runs layout on every frame of the fill. A
+     transform runs on the compositor and looks identical. */
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform var(--t-slow) var(--ease-soft);
 }
 
 .profile-metrics {
@@ -3038,7 +3089,7 @@ body.board-showing {
   font-size: 12.5px;
   line-height: 1.2;
   cursor: pointer;
-  transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-pop);
 }
 
 .chat-phrase:hover,
@@ -3215,4 +3266,254 @@ body.board-showing {
 
 #screen-ranked .menu-inner > .panel {
   margin-top: 16px;
+}
+
+/* ---------- motion: the pieces that were still snapping ---------- */
+/* Five clickable things declared `cursor: pointer` and no transition at all,
+   so they changed state between one frame and the next. Everything the finger
+   can reach should move rather than jump; the properties here are colour and
+   transform only, so none of it costs layout. */
+
+.link-btn,
+.room-code,
+.roster-dot,
+.mini-btn {
+  transition:
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out),
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-pop);
+}
+
+/* A press should read as a press. Scale only — cheap, and it survives on the
+   compositor without touching layout. */
+.link-btn:active,
+.room-code:active,
+.mini-btn:active {
+  transform: scale(0.94);
+}
+
+.roster-dot:active {
+  transform: scale(0.9);
+}
+
+/* The range thumb is the one control the finger drags, so it gets the
+   treatment too; the track itself is left alone.
+   Transition only, deliberately no `:active` rule — the thumb already has a
+   designed press state further up the file that shrinks it, and adding a
+   competing one here would silently reverse that decision. What was missing
+   was never the press, only that it happened between two frames. */
+.range::-webkit-slider-thumb {
+  transition:
+    transform var(--t-fast) var(--ease-pop),
+    box-shadow var(--t-fast) var(--ease-out);
+}
+
+/* Entrances, brought onto the same curves as everything else. `ease-out` is
+   the CSS keyword — cubic-bezier(0, 0, 0.58, 1) — which leaves a harder stop
+   than the tokens, and next to retimed interactions it read as a different
+   system. The long ambient loops are deliberately left alone: they are
+   atmosphere, not response. */
+.overlay:not(.hidden) {
+  animation: overlay-in var(--t-base) var(--ease-soft) both;
+}
+
+.screen-in {
+  animation: screen-in var(--t-base) var(--ease-soft) both;
+}
+
+.taunt-palette,
+.chat-palette {
+  animation: taunt-in var(--t-fast) var(--ease-pop);
+}
+
+/* ---------- rank card: arriving rather than interrupting ---------- */
+/* The card is fetched, so for a moment there is nothing to show. It used to be
+   `display: none` until the profile landed, which meant it appeared in one
+   frame and pushed every button below it down as it did — read as a flash.
+   Its space is now held from the moment the screen opens, with the shape of
+   what is coming drawn in it, and the real card fades up in place. */
+
+.account-strip.is-loading {
+  /* Measured against the loaded card, so nothing moves when it swaps. */
+  min-height: 140px;
+  align-content: center;
+}
+
+.account-strip.is-in {
+  animation: card-in var(--t-base) var(--ease-soft) both;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    /* A short rise only. Anything larger reads as the card flying in, which is
+       the same interruption in a different costume. */
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.skeleton {
+  border-radius: 4px;
+  /* Two stops of the panel colour with a lighter band travelling through:
+     background-position animates on the compositor, where animating a
+     gradient's colours would repaint every frame. */
+  background: linear-gradient(
+      90deg,
+      var(--hairline) 25%,
+      var(--hairline-strong) 37%,
+      var(--hairline) 63%
+    )
+    0 0 / 400% 100%;
+  animation: skeleton-sweep 1.4s var(--ease-soft) infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+.skeleton-emblem {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.skeleton-meta {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.skeleton-line {
+  height: 9px;
+}
+
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-70 { width: 70%; }
+.skeleton-line.w-90 { width: 90%; }
+
+/* A shimmer is decoration; someone who asked for less motion should get a
+   still placeholder, not a still-animating one. */
+.reduce-motion .skeleton {
+  animation: none;
+  background-position: 0 0;
+}
+
+/* ---------- bottom sheets ---------- */
+/* Phone only. The centred card is right on a wide screen — it is the pattern
+   that screen uses — but on a phone it puts the only way out in the corner
+   furthest from the thumb, and gives no sign that it can be dismissed by hand.
+   Below 700px the overlays become sheets: anchored to the bottom edge, with a
+   handle, draggable away. See src/ui/sheet.ts for the gesture. */
+
+@media (max-width: 699px) {
+  .overlay {
+    /* Bottom-anchored, and the scrim no longer scrolls — the sheet does. */
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .overlay .howto-card {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    /* Corners only where the sheet actually ends. */
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: none;
+    /* Room for the handle above, and for the home indicator below. */
+    padding: 22px 20px calc(24px + env(safe-area-inset-bottom));
+    /* A drag that reaches the end of this list must not start scrolling the
+       page behind the sheet. */
+    overscroll-behavior: contain;
+    /* Slides up from the bottom rather than fading in place. Transform only,
+       so it stays on the compositor. */
+    animation: sheet-up var(--t-base) var(--ease-soft) both;
+    transition: transform var(--t-base) var(--ease-soft);
+  }
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  /* The grab handle. A drawn affordance rather than an instruction: it is the
+     one thing that tells a first-time player the sheet can be pulled away. */
+  .overlay .howto-card::before {
+    content: '';
+    /* The card is a flex column, so the handle is a flex item. Without this it
+       gets shrunk to zero height the moment the content overflows — which is
+       precisely when a sheet most needs to show it can be dragged. */
+    flex: none;
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: -6px auto 16px;
+    border-radius: 999px;
+    background: var(--hairline-strong);
+  }
+
+  /* The close button stays — a gesture should never be the only way out, for
+     anyone who cannot make one — but it stops being the primary route. */
+  .overlay .howto-card > .ghost-btn:last-child {
+    width: 100%;
+  }
+}
+
+/* ---------- touch ergonomics ---------- */
+
+@media (pointer: coarse) {
+  /* Anything a finger has to hit gets a real target. The visual size is left
+     alone; the padding grows the hit area only, so nothing is redesigned in
+     order to be tappable. */
+  .mini-btn,
+  .link-btn,
+  .segment,
+  .icon-btn {
+    position: relative;
+  }
+
+  .mini-btn::after,
+  .link-btn::after {
+    content: '';
+    position: absolute;
+    /* Expands the strike area to roughly 44px without moving the pixels. */
+    inset: -10px -6px;
+  }
+
+  /* The tap highlight Android paints over everything is a grey box that has
+     nothing to do with this interface. */
+  button,
+  .segment,
+  .link-btn,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Rubber-banding the whole page behind a fixed UI is the single clearest
+   signal that something is a web page rather than an app. */
+html,
+body {
+  overscroll-behavior-y: none;
 }

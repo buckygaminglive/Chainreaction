@@ -27,7 +27,9 @@ import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import { account } from './net/account';
 import { initProfile, renderProfile } from './ui/profile';
+import { attachSheet, attachSwipePager } from './ui/sheet';
 import { avatarSvg, defaultAvatarFor } from './render/avatar';
+import { initialTier } from './render3d/quality';
 import { telemetry } from './net/telemetry';
 import {
   TAUNTS,
@@ -124,6 +126,9 @@ let orientationPref: OrientationPref = 'auto';
 let localNames: string[] = [];
 /** The name this device plays online under. */
 let callsign = '';
+/** Set when the player asked to rename from the profile screen, so the name
+ *  field is opened once the account round trip that follows has settled. */
+let wantsRename = false;
 // Bumped whenever the current game is torn down (leaving to the menu,
 // starting a new game). A cascade's explode sound is scheduled via
 // setTimeout to land on the real blast moment, which can still be pending
@@ -508,7 +513,7 @@ function applyMotionPref() {
   // segments dark and the player guessing.
   markSegment(motionGroup, 'motion', reduced ? 'reduced' : 'full');
   if (reduced) stopAttract();
-  else if (!screenMenu.classList.contains('hidden')) void startAttract();
+  else if (!screenMenu.classList.contains('hidden')) scheduleAttract();
 }
 
 volumeRange.addEventListener('input', () => {
@@ -922,8 +927,9 @@ function showScreen(el: HTMLElement) {
   sfx.setBedMood(el === screenGame ? 'match' : 'menu');
   if (el === screenMenu) {
     renderProfileStrip();
-    void startAttract();
+    scheduleAttract();
   } else {
+    cancelScheduledAttract();
     stopAttract();
   }
   syncBenchGrid();
@@ -980,8 +986,69 @@ function newAttractEngine(): GameEngine {
   return new GameEngine({ rows: size.rows, cols: size.cols, players });
 }
 
+/** Pending idle callback for attract mode, so leaving the menu can cancel it. */
+let attractIdle = 0;
+
+/**
+ * Brings up attract mode once the app has finished being useful.
+ *
+ * Attract mode is decoration — a real match playing itself behind the title —
+ * but it needs the 3D renderer, which is by far the largest thing the app
+ * ships. Starting it from `showScreen` meant the menu pulled ~630 kB of
+ * Three.js, parsed it and created a WebGL context before the player had asked
+ * for anything: measured, the chunk began downloading in the same millisecond
+ * the DOM became ready. On a phone that is seconds of a menu that looks
+ * finished but is not yet responsive.
+ *
+ * Deferring to idle costs the animation a moment of delay — it fades in, so
+ * arriving late is not visible — and gives the menu back to the player
+ * immediately. Tapping Play first loads the renderer then, exactly as before.
+ */
+function scheduleAttract() {
+  if (attractIdle || attractRenderer || renderer) return;
+
+  const idle = (window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+  }).requestIdleCallback;
+
+  const begin = () => {
+    attractIdle = 0;
+    void startAttract();
+  };
+
+  // Idle alone is not enough, and measuring said so: under CPU throttling the
+  // idle callback fired at 605ms while first paint was still 47ms away, so the
+  // engine was being fetched before the menu had appeared at all. The browser
+  // considers itself idle in the gap before it paints.
+  //
+  // Two frames guarantee a paint has actually happened — the first callback
+  // runs before the coming paint, the second after it — and only then is idle
+  // worth asking about. The timeout is what stops a permanently busy main
+  // thread from meaning the board never arrives.
+  attractIdle = window.setTimeout(() => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        attractIdle = idle ? idle(begin, { timeout: 2000 }) : window.setTimeout(begin, 200);
+      })
+    );
+  }, 0);
+}
+
+function cancelScheduledAttract() {
+  if (!attractIdle) return;
+  const cancel = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+  if (cancel) cancel(attractIdle);
+  else clearTimeout(attractIdle);
+  attractIdle = 0;
+}
+
 async function startAttract() {
   if (attractRenderer || renderer || reducedMotion()) return;
+  // Decoration is the first thing to go on a device that cannot afford it.
+  // The same measurement that picks the render tier answers this: a phone
+  // that will be dropped to 'low' should not be spending its first seconds
+  // downloading and compiling a 3D engine to animate a menu background.
+  if (initialTier() === 'low') return;
   const token = ++attractToken;
   const { ThreeRenderer: Renderer } = await import('./render3d/ThreeRenderer');
   if (token !== attractToken) return;
@@ -1993,16 +2060,47 @@ let boardTab: 'world' | 'friends' = 'world';
  * act on. The tier gives the number a meaning, the bar gives it a direction,
  * and the emblem gives it something to want.
  */
+/**
+ * Holds the rank card's space open while the account is being fetched.
+ *
+ * The card used to be `display: none` until the profile arrived, so it went
+ * from outside the layout to inside it in a single frame — appearing all at
+ * once and shoving every button below it down as it landed. Reserving the
+ * height it is going to need, and showing the shape of what is coming, turns
+ * that into something arriving rather than something interrupting.
+ *
+ * Called synchronously on entering the online screen, before the round trip,
+ * because the whole point is to be there first.
+ */
+function showAccountSkeleton() {
+  if (account.profile) return; // already have it — nothing to wait for
+  accountOfflineEl.classList.add('hidden');
+  accountStripEl.classList.remove('hidden');
+  accountStripEl.classList.add('is-loading');
+  accountStripEl.innerHTML =
+    '<div class="skeleton skeleton-emblem"></div>' +
+    '<div class="skeleton-meta">' +
+    '<div class="skeleton skeleton-line w-40"></div>' +
+    '<div class="skeleton skeleton-line w-70"></div>' +
+    '<div class="skeleton skeleton-line w-90"></div>' +
+    '</div>';
+}
+
 function renderAccountStrip() {
   const p = account.profile;
   // An empty panel reads as a missing feature rather than a missing server,
   // which is exactly the wrong conclusion for a player to draw.
   accountOfflineEl.classList.toggle('hidden', Boolean(p));
   if (!p) {
+    accountStripEl.classList.remove('is-loading');
     accountStripEl.classList.add('hidden');
     return;
   }
   accountStripEl.classList.remove('hidden');
+  // Dropping the skeleton class releases the reserved height and lets the real
+  // card fade up in its place.
+  accountStripEl.classList.remove('is-loading');
+  accountStripEl.classList.add('is-in');
 
   const rank = rankFor(p.rating);
   const next = nextRankAt(p.rating);
@@ -2020,7 +2118,9 @@ function renderAccountStrip() {
     `</div>` +
     `<div class="rank-name" style="color:${rank.css}">${rank.name}</div>` +
     `<div class="rank-stats"><span class="av">${p.rating}</span> rating · ${p.wins}W / ${p.losses}L</div>` +
-    `<div class="rank-bar"><span style="width:${progress}%;background:${rank.css}"></span></div>` +
+    // scaleX rather than width: a transform animates on the compositor,
+    // where width re-runs layout on every frame.
+    `<div class="rank-bar"><span style="transform:scaleX(${progress / 100});background:${rank.css}"></span></div>` +
     `<div class="rank-next">${
       toNext === null ? 'Top tier' : `${toNext} rating to ${rankFor(next!).name}`
     }</div>` +
@@ -2070,7 +2170,18 @@ async function ensureAccount() {
   // card, and Edit if they want it back. `renderAccountStrip` has to run first:
   // with no account there is no strip, and hiding the field as well would leave
   // an offline player nothing at all.
-  setNameFieldOpen(!account.profile || !callsign);
+  //
+  // The request flag wins over both. Somebody who pressed "Change name" is
+  // owed the field regardless of whether they already have a name — and it has
+  // to be honoured *here*, after the account round trip, because this function
+  // is what closes the field and it would otherwise undo a caller that opened
+  // it a moment earlier.
+  if (wantsRename) {
+    wantsRename = false;
+    setNameFieldOpen(true);
+  } else {
+    setNameFieldOpen(!account.profile || !callsign);
+  }
 }
 
 async function renderBoards() {
@@ -2494,6 +2605,9 @@ $('play-online-btn').addEventListener('click', () => {
   setQuickSearching(false);
   showScreen(screenOnline);
   hideQuickFallback();
+  // Before the round trip, not after: the card's job here is to be in place
+  // already when the account lands.
+  showAccountSkeleton();
   void refreshRooms();
   void renderPresence();
   void renderInvites();
@@ -2999,15 +3113,41 @@ initProfile({
   // validation and its own save button. Sending the player there beats a
   // second rename control that has to be kept in step with the first.
   onRename: () => {
+    // Opening the field here would not survive: the online screen mints or
+    // reloads the account first, and that round trip ends by deciding whether
+    // the field should be open — closing it again for anyone who already has a
+    // name, which is everyone who would press this button. The flag is read
+    // once the account settles instead.
+    wantsRename = true;
     hideOverlay(screenProfile);
     $('play-online-btn').click();
-    nameInput.focus();
-    nameInput.select();
   },
   // The title screen shows a summary line that includes the account, so it
   // has to be redrawn when the account changes underneath it.
   onChanged: () => renderProfileStrip(),
 });
+// Every overlay becomes a draggable sheet on a phone. Dismissal routes
+// through each panel's own close button rather than a second teardown path,
+// so a swipe and a tap can never leave the app in different states.
+for (const [screenId, closeId] of [
+  ['screen-profile', 'profile-close-btn'],
+  ['screen-settings', 'settings-close-btn'],
+  ['screen-setup', 'setup-close-btn'],
+  ['screen-boards', 'boards-close-btn'],
+  ['screen-howto', 'howto-close-btn'],
+] as const) {
+  const screen = $(screenId);
+  const card = screen.querySelector<HTMLElement>('.howto-card');
+  if (card) attachSheet({ screen, sheet: card, onDismiss: () => $(closeId).click() });
+}
+
+// The tutorial is paged, so swiping is how people will try to move through
+// it. The buttons stay: a gesture is an accelerant, never the only route.
+attachSwipePager({
+  surface: $('howto-pages'),
+  onSwipe: (dir) => showHowtoPage(howtoPage + dir),
+});
+
 buildTauntPalette();
 buildChatPalette();
 showHowtoPage(0);
