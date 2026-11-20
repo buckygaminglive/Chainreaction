@@ -1,7 +1,7 @@
 {
   "name": "chain-reaction-remaster",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,9 +13,17 @@
     "assets": "node scripts/make-icons.mjs && node scripts/make-icon-3d.mjs && node scripts/make-app-icons.mjs && node scripts/make-store-graphics.mjs && node scripts/make-pc-assets.mjs",
     "shots": "node scripts/make-screenshots.mjs",
     "icons:app": "node scripts/make-app-icons.mjs",
-    "measure:load": "node scripts/measure-load.mjs"
+    "measure:load": "node scripts/measure-load.mjs",
+    "native:res": "node scripts/make-native-res.mjs",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:debug": "node scripts/android-build.mjs debug",
+    "android:bundle": "node scripts/android-build.mjs bundle",
+    "android:apk": "node scripts/android-build.mjs apk",
+    "android:open": "npx cap open android"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
     "@cloudflare/workers-types": "^5.20260818.1",
     "@types/node": "^24.13.3",
     "@types/three": "^0.185.4",
@@ -25,6 +33,12 @@
     "wrangler": "^4.124.0"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "gsap": "^3.15.0",
     "three": "^0.185.1"
   }

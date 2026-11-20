@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  AdditiveBlending,
   BufferGeometry,
   Clock,
   Color,
@@ -38,9 +39,9 @@ import { BOARD_BG_BOTTOM, CELL_IDLE, GRID_LINE, type ColorTheme } from '../rende
 import { EMOJI_STAGES, stageForRemaining } from '../render/emoji';
 import { emojiTexture } from './emojiTexture';
 import { orbSurfaceTexture } from './orbSurfaceTexture';
-import { burst3d, ring3d, shakeCamera, travelOrb3d } from './fx3d';
+import { Fx, haloTexture, punchCamera, shakeCamera, travelOrb3d } from './fx3d';
 import { FrameWatcher, QUALITY, initialTier, nextTierDown, type QualityTier } from './quality';
-import { EXPLOSION_SPIN_UP_MS } from './timing';
+import { EXPLOSION_SPIN_UP_MS, waveSpeed } from './timing';
 
 export type OrbStyle = 'dots' | 'emoji';
 
@@ -59,6 +60,13 @@ interface CellView {
    *  shrunk and sunk, so the board-in animation has to return it to *its*
    *  resting shape rather than to unit scale. */
   restScale: Vector3;
+  /** Light spill on the tile under the orbs, in the owner's colour. Brighter
+   *  the closer the cell is to critical, so the board's hot spots read at a
+   *  glance — and briefly blazing when the cell changes hands. */
+  halo: Mesh;
+  haloMat: MeshBasicMaterial;
+  /** Transient extra glow from a capture or a landing, decaying each frame. */
+  haloBoost: number;
 }
 
 /** Per-orb idle motion: a revolution around the cluster center on a randomly
@@ -77,8 +85,15 @@ interface OrbitState {
 
 const CELL_SIZE = 1;
 const TILE_HEIGHT = 0.14;
-const ORB_RADIUS = 0.22;
-const ORB_SPREAD = 0.52;
+const ORB_RADIUS = 0.245;
+const ORB_SPREAD = 0.5;
+/** The camera leans back this far from straight overhead. Straight down, an
+ *  orthographic board has no depth cue at all — an orb dropping in, a tile
+ *  springing, a particle bouncing are all invisible, because each is motion
+ *  along the one axis the camera looks down. A modest lean shows the tile
+ *  sides and every vertical motion while costing rows only ~7% of their
+ *  height, which keeps every cell as easy to tap as it was. */
+const CAMERA_TILT = (21 * Math.PI) / 180;
 /** World-space breathing room kept around the lattice so the substrate's
  *  corner brackets and edge tick marks are never cropped by the camera fit. */
 const BOARD_MARGIN = 0.3;
@@ -141,6 +156,22 @@ export class ThreeRenderer {
   // Reused every frame by updateOrbits so per-orb motion allocates nothing.
   private scratchCenter = new Vector3();
   private scratchRel = new Vector3();
+  /** Pooled sparks, shockwaves and flashes. */
+  private fx!: Fx;
+  /** performance.now() for the frame being drawn. */
+  private nowMs = 0;
+  private haloGeo = new PlaneGeometry(CELL_SIZE * 1.18, CELL_SIZE * 1.18);
+  /** Outline around the cell the last move was played on, so a player who
+   *  looked away — or is passing the phone — can see what just happened. */
+  private lastMove!: Mesh;
+  private lastMoveMat = new MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  private lastMoveGeo = new RingGeometry(CELL_SIZE * 0.6, CELL_SIZE * 0.645, 4, 1);
 
   private onCellTap: (row: number, col: number) => void = () => {};
   /** The cell under the cursor, or null. Mouse only — a finger has no hover
@@ -187,8 +218,11 @@ export class ThreeRenderer {
     host.appendChild(this.renderer.domElement);
 
     this.scene.add(this.boardGroup, this.fxGroup);
+    this.fx = new Fx(this.fxGroup);
+    this.fx.setDensity(this.fxDensity());
     this.setupLights();
     this.buildGrid();
+    this.buildLastMoveMarker();
     this.layout();
 
     this.ro = new ResizeObserver(() => this.layout());
@@ -274,10 +308,15 @@ export class ThreeRenderer {
       }
     });
 
+    this.fx?.setDensity(this.fxDensity());
     // Judge the new settings on their own merits rather than on frames drawn
     // under the old ones.
     this.frames.reset();
     console.info(`[render] stepped down to ${next} — sustained low frame rate`);
+  }
+
+  private fxDensity(): number {
+    return this.tier === 'high' ? 1 : this.tier === 'medium' ? 0.75 : 0.5;
   }
 
   /** Mobile GPUs reclaim the WebGL context when backgrounded/low on memory —
@@ -370,7 +409,22 @@ export class ThreeRenderer {
         orbGroup.position.set(x, TILE_HEIGHT, z);
         this.boardGroup.add(orbGroup);
 
-        rowCells.push({ tile, orbGroup, criticalRing, restScale: tile.scale.clone() });
+        const haloMat = new MeshBasicMaterial({
+          map: haloTexture(),
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: AdditiveBlending,
+        });
+        const halo = new Mesh(this.haloGeo, haloMat);
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.set(x, TILE_HEIGHT + 0.006, z);
+        halo.renderOrder = 2;
+        halo.visible = false;
+        this.boardGroup.add(halo);
+
+        rowCells.push({ tile, orbGroup, criticalRing, restScale: tile.scale.clone(), halo, haloMat, haloBoost: 0 });
         rowState.push({ owner: null, orbs: 0 });
       }
       this.cells.push(rowCells);
@@ -388,6 +442,31 @@ export class ThreeRenderer {
     this.dirLight.shadow.camera.far = 20;
     this.dirLight.target.position.set(0, 0, 0);
     this.dirLight.shadow.camera.updateProjectionMatrix();
+  }
+
+  private buildLastMoveMarker() {
+    this.lastMove = new Mesh(this.lastMoveGeo, this.lastMoveMat);
+    // A four-segment ring is a diamond; a quarter turn makes it a square frame
+    // hugging the tile's edge.
+    this.lastMove.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+    this.lastMove.renderOrder = 3;
+    this.lastMove.visible = false;
+    this.boardGroup.add(this.lastMove);
+  }
+
+  /** Moves the last-move frame onto a cell, in the mover's colour. */
+  private markLastMove(row: number, col: number, color: number) {
+    if (!this.lastMove) return;
+    const p = this.cellPos(row, col);
+    this.lastMove.position.set(p.x, TILE_HEIGHT + 0.008, p.z);
+    this.lastMoveMat.color.set(color);
+    this.lastMove.visible = true;
+    gsap.killTweensOf(this.lastMoveMat);
+    gsap.killTweensOf(this.lastMove.scale);
+    this.lastMoveMat.opacity = 1;
+    this.lastMove.scale.set(1.25, 1.25, 1);
+    gsap.to(this.lastMove.scale, { x: 1, y: 1, duration: 0.35, ease: 'back.out(2.5)' });
+    gsap.to(this.lastMoveMat, { opacity: 0.55, duration: 0.6, ease: 'power2.out' });
   }
 
   private materialForKind(kind: CellKind): MeshStandardMaterial {
@@ -579,9 +658,13 @@ export class ThreeRenderer {
     const aspect = w / h;
 
     // Absolute rather than proportional padding, so the substrate's corner
-    // brackets and edge ticks stay inside frame at every board size.
+    // brackets and edge ticks stay inside frame at every board size. Depth is
+    // foreshortened by the camera's lean, and the far row's orbs stand up
+    // into the frame by their height times its sine.
+    const cos = Math.cos(CAMERA_TILT);
+    const sin = Math.sin(CAMERA_TILT);
     const targetHalfW = boardW / 2 + BOARD_MARGIN;
-    const targetHalfH = boardD / 2 + BOARD_MARGIN;
+    const targetHalfH = (boardD / 2 + BOARD_MARGIN) * cos + 0.32 * sin;
     let halfW: number;
     let halfH: number;
     if (targetHalfW / aspect > targetHalfH) {
@@ -598,8 +681,12 @@ export class ThreeRenderer {
     this.camera.bottom = -halfH;
     this.camera.near = 0.1;
     this.camera.far = 40;
-    this.camera.position.set(0, 12, 0.0001);
-    this.camera.lookAt(0, 0, 0);
+    // Aimed a touch above the plate so the orbs standing on the far row are
+    // centred along with the tiles, rather than the tiles alone.
+    const lift = 0.16 * sin;
+    this.camera.position.set(0, 12 * cos + lift, 12 * sin);
+    this.camera.lookAt(0, lift, 0);
+    this.camera.zoom = 1;
     this.camera.updateProjectionMatrix();
     this.baseCameraPos.copy(this.camera.position);
   }
@@ -651,11 +738,11 @@ export class ThreeRenderer {
         color: theme.base,
         map: orbSurfaceTexture(),
         emissive: theme.base,
-        emissiveIntensity: 0.5,
-        roughness: 0.22,
-        metalness: 0.12,
+        emissiveIntensity: 0.62,
+        roughness: 0.18,
+        metalness: 0.1,
         clearcoat: 1,
-        clearcoatRoughness: 0.16,
+        clearcoatRoughness: 0.12,
       });
       this.orbMatCache.set(playerId, mat);
     }
@@ -682,6 +769,10 @@ export class ThreeRenderer {
       state.owner !== null && state.orbs > 0 && state.orbs >= this.engine.criticalMass(r, c) - 1;
     view.criticalRing.visible = nearCritical;
     if (nearCritical) view.criticalRing.material = this.getRingMaterial(state.owner!);
+    if (state.owner !== null && state.orbs > 0) {
+      view.haloMat.color.setHex(this.colorOf(state.owner).base);
+      view.halo.visible = true;
+    }
 
     if (state.owner === null || state.orbs <= 0) {
       // A cell that just emptied out (e.g. after exploding) may still have
@@ -843,12 +934,32 @@ export class ThreeRenderer {
 
   private tick() {
     const dt = Math.min(this.clock.getDelta(), 0.05);
+    this.nowMs = performance.now();
     this.t += dt * 60;
+    this.fx.update(dt);
+    const boostDecay = Math.exp(-dt * 5.5);
     for (let r = 0; r < this.engine.rows; r++) {
       for (let c = 0; c < this.engine.cols; c++) {
         const state = this.renderState[r][c];
-        if (state.owner === null || state.orbs <= 0) continue;
         const view = this.cells[r][c];
+        const owned = state.owner !== null && state.orbs > 0;
+        // Halo: a resting glow that grows with how full the cell is, plus any
+        // capture flare still decaying. An empty cell keeps only the flare.
+        view.haloBoost *= boostDecay;
+        if (view.haloBoost < 0.01) view.haloBoost = 0;
+        if (!owned && view.haloBoost === 0) {
+          if (view.halo.visible) view.halo.visible = false;
+          continue;
+        }
+        const massHere = this.engine.criticalMass(r, c);
+        const fill = owned ? Math.min(1, state.orbs / Math.max(1, massHere)) : 0;
+        const hot = owned && state.orbs >= massHere - 1;
+        const pulse = hot ? 0.5 + 0.5 * Math.sin(this.t * 0.22 + r * 1.7 + c) : 0;
+        view.halo.visible = true;
+        view.haloMat.opacity = Math.min(1, 0.16 + fill * 0.34 + pulse * 0.28 + view.haloBoost);
+        const hs = 0.85 + fill * 0.25 + pulse * 0.1 + view.haloBoost * 0.3;
+        view.halo.scale.set(hs, hs, 1);
+        if (!owned) continue;
         const mass = this.engine.criticalMass(r, c);
         const seed = r * 7.3 + c * 13.1;
         // A cell one orb short of blowing is visibly agitated: its orbs whip
@@ -860,16 +971,22 @@ export class ThreeRenderer {
         // orbGroup would swing every orb in a cell together at one shared
         // rate — the rigid "spinning as one piece" look. Instead each orb
         // below drives its own orbit around the cluster center.
+        // A drop, squash or landing pop owns the cluster's position and scale
+        // until it finishes; the idle motion below must not overwrite it each
+        // frame, or every one of those animations is flattened to nothing.
+        const animating = this.nowMs < (view.orbGroup.userData.animUntil ?? 0);
         const bob = Math.sin(this.t * 0.05 + seed) * 0.007;
-        view.orbGroup.position.y = TILE_HEIGHT + bob;
+        if (!animating) view.orbGroup.position.y = TILE_HEIGHT + bob;
 
         // While a cell is mid-explosion its orbs are driven by GSAP tweens;
         // don't fight them for control of position/rotation.
         if (!view.orbGroup.userData.exploding) {
-          this.updateOrbits(view.orbGroup, dt * 60, nearCritical ? 3.6 : 1);
+          this.updateOrbits(view.orbGroup, dt * 60, nearCritical ? 3.6 : 1, nearCritical ? 0.022 : 0);
         }
 
-        if (nearCritical) {
+        if (animating) {
+          // leave scale to the tween
+        } else if (nearCritical) {
           const speed = this.orbStyle === 'emoji' ? 0.4 : 0.25;
           const amount = this.orbStyle === 'emoji' ? 0.06 : 0.04;
           const pulse = 1 + Math.sin(this.t * speed + seed) * amount;
@@ -879,11 +996,17 @@ export class ThreeRenderer {
           // you don't have to count particles or judge orbit speed.
           const ring = 0.9 + (Math.sin(this.t * speed + seed) * 0.5 + 0.5) * 0.16;
           view.criticalRing.scale.set(ring, ring, 1);
-        } else {
+        } else if (view.orbGroup.userData.pulsing) {
           view.orbGroup.scale.set(1, 1, 1);
         }
+        view.orbGroup.userData.pulsing = nearCritical && !animating;
       }
     }
+  }
+
+  /** Marks a cell's cluster as tween-driven for the next `ms`. */
+  private holdForAnimation(view: CellView, ms: number) {
+    view.orbGroup.userData.animUntil = performance.now() + ms;
   }
 
   /** Advances every orb in a cell along its own tilted 3D orbit around the
@@ -891,7 +1014,7 @@ export class ThreeRenderer {
    *  orbs in one cell therefore never move as a rigid unit — they sweep past
    *  each other on crossing planes, which is what gives the group real
    *  volume when viewed straight down. */
-  private updateOrbits(group: Group, step: number, speedMul: number) {
+  private updateOrbits(group: Group, step: number, speedMul: number, jitter = 0) {
     const center = this.scratchCenter.set(0, ORB_RADIUS, 0);
     for (const child of group.children) {
       const orbit = child.userData.orbit as OrbitState | undefined;
@@ -913,6 +1036,20 @@ export class ThreeRenderer {
         // sits on, while still keeping obvious rise/fall parallax.
         rel.y *= 0.7;
         child.position.copy(center).add(rel);
+      } else {
+        // A lone orb sits at the cluster centre and has no orbit to follow,
+        // but it still has to be put back on its base every frame: without
+        // this the tremble below was added to last frame's position, and a
+        // single near-critical orb (any corner holding one) random-walked off
+        // its cell and eventually off the board.
+        child.position.copy(base);
+      }
+      // A cell on the brink trembles. Re-based from the orbit every frame,
+      // so the jitter never accumulates into drift.
+      if (jitter > 0 && child instanceof Mesh) {
+        child.position.x += (Math.random() - 0.5) * jitter;
+        child.position.y += (Math.random() - 0.5) * jitter * 0.6;
+        child.position.z += (Math.random() - 0.5) * jitter;
       }
 
       if (child instanceof Mesh) {
@@ -938,15 +1075,15 @@ export class ThreeRenderer {
   async playEvents(
     events: MoveEvent[],
     onEventStart?: (ev: MoveEvent) => void,
-    onWaveSettled?: (wave: number, cellsExploded: number) => void
+    onWaveSettled?: (wave: number, cellsExploded: number, captured: number) => void,
+    onBlast?: (wave: number, cellsExploded: number) => void
   ): Promise<void> {
-    // Always plays at full natural speed, no matter how many waves a cascade
-    // has. `onWaveSettled` fires right after each wave's cell ownership/orb
-    // counts are actually applied — with the 1-based depth reached so far, so
-    // a caller can drive a live chain counter — and it lets the caller detect
-    // the exact moment an opponent's last orb disappears and react then,
-    // without waiting for the rest of the cascade (which may keep going as
-    // pure self-cascading among the winner's own cells).
+    // `onWaveSettled` fires right after each wave's ownership and orb counts
+    // are applied, with the 1-based depth reached so far — a caller can drive
+    // a live chain counter from it, and spot the exact moment an opponent's
+    // last orb disappears without waiting for the rest of the cascade.
+    // `onBlast` fires at the instant a wave actually detonates (after its
+    // wind-up), which is where the boom and the haptic belong.
     let i = 0;
     while (i < events.length) {
       const ev = events[i];
@@ -962,8 +1099,8 @@ export class ThreeRenderer {
           i++;
         }
         onEventStart?.(batch[0]);
-        await this.animateExplodeWave(batch);
-        onWaveSettled?.(wave + 1, batch.length);
+        const captured = await this.animateExplodeWave(batch, waveSpeed(wave), () => onBlast?.(wave, batch.length));
+        onWaveSettled?.(wave + 1, batch.length, captured);
       } else {
         onEventStart?.(ev);
         i++;
@@ -971,48 +1108,65 @@ export class ThreeRenderer {
     }
   }
 
+  /** An orb dropped in from above: falls, squashes on impact, and springs
+   *  back — the tilted camera is what makes the fall and the squash visible. */
   private async animatePlace(row: number, col: number, player: number, orbs: number) {
     this.renderState[row][col] = { owner: player, orbs };
     this.drawCell(row, col);
 
     const pos = this.cellPos(row, col);
     const theme = this.colorOf(player);
-    ring3d(this.fxGroup, pos, theme.base, CELL_SIZE * 0.5);
-    burst3d(this.fxGroup, pos, theme.base, 8, 0.4);
+    this.markLastMove(row, col, theme.base);
 
     const view = this.cells[row][col];
-    view.orbGroup.scale.set(0.35, 0.35, 0.35);
-    view.orbGroup.position.y = TILE_HEIGHT + 0.4;
+    view.orbGroup.userData.exploding = false;
+    gsap.killTweensOf(view.orbGroup.position);
+    gsap.killTweensOf(view.orbGroup.scale);
+    view.orbGroup.scale.set(0.8, 1.25, 0.8);
+    view.orbGroup.position.y = TILE_HEIGHT + 0.7;
+    this.holdForAnimation(view, 720);
     await new Promise<void>((resolve) => {
       const tl = gsap.timeline({ onComplete: () => resolve() });
-      tl.to(view.orbGroup.position, { y: TILE_HEIGHT - 0.02, duration: 0.18, ease: 'power2.in' });
-      tl.to(view.orbGroup.scale, { x: 1, y: 1, z: 1, duration: 0.22, ease: 'back.out(3.2)' }, '<0.02');
-      tl.to(view.orbGroup.position, { y: TILE_HEIGHT, duration: 0.14, ease: 'back.out(3)' });
+      tl.to(view.orbGroup.position, { y: TILE_HEIGHT - 0.03, duration: 0.17, ease: 'power2.in' })
+        .add(() => {
+          this.fx.ring(pos, theme.base, CELL_SIZE * 0.55, 0.36);
+          this.fx.burst(pos, theme.base, 7, 0.45);
+          view.haloBoost = Math.max(view.haloBoost, 0.35);
+          // The tile takes the hit too.
+          gsap.fromTo(
+            view.tile.position,
+            { y: TILE_HEIGHT / 2 - 0.035 },
+            { y: TILE_HEIGHT / 2, duration: 0.3, ease: 'elastic.out(1, 0.45)' }
+          );
+        })
+        .to(view.orbGroup.scale, { x: 1.32, y: 0.62, z: 1.32, duration: 0.07, ease: 'power2.out' }, '<')
+        .to(view.orbGroup.position, { y: TILE_HEIGHT, duration: 0.24, ease: 'back.out(3)' })
+        .to(view.orbGroup.scale, { x: 1, y: 1, z: 1, duration: 0.42, ease: 'elastic.out(1.1, 0.4)' }, '<');
     });
   }
 
   /** Exploding cells wind up before they blast: the cluster strains outward
-   *  (scale) while each individual orb tumbles chaotically — independent
-   *  random rotation speed on all three axes at once (not just one spin
-   *  axis), so it reads as genuine 3D tumbling instead of a coin spinning
-   *  flat. Every orb also gets its own random duration/scale jitter so no
-   *  two explosions — or two orbs in the same cluster — ever wind up
-   *  looking identical. */
-  private spinUp(batch: Extract<MoveEvent, { type: 'explode' }>[]): Promise<void> {
+   *  while each orb tumbles on all three axes at its own random rate, so no
+   *  two explosions — or two orbs in one cluster — ever look identical.
+   *  `speed` shortens the wind-up deep into a cascade. */
+  private spinUp(batch: Extract<MoveEvent, { type: 'explode' }>[], speed: number): Promise<void> {
     const promises: Promise<void>[] = [];
+    const base = EXPLOSION_SPIN_UP_MS / 1000 / speed;
     for (const ev of batch) {
       const view = this.cells[ev.row][ev.col];
       // Hand control of these orbs from the idle orbit over to the tweens
       // below; drawCell clears this once the cell is rebuilt post-blast.
       view.orbGroup.userData.exploding = true;
-      const scaleTarget = 1.25 + Math.random() * 0.35;
-      const scaleDuration = (EXPLOSION_SPIN_UP_MS / 1000) * (0.85 + Math.random() * 0.3);
+      gsap.killTweensOf(view.orbGroup.scale);
+      this.holdForAnimation(view, base * 1500 + 400);
+      const scaleTarget = 1.3 + Math.random() * 0.35;
+      const scaleDuration = base * (0.85 + Math.random() * 0.3);
 
       promises.push(
         new Promise<void>((resolve) => {
           gsap.to(view.orbGroup.scale, {
             x: scaleTarget,
-            y: scaleTarget,
+            y: scaleTarget * 0.85,
             z: scaleTarget,
             duration: scaleDuration,
             ease: 'power2.in',
@@ -1023,12 +1177,8 @@ export class ThreeRenderer {
 
       for (const child of view.orbGroup.children) {
         if (!(child instanceof Mesh)) continue;
-        const spinDuration = (EXPLOSION_SPIN_UP_MS / 1000) * (0.8 + Math.random() * 0.5);
+        const spinDuration = base * (0.8 + Math.random() * 0.5);
         const rot = { x: child.rotation.x, y: child.rotation.y, z: child.rotation.z };
-        // Independent random turn count + direction per axis — this is what
-        // actually sells 3D tumbling instead of a flat spin: X, Y and Z all
-        // rotate at their own random rate, so the combined motion never
-        // settles into one clean plane.
         const targetX = rot.x + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
         const targetY = rot.y + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
         const targetZ = rot.z + (Math.random() * 2 - 1) * (1.5 + Math.random() * 3.5) * Math.PI;
@@ -1050,13 +1200,19 @@ export class ThreeRenderer {
     return Promise.all(promises).then(() => undefined);
   }
 
-  private async animateExplodeWave(batch: Extract<MoveEvent, { type: 'explode' }>[]) {
-    await this.spinUp(batch);
+  private async animateExplodeWave(
+    batch: Extract<MoveEvent, { type: 'explode' }>[],
+    speed: number,
+    onBlast: () => void
+  ): Promise<number> {
+    await this.spinUp(batch, speed);
+    onBlast();
     // Shake grows with both the width of this wave and how deep into the chain
     // it is, so a long cascade escalates instead of flatlining at wave two.
     const depth = batch[0].wave;
-    const amount = Math.min(0.26, 0.08 + batch.length * 0.016 + depth * 0.012);
+    const amount = Math.min(0.22, 0.06 + batch.length * 0.014 + depth * 0.01);
     shakeCamera(this.camera, this.baseCameraPos, amount);
+    if (batch.length >= 3 || depth >= 4) punchCamera(this.camera, Math.min(0.045, 0.015 + batch.length * 0.004));
 
     const travelPromises: Promise<void>[] = [];
     for (const ev of batch) {
@@ -1067,12 +1223,24 @@ export class ThreeRenderer {
       const mass = this.engine.criticalMass(ev.row, ev.col);
       const positions = layoutFor(mass);
 
-      ring3d(this.fxGroup, cellCenter, theme.base, CELL_SIZE * 0.72);
-      burst3d(this.fxGroup, cellCenter, theme.base, 16, 1);
+      const blastAt = cellCenter.clone();
+      blastAt.y += ORB_RADIUS;
+      this.fx.flash(blastAt, theme.base, 1.3);
+      this.fx.ring(cellCenter, theme.base, CELL_SIZE * 0.8, 0.4 / Math.sqrt(speed));
+      // Fewer sparks per cell as a wave gets wide, so a 12-cell wave costs
+      // about what a 4-cell one does but still fills the board with light.
+      const sparks = Math.max(6, Math.round(18 - batch.length * 0.8));
+      this.fx.burst(blastAt, theme.base, sparks, 1);
+      view.haloBoost = 0.9;
+      gsap.fromTo(
+        view.tile.position,
+        { y: TILE_HEIGHT / 2 - 0.06 },
+        { y: TILE_HEIGHT / 2, duration: 0.4, ease: 'elastic.out(1, 0.35)' }
+      );
 
-      // The clustered orbs physically "detach" here — hide the sitting cluster
-      // and let individually-positioned projectiles take over from exactly
-      // where each one sat, rather than all converging on one center point.
+      // The clustered orbs physically detach here — hide the sitting cluster
+      // and let individually positioned projectiles take over from exactly
+      // where each one sat.
       view.orbGroup.scale.set(1, 1, 1);
       view.orbGroup.rotation.set(0, 0, 0);
       for (const child of view.orbGroup.children) child.visible = false;
@@ -1082,8 +1250,15 @@ export class ThreeRenderer {
         const from = cellCenter
           .clone()
           .add(new Vector3(ox * CELL_SIZE * ORB_SPREAD, ORB_RADIUS, oy * CELL_SIZE * ORB_SPREAD));
-        const to = this.cellPos(target.row, target.col);
-        travelPromises.push(travelOrb3d(this.fxGroup, from, to, orbMat, this.orbGeo, ORB_RADIUS));
+        const to = this.cellPos(target.row, target.col).clone();
+        to.y += ORB_RADIUS;
+        travelPromises.push(
+          travelOrb3d(this.fxGroup, from, to, orbMat, this.orbGeo, ORB_RADIUS, {
+            speed,
+            fx: this.fx,
+            color: theme.base,
+          })
+        );
       });
     }
 
@@ -1099,17 +1274,63 @@ export class ThreeRenderer {
       }
       this.drawCell(ev.row, ev.col);
     }
+    const settle = 0.42 / Math.sqrt(speed);
+    let capturedCount = 0;
     for (const ev of batch) {
+      const theme = this.colorOf(ev.player);
       for (const target of ev.targets) {
         const cell = this.renderState[target.row][target.col];
+        // Taken off someone else: the cell flares in its new owner's colour.
+        // That flare is the capture — the thing the whole game is about — so
+        // it gets more than a recolour.
+        const captured = cell.owner !== null && cell.owner !== ev.player;
         cell.owner = ev.player;
         cell.orbs += 1;
         this.drawCell(target.row, target.col);
         const view = this.cells[target.row][target.col];
-        view.orbGroup.scale.set(1.3, 1.3, 1.3);
-        gsap.to(view.orbGroup.scale, { x: 1, y: 1, z: 1, duration: 0.2, ease: 'back.out(4)' });
-        const theme = this.colorOf(ev.player);
-        ring3d(this.fxGroup, this.cellPos(target.row, target.col), theme.base, CELL_SIZE * 0.4);
+        const p = this.cellPos(target.row, target.col);
+        gsap.killTweensOf(view.orbGroup.scale);
+        view.orbGroup.scale.set(1.35, 0.7, 1.35);
+        this.holdForAnimation(view, settle * 1000 + 30);
+        gsap.to(view.orbGroup.scale, { x: 1, y: 1, z: 1, duration: settle, ease: 'elastic.out(1.2, 0.45)' });
+        if (captured) {
+          capturedCount++;
+          view.haloBoost = 1;
+          this.fx.ring(p, theme.base, CELL_SIZE * 0.62, 0.34);
+          this.fx.burst(p.clone().setY(p.y + ORB_RADIUS), theme.base, 5, 0.5);
+          gsap.fromTo(
+            view.tile.rotation,
+            { z: (Math.random() < 0.5 ? -1 : 1) * 0.32 },
+            { z: 0, duration: 0.5, ease: 'elastic.out(1.3, 0.35)' }
+          );
+        } else {
+          view.haloBoost = Math.max(view.haloBoost, 0.4);
+          this.fx.ring(p, theme.base, CELL_SIZE * 0.42, 0.3);
+        }
+      }
+    }
+    return capturedCount;
+  }
+
+  /** A celebratory flare on every cell the winner holds, rippling outward
+   *  from the cell that ended it. Purely visual. */
+  celebrate(playerId: number, from?: { row: number; col: number }) {
+    const theme = this.colorOf(playerId);
+    const origin = from ?? { row: (this.engine.rows - 1) / 2, col: (this.engine.cols - 1) / 2 };
+    for (let r = 0; r < this.engine.rows; r++) {
+      for (let c = 0; c < this.engine.cols; c++) {
+        if (this.renderState[r][c].owner !== playerId) continue;
+        const d = Math.hypot(r - origin.row, c - origin.col);
+        const view = this.cells[r][c];
+        gsap.delayedCall(d * 0.045, () => {
+          view.haloBoost = 1;
+          this.fx.ring(this.cellPos(r, c), theme.base, CELL_SIZE * 0.7, 0.5);
+          gsap.fromTo(
+            view.tile.position,
+            { y: TILE_HEIGHT / 2 + 0.08 },
+            { y: TILE_HEIGHT / 2, duration: 0.5, ease: 'bounce.out' }
+          );
+        });
       }
     }
   }
@@ -1127,6 +1348,11 @@ export class ThreeRenderer {
       part.mat.dispose();
     }
     this.substrateParts.length = 0;
+    this.fx?.dispose();
+    for (const row of this.cells) for (const v of row) v.haloMat.dispose();
+    this.haloGeo.dispose();
+    this.lastMoveGeo.dispose();
+    this.lastMoveMat.dispose();
     this.criticalRingGeo.dispose();
     for (const mat of this.ringMatCache.values()) mat.dispose();
     this.ringMatCache.clear();

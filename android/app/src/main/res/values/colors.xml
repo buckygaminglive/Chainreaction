@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fissile_bg">#07090C</color>
+    <color name="colorPrimary">#07090C</color>
+    <color name="colorPrimaryDark">#07090C</color>
+    <color name="colorAccent">#3AD9FF</color>
+</resources>

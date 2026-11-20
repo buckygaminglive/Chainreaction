@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark throughout. The game has no light theme, and a light system
+         surface flashing between the splash and the first frame is the most
+         visible seam a web-built app can have. -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+        <item name="android:windowBackground">@color/fissile_bg</item>
+        <item name="android:statusBarColor">@color/fissile_bg</item>
+        <item name="android:navigationBarColor">@color/fissile_bg</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/fissile_bg</item>
+        <item name="android:statusBarColor">@color/fissile_bg</item>
+        <item name="android:navigationBarColor">@color/fissile_bg</item>
+    </style>
+
+    <!-- Launch: the mark on the game's background. Android 12+ draws it from
+         the windowSplashScreen* attributes; older versions (Android 9 on the
+         Redmi this was tuned for) use the layer-list window background. -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/fissile_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:background">@drawable/launch_background</item>
+    </style>
+</resources>

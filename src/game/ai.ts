@@ -107,3 +107,63 @@ export function chooseMove(
 export function skillForRound(round: number): number {
   return Math.min(1, 0.25 + (round - 1) * 0.15);
 }
+
+/**
+ * Two-ply search: my move, then the opponent's best reply.
+ *
+ * The one-ply chooser above happily stacks a cell next to an enemy cell that
+ * is about to blow, because its exposure term only guesses at the reply. This
+ * actually plays the reply out. It is reserved for the hardest computer
+ * opponent — on a 13×7 board it is a few hundred cascade resolutions per
+ * turn, which a phone does well inside the opponent's thinking pause — and
+ * pruned to the strongest one-ply candidates so the cost stays flat.
+ *
+ * Two-player only: with more seats "the opponent's best reply" stops being
+ * one well-defined thing.
+ */
+export function chooseMoveDeep(
+  engine: GameEngine,
+  playerId: number,
+  breadth = 10
+): { row: number; col: number } | null {
+  const moves = engine.legalMoves();
+  if (moves.length === 0) return null;
+
+  const first = moves
+    .map((move) => {
+      const clone = cloneEngine(engine);
+      clone.applyMove(move.row, move.col);
+      return { move, clone, score: scorePosition(clone, playerId) };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  // A move that wins outright needs no further thought.
+  if (first[0].clone.gameOver && first[0].clone.winner === playerId) return first[0].move;
+
+  let best = first[0];
+  let bestWorst = -Infinity;
+  for (const cand of first.slice(0, breadth)) {
+    if (cand.clone.gameOver) {
+      const v = cand.clone.winner === playerId ? 10000 : -10000;
+      if (v > bestWorst) {
+        bestWorst = v;
+        best = cand;
+      }
+      continue;
+    }
+    // The opponent answers with whatever is worst for us.
+    let worst = Infinity;
+    for (const reply of cand.clone.legalMoves()) {
+      const after = cloneEngine(cand.clone);
+      after.applyMove(reply.row, reply.col);
+      const v = scorePosition(after, playerId);
+      if (v < worst) worst = v;
+      if (worst <= bestWorst) break; // cannot beat what we already have
+    }
+    if (worst > bestWorst) {
+      bestWorst = worst;
+      best = cand;
+    }
+  }
+  return best.move;
+}

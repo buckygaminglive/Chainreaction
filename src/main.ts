@@ -1,11 +1,32 @@
 import './style.css';
 import { GameEngine } from './game/GameEngine';
-import type { EngineSnapshot, PlayerConfig, MoveEvent } from './game/types';
+import type { EngineSnapshot, PlayerConfig, MoveEvent, MoveResult } from './game/types';
 import { DEFAULT_MODE, GAME_MODES, MODE_ORDER, type GameModeKey } from './game/modes';
 import { layoutForMode, randomSeed } from './game/cells';
-import { chooseMove, skillForRound } from './game/ai';
+import { layoutFor } from './render/orbLayout';
+import { chooseMove, chooseMoveDeep, skillForRound } from './game/ai';
 import { pickBot, type Bot } from './game/bots';
-import { stats } from './game/stats';
+import { stats, levelProgress } from './game/stats';
+import {
+  buildDailyPuzzle,
+  dayNumber,
+  msUntilNextDay,
+  shareText,
+  trySquare,
+  DAILY_TRIES,
+  type DailyPuzzle,
+} from './game/daily';
+import { dailyState } from './game/dailyState';
+import {
+  initNative,
+  hideSplashWhenPainted,
+  isNative,
+  onBackButton,
+  share,
+  roomLink,
+  roomCodeFromUrl,
+  PUBLIC_ORIGIN,
+} from './native';
 import { rankFor, rankProgress, nextRankAt } from './game/rank';
 import { rankBadgeSvg } from './render/rankBadge';
 import {
@@ -19,7 +40,6 @@ import {
 // so the renderer is pulled in on demand when a match actually starts — the
 // menu, the online screens and the join-by-link flow all load without it.
 import type { ThreeRenderer, OrbStyle } from './render3d/ThreeRenderer';
-import { EXPLOSION_SPIN_UP_MS } from './render3d/timing';
 import { PLAYER_THEMES } from './render/theme';
 import { modePreview } from './render/modePreview';
 import { sfx } from './sfx/Sfx';
@@ -188,6 +208,22 @@ const screenSetup = $('screen-setup');
 const screenSettings = $('screen-settings');
 const screenProfile = $('screen-profile');
 const screenRanked = $('screen-ranked');
+const screenBoards = $('screen-boards');
+const screenDailyPage = $('screen-daily-page');
+const tabbarEl = $('tabbar');
+const screenCpu = $('screen-cpu');
+const screenDaily = $('screen-daily');
+const homeXpFill = $('home-xp-fill');
+const homeNameEl = $('home-name');
+const homeAvatarEl = $('home-avatar');
+const dailyBtn = $('daily-btn');
+const dailySubEl = $('daily-sub');
+const dailyStreakEl = $('daily-streak');
+const cpuSubEl = $('cpu-sub');
+const cpuLevelGroup = $('cpu-level-group');
+const cpuBlurbEl = $('cpu-level-blurb');
+const cpuSizeGroup = $('cpu-size-group');
+const puzzleHudEl = $('puzzle-hud');
 const nameFieldEl = $('name-field');
 const attractHost = $('attract-host');
 const volumeRange = $<HTMLInputElement>('volume-range');
@@ -199,7 +235,7 @@ const hapticsNoteEl = $('haptics-note');
 const motionGroup = $('motion-group');
 const telemetryGroup = $('telemetry-group');
 const telemetryNoteEl = $('telemetry-note');
-const ALL_SCREENS = [screenMenu, screenGame, screenOnline, screenLobby, screenRanked];
+const ALL_SCREENS = [screenMenu, screenDailyPage, screenOnline, screenBoards, screenProfile, screenGame, screenLobby, screenRanked];
 
 const playersCountEl = $('players-count');
 const playersFieldEl = $('players-field');
@@ -220,6 +256,7 @@ const levelChipEl = $('level-chip');
 const playPillsEl = $('player-pills');
 const boardHost = $('board-host');
 const chainReadoutEl = $('chain-readout');
+const boardToastEl = $('board-toast');
 const boardFlashEl = $('board-flash');
 const matchBannerEl = $('match-banner');
 const turnClockEl = $('turn-clock');
@@ -534,15 +571,7 @@ musicRange.addEventListener('input', () => {
 });
 
 function renderProfileStrip() {
-  const s = stats.get();
-  // Reads as one quiet line rather than a badge: level first, then whatever
-  // there is to show. A brand new player has no runs and no best chain, and
-  // printing "0 runs · 0 wins" is a worse greeting than printing nothing.
-  const parts = [`<span class="lv">level ${stats.level(s)}</span>`];
-  if (s.matches > 0) parts.push(`${s.matches} ${s.matches === 1 ? 'run' : 'runs'}`);
-  if (s.wins > 0) parts.push(`${s.wins} ${s.wins === 1 ? 'win' : 'wins'}`);
-  if (s.bestChain > 0) parts.push(`best ×${s.bestChain}`);
-  levelChipEl.innerHTML = parts.join(' · ');
+  renderHome();
 }
 
 /** Builds one of the two mode pickers. `onlineOnly` hides modes the relay
@@ -884,27 +913,12 @@ $('setup-close-btn').addEventListener('click', () => {
 // Two entry points, one overlay: the title screen and the online screen. Both
 // are places a player asks "how am I doing", and an overlay returns them to
 // whichever one they came from rather than replacing it.
-['profile-btn', 'online-profile-btn'].forEach((id) => $(id).addEventListener('click', () => {
-  sfx.unlock();
+$('profile-btn').addEventListener('click', () => {
   sfx.buttonTap();
-  showOverlay(screenProfile);
-  // Fired rather than awaited: the overlay is already on screen and the
-  // history fetch fills in a section of it, so blocking the open on the
-  // network would make a local action feel like a remote one.
-  void renderProfile();
-}));
-
-$('profile-close-btn').addEventListener('click', () => {
-  sfx.buttonTap();
-  hideOverlay(screenProfile);
+  goTab('profile');
 });
 
-$('settings-btn').addEventListener('click', () => {
-  sfx.unlock();
-  sfx.buttonTap();
-  renderSettings();
-  showOverlay(screenSettings);
-});
+$('settings-btn').addEventListener('click', () => openSettings());
 
 $('settings-close-btn').addEventListener('click', () => {
   sfx.buttonTap();
@@ -920,7 +934,8 @@ function showScreen(el: HTMLElement) {
   hideOverlay(screenWin);
   hideOverlay(screenSetup);
   hideOverlay(screenSettings);
-  hideOverlay(screenProfile);
+  hideOverlay(screenCpu);
+  hideOverlay(screenDaily);
   el.classList.remove('hidden');
   // The bed sits forward everywhere except over a live board, where the
   // effects need the room.
@@ -933,7 +948,9 @@ function showScreen(el: HTMLElement) {
     stopAttract();
   }
   syncBenchGrid();
-  if (from !== el) playScreenIn(el);
+  syncTabbar(el);
+  if (from !== el) playScreenIn(el, transitionFor(from, el));
+  onScreenEnter(el, from);
 }
 
 /** The page's measurement grid is the bench the UI sits on — but only while
@@ -949,10 +966,10 @@ function syncBenchGrid() {
  *  way — nothing carries across the cut. A short fade and rise is enough for
  *  one screen to read as handing over to the next. Done with a class rather
  *  than GSAP so the menu keeps loading without the animation library. */
-function playScreenIn(el: HTMLElement) {
-  el.classList.remove('screen-in');
+function playScreenIn(el: HTMLElement, transition = 'screen-in') {
+  el.classList.remove(...TRANSITIONS);
   void el.offsetWidth; // restart the animation even on a repeated target
-  el.classList.add('screen-in');
+  el.classList.add(transition);
 }
 function showOverlay(el: HTMLElement) {
   el.classList.remove('hidden');
@@ -1173,7 +1190,12 @@ function renderMatchBanner() {
   // Never left implicit: you should always be able to see that the opponent is
   // a bot without having to remember how the match started.
   if (activeBot) {
-    parts.push(`vs <span class="bv">${escapeHtml(activeBot.name)}</span> · bot · unranked`);
+    const cpu = activeBot.id.startsWith('cpu-') ? CPU_LEVELS[Number(activeBot.id.slice(4))] : null;
+    parts.push(
+      cpu
+        ? `vs <span class="bv">${escapeHtml(activeBot.name)}</span> · ${cpu.name.toLowerCase()} computer`
+        : `vs <span class="bv">${escapeHtml(activeBot.name)}</span> · bot · unranked`
+    );
   }
 
   // Head-to-head across rematches in this room, kept by the relay.
@@ -1259,16 +1281,43 @@ function countOrbs(playerId: number): number {
 // ---------- Chain counter & screen feedback ----------
 let chainHideTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Named chain milestones. Crossing one is announced — a word, a chord and
+ *  a haptic — so a big cascade has a peak you can feel, not just a number
+ *  ticking up. Ordered by depth. */
+const CHAIN_TIERS: { at: number; word: string; level: number }[] = [
+  { at: 2, word: 'chain', level: 0 },
+  { at: 3, word: 'combo!', level: 0 },
+  { at: 5, word: 'chain reaction!', level: 1 },
+  { at: 8, word: 'meltdown!', level: 2 },
+  { at: 12, word: 'supercritical!', level: 3 },
+  { at: 16, word: 'nuclear!!', level: 4 },
+  { at: 22, word: 'unstoppable', level: 5 },
+];
+
+function chainTier(depth: number) {
+  let tier = CHAIN_TIERS[0];
+  for (const t of CHAIN_TIERS) if (depth >= t.at) tier = t;
+  return tier;
+}
+
 function showChain(depth: number, playerId: number) {
   if (depth < CHAIN_CALLOUT_MIN) return;
   const theme = colorOf(playerId);
-  chainReadoutEl.innerHTML = `<span class="cv">×${depth}</span><span class="ck">chain</span>`;
-  chainReadoutEl.style.borderColor = `${theme.css}66`;
-  (chainReadoutEl.querySelector('.cv') as HTMLElement).style.color = theme.css;
-  chainReadoutEl.classList.remove('show');
+  const tier = chainTier(depth);
+  const milestone = CHAIN_TIERS.some((t) => t.at === depth && t.level > 0);
+  chainReadoutEl.innerHTML = `<span class="cv">×${depth}</span><span class="ck">${tier.word}</span>`;
+  chainReadoutEl.style.setProperty('--chain-color', theme.css);
+  chainReadoutEl.dataset.level = String(tier.level);
+  chainReadoutEl.classList.remove('show', 'milestone');
   void chainReadoutEl.offsetWidth; // restart the pop animation on each new wave
   chainReadoutEl.classList.add('show');
-  sfx.chainTick(depth);
+  if (milestone) {
+    chainReadoutEl.classList.add('milestone');
+    sfx.combo(tier.level);
+    haptics.combo();
+  } else {
+    sfx.chainTick(depth);
+  }
 
   if (depth >= CHAIN_FLASH_MIN) {
     boardFlashEl.style.color = theme.css;
@@ -1278,7 +1327,19 @@ function showChain(depth: number, playerId: number) {
   }
 
   if (chainHideTimer) clearTimeout(chainHideTimer);
-  chainHideTimer = setTimeout(() => chainReadoutEl.classList.remove('show'), 1100);
+  chainHideTimer = setTimeout(() => chainReadoutEl.classList.remove('show', 'milestone'), 1300);
+}
+
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+/** A short line over the board — a knock-out, a puzzle hint. */
+function showBoardToast(text: string, color = 'var(--accent)') {
+  boardToastEl.textContent = text;
+  boardToastEl.style.setProperty('--toast-color', color);
+  boardToastEl.classList.remove('show');
+  void boardToastEl.offsetWidth;
+  boardToastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => boardToastEl.classList.remove('show'), 1800);
 }
 
 function hideChain() {
@@ -1563,7 +1624,10 @@ function maybeRunAiTurn() {
       animating = false;
       return;
     }
-    const move = chooseMove(engine, AI_PLAYER_ID, skill);
+    const move =
+      activeBot?.deep && engine.players.length === 2
+        ? chooseMoveDeep(engine, AI_PLAYER_ID)
+        : chooseMove(engine, AI_PLAYER_ID, skill);
     if (!move) {
       animating = false;
       return;
@@ -1642,6 +1706,10 @@ function leaveGameScreen() {
   }
   engine = null;
   animating = false;
+  dailyMode = false;
+  dailyPuzzle = null;
+  puzzleHudEl.classList.add('hidden');
+  boardToastEl.classList.remove('show');
 }
 
 /** Returns false if the player left before the renderer chunk finished
@@ -1649,9 +1717,14 @@ function leaveGameScreen() {
 async function mountGame(
   newEngine: GameEngine,
   style: OrbStyle,
-  opts: { fromSnapshot?: boolean } = {}
+  opts: { fromSnapshot?: boolean; daily?: boolean } = {}
 ): Promise<boolean> {
   soundGeneration++;
+  // Only startDailyPuzzle mounts a puzzle; every other way onto a board is a
+  // normal match and clears any puzzle left over.
+  dailyMode = opts.daily === true;
+  if (!dailyMode) dailyPuzzle = null;
+  puzzleHudEl.classList.toggle('hidden', !dailyMode);
   // Two WebGL contexts for one board is one too many, and the attract match
   // has no reason to keep running once a real one is starting.
   stopAttract();
@@ -1697,7 +1770,7 @@ async function mountGame(
     online: onlineMode,
     // A bot match is neither a human match nor pass-and-play, and lumping it
     // in with either makes mode popularity meaningless.
-    opponent: onlineMode ? 'human' : activeBot ? 'bot' : 'local',
+    opponent: dailyMode ? 'daily' : onlineMode ? 'human' : activeBot ? 'bot' : 'local',
     resumed: opts.fromSnapshot === true,
   });
 
@@ -1753,8 +1826,8 @@ async function onCellTapOnline(row: number, col: number) {
   if (net.sendMove(row, col)) animating = true;
 }
 
-async function applyAndAnimateMove(row: number, col: number) {
-  if (!engine || !renderer) return;
+async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult | null> {
+  if (!engine || !renderer) return null;
   stopTurnClock();
   const mover = engine.currentPlayer().id;
   const result = engine.applyMove(row, col);
@@ -1763,7 +1836,7 @@ async function applyAndAnimateMove(row: number, col: number) {
   matchTurns++;
   matchBestChain = Math.max(matchBestChain, result.chain);
   matchBestCapture = Math.max(matchBestCapture, result.captured);
-  if (mover === localSeatId()) stats.recordChain(result.chain, result.captured);
+  if (mover === localSeatId() && !dailyMode) stats.recordChain(result.chain, result.captured);
 
   // The engine resolves the whole cascade synchronously, but the board
   // animates it wave by wave — so "who won" and "what the board visibly
@@ -1774,6 +1847,7 @@ async function applyAndAnimateMove(row: number, col: number) {
   let winShown = false;
   const showWinIfBoardMatches = () => {
     if (myGeneration !== soundGeneration) return; // player has left this game
+    if (dailyMode) return; // a puzzle try is scored, not won
     if (winShown || !result.gameOver || result.winner === null || !engine || !renderer) return;
     // In Team Battle the payoff is the losing *side* being gone, so wait for
     // the last orb of the other team rather than of a single player.
@@ -1794,26 +1868,24 @@ async function applyAndAnimateMove(row: number, col: number) {
       (ev: MoveEvent) => {
         if (myGeneration !== soundGeneration) return; // player has left this game
         if (ev.type === 'place') {
-          sfx.place();
+          sfx.place(ev.orbs / Math.max(1, engine?.criticalMass(ev.row, ev.col) ?? 4));
           haptics.place();
         } else if (ev.type === 'explode') {
-          // The board visibly winds up (spinning) before it actually blasts —
-          // play the charge whir now, but delay the boom/buzz to land on the
-          // real blast moment instead of the start of the wind-up. That delay
-          // can still be pending after the player has already left this
-          // game, so re-check the generation before actually playing it.
+          // The wind-up whir plays now; the boom waits for onBlast below, the
+          // instant the board actually detonates.
           sfx.chargeUp(ev.wave);
-          setTimeout(() => {
-            if (myGeneration !== soundGeneration) return;
-            sfx.explode(1, ev.wave);
-            haptics.explode(ev.wave);
-          }, EXPLOSION_SPIN_UP_MS);
         }
       },
-      (depth) => {
+      (depth, _cells, captured) => {
         if (myGeneration !== soundGeneration) return;
+        if (captured > 0) sfx.capture();
         showChain(depth, mover);
         showWinIfBoardMatches();
+      },
+      (wave, cells) => {
+        if (myGeneration !== soundGeneration) return;
+        sfx.explode(1, wave, cells);
+        haptics.explode(wave);
       }
     )
     .catch((err) => {
@@ -1821,7 +1893,8 @@ async function applyAndAnimateMove(row: number, col: number) {
     });
 
   await playPromise;
-  if (myGeneration !== soundGeneration) return; // player has left this game
+  if (myGeneration !== soundGeneration) return null; // player has left this game
+  if (dailyMode) return result;
 
   // Safety net: if the board somehow never reported a matching state
   // mid-cascade (shouldn't happen for a real win), show it once everything
@@ -1832,6 +1905,12 @@ async function applyAndAnimateMove(row: number, col: number) {
     if (ev.type === 'eliminate') {
       sfx.eliminate();
       haptics.eliminate();
+      const out = engine?.players.find((p) => p.id === ev.player);
+      // A knock-out in a three-plus player game is a moment; in a duel it is
+      // the win itself, which the result card announces instead.
+      if (out && (engine?.players.length ?? 0) > 2 && !result.gameOver) {
+        showBoardToast(`${out.name} eliminated`, colorOf(out.id).css);
+      }
     }
   }
 
@@ -1847,6 +1926,7 @@ async function applyAndAnimateMove(row: number, col: number) {
     startTurnClock();
     maybeRunAiTurn();
   }
+  return result;
 }
 
 /** What the result card says depends on whether this ended a game, a series,
@@ -1903,6 +1983,7 @@ function showWin(winnerId: number) {
   // The board settles on the winner at the moment the win is revealed, rather
   // than waiting for the rest of the cascade to finish animating.
   renderer?.setTurnColor(theme.base);
+  if (!reducedMotion()) renderer?.celebrate(winnerId);
 
   // Series bookkeeping has to land before the card is composed, so the score
   // it prints includes the game that just finished.
@@ -2064,7 +2145,6 @@ function clearOnlineError() {
 }
 
 // ---------- Account, leaderboards, friends ----------
-const screenBoards = $('screen-boards');
 const accountStripEl = $('account-strip');
 const accountOfflineEl = $('account-offline');
 const boardTabs = $('board-tabs');
@@ -2245,18 +2325,7 @@ onSegmentPick(boardTabs, (el) => {
   void renderBoards();
 });
 
-$('leaderboard-btn').addEventListener('click', async () => {
-  sfx.buttonTap();
-  friendMsgEl.textContent = '';
-  showOverlay(screenBoards);
-  await ensureAccount();
-  void renderBoards();
-});
 
-$('boards-close-btn').addEventListener('click', () => {
-  sfx.buttonTap();
-  hideOverlay(screenBoards);
-});
 
 $('friend-add-btn').addEventListener('click', async () => {
   sfx.buttonTap();
@@ -2533,6 +2602,7 @@ async function renderPresence() {
   // number was invented and stops believing anything else on the screen.
   presenceStripEl.innerHTML =
     `<span class="dot-live"></span><span><span class="pv">${live}</span> players online</span>`;
+  $('online-presence-n').textContent = live;
 }
 
 /**
@@ -2540,7 +2610,7 @@ async function renderPresence() {
  * relay round trip and nothing is reported to the ladder, which is exactly why
  * a bot match can never move anyone's rating.
  */
-async function startBotMatch(bot: Bot) {
+async function startBotMatch(bot: Bot, opts: { size?: BoardSizeKey; mode?: GameModeKey } = {}) {
   sfx.unlock();
   sfx.buttonTap();
   if (net) disconnectNet();
@@ -2550,9 +2620,10 @@ async function startBotMatch(bot: Bot) {
   setQuickSearching(false);
   resetSeries();
 
-  const size = BOARD_SIZES[quickBoardSize];
-  const myTheme = themeForSeat(0, quickMode);
-  const botTheme = themeForSeat(1, quickMode);
+  const pickedMode = opts.mode ?? quickMode;
+  const size = opts.size ? boardDims(opts.size) : BOARD_SIZES[quickBoardSize];
+  const myTheme = themeForSeat(0, pickedMode);
+  const botTheme = themeForSeat(1, pickedMode);
   const players: PlayerConfig[] = [
     {
       id: 0,
@@ -2566,7 +2637,7 @@ async function startBotMatch(bot: Bot) {
 
   // Bot matches use the mode picked for quick match, so practising is
   // practising the thing you are about to queue for.
-  modeKey = GAME_MODES[quickMode].teams ? DEFAULT_MODE : quickMode;
+  modeKey = GAME_MODES[pickedMode].teams ? DEFAULT_MODE : pickedMode;
   const seed = randomSeed();
   const newEngine = new GameEngine({
     rows: size.rows,
@@ -2621,25 +2692,8 @@ roomsRefreshBtn.addEventListener('click', () => {
 });
 
 $('play-online-btn').addEventListener('click', () => {
-  sfx.unlock();
   sfx.buttonTap();
-  clearOnlineError();
-  setQuickSearching(false);
-  showScreen(screenOnline);
-  hideQuickFallback();
-  // Before the round trip, not after: the card's job here is to be in place
-  // already when the account lands.
-  showAccountSkeleton();
-  void refreshRooms();
-  void renderPresence();
-  void renderInvites();
-  // Minting the guest account on entering the online screen, not at boot: a
-  // player who only ever plays locally never gets one.
-  void ensureAccount();
-});
-$('online-back-btn').addEventListener('click', () => {
-  sfx.buttonTap();
-  showScreen(screenMenu);
+  goTab('online');
 });
 
 function setBusy(busy: boolean) {
@@ -2862,6 +2916,7 @@ async function renderInvites() {
     return;
   }
   const invites = await account.invites();
+  $('tab-dot-online').classList.toggle('hidden', invites.length === 0);
   if (!invites.length) {
     inviteInboxEl.classList.add('hidden');
     inviteInboxEl.innerHTML = '';
@@ -2908,17 +2963,20 @@ inviteInboxEl.addEventListener('click', async (e) => {
 
 roomCodeBtn.addEventListener('click', async () => {
   if (!net) return;
-  const link = `${location.origin}${location.pathname}?room=${net.roomCode}`;
-  try {
-    await navigator.clipboard.writeText(link);
-    const original = lobbyHintEl.textContent;
-    lobbyHintEl.textContent = 'invite link copied';
-    setTimeout(() => {
-      lobbyHintEl.textContent = original;
-    }, 1600);
-  } catch {
-    showOnlineError('Could not copy the link — share the code instead.');
-  }
+  const code = net.roomCode;
+  // The system share sheet first: sending a room to a group chat should be
+  // one tap, not copy-switch-app-paste.
+  const outcome = await share({
+    title: 'Join my FISSILE room',
+    text: `Join my FISSILE room — code ${code} 💥`,
+    url: roomLink(code),
+  });
+  if (outcome === 'failed') return;
+  const original = lobbyHintEl.textContent;
+  lobbyHintEl.textContent = outcome === 'copied' ? 'invite link copied' : 'invite sent';
+  setTimeout(() => {
+    lobbyHintEl.textContent = original;
+  }, 1600);
 });
 
 lobbyStartBtn.addEventListener('click', () => {
@@ -2935,7 +2993,7 @@ $('lobby-back-btn').addEventListener('click', () => {
   queuedCode = null;
   quickMatchPending = false;
   disconnectNet();
-  showScreen(screenMenu);
+  showScreen(screenOnline);
 });
 
 function renderLobby(players: NetPlayer[], hostId: number) {
@@ -3118,12 +3176,632 @@ function leaveOnlineGame() {
 /** True when a ?room= link took the player straight to the online screen, so
  *  init knows not to open the title screen over the top of it. */
 function checkRoomLinkParam(): boolean {
-  const room = new URLSearchParams(location.search).get('room');
+  const room = roomCodeFromUrl(location.href);
   if (!room) return false;
-  joinCodeInput.value = room.toUpperCase();
+  joinCodeInput.value = room;
   showScreen(screenOnline);
   return true;
 }
+
+// ---------- Home ----------
+/** The title screen's top bar and cards: who you are, how far along, and
+ *  what today's puzzle and the computer are set to. */
+function renderHome() {
+  const s = stats.get();
+  levelChipEl.textContent = `LV ${stats.level(s)}`;
+  homeXpFill.style.transform = `scaleX(${levelProgress(s)})`;
+  const profile = account.profile;
+  homeNameEl.textContent = profile?.name || callsign || 'Player';
+  const avatarKey = profile?.avatar || (profile ? defaultAvatarFor(profile.id) : 'c1');
+  homeAvatarEl.innerHTML = avatarSvg(avatarKey, 40);
+
+  const today = dayNumber();
+  const rec = dailyState.day(today);
+  const streak = dailyState.liveStreak(today);
+  // Captions have ~18 characters on a 360px phone; every string here fits.
+  const streakNote = streak > 1 ? ` · ${streak}d streak` : '';
+  if (rec?.done) {
+    const top = Math.max(0, ...rec.tries);
+    dailySubEl.textContent = `${top >= rec.best ? 'solved' : `×${top} of ×${rec.best}`}${streakNote}`;
+  } else if (rec && rec.tries.length) {
+    const left = 3 - rec.tries.length;
+    dailySubEl.textContent = `${left} ${left === 1 ? 'try' : 'tries'} left`;
+  } else {
+    dailySubEl.textContent = streak > 1 ? `${streak}d streak · go` : 'find the max chain';
+  }
+  dailyStreakEl.textContent = `#${today}`;
+  dailyBtn.classList.toggle('is-done', !!rec?.done);
+  $('tab-dot-daily').classList.toggle('hidden', !!rec?.done);
+  cpuSubEl.textContent = CPU_LEVELS[cpuLevel].name.toLowerCase();
+}
+
+
+// Every button press gets a light tap under the finger on a phone. One
+// delegated listener rather than a call in fifty handlers.
+document.addEventListener(
+  'click',
+  (e) => {
+    if ((e.target as HTMLElement | null)?.closest('button')) haptics.tap();
+  },
+  { capture: true, passive: true }
+);
+
+// ---------- vs Computer ----------
+interface CpuLevel {
+  name: string;
+  blurb: string;
+  skill: number;
+  deep: boolean;
+  bot: string;
+  rating: number;
+}
+
+const CPU_LEVELS: CpuLevel[] = [
+  { name: 'Easy', blurb: 'Plays sensible moves and misses plenty. Good for learning the ropes.', skill: 0.15, deep: false, bot: 'Sparky', rating: 800 },
+  { name: 'Normal', blurb: 'Spots the obvious captures. A fair fight.', skill: 0.6, deep: false, bot: 'Ion', rating: 1050 },
+  { name: 'Hard', blurb: 'Always plays its best move. You will need a plan.', skill: 1, deep: false, bot: 'Neutron', rating: 1300 },
+  { name: 'Insane', blurb: 'Plays out your reply before it moves. Good luck.', skill: 1, deep: true, bot: 'Fusion', rating: 1550 },
+];
+
+const CPU_KEY = 'fissile.cpu.v1';
+let cpuLevel = 1;
+let cpuSize: BoardSizeKey = 'medium';
+try {
+  const raw = JSON.parse(localStorage.getItem(CPU_KEY) || '{}') as { level?: unknown; size?: unknown };
+  const lv = Number(raw.level);
+  if (Number.isInteger(lv) && lv >= 0 && lv < CPU_LEVELS.length) cpuLevel = lv;
+  if (raw.size === 'small' || raw.size === 'medium' || raw.size === 'large') cpuSize = raw.size;
+} catch {
+  /* defaults */
+}
+
+function saveCpuPrefs() {
+  try {
+    localStorage.setItem(CPU_KEY, JSON.stringify({ level: cpuLevel, size: cpuSize }));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function renderCpuSheet() {
+  cpuLevelGroup.innerHTML = '';
+  CPU_LEVELS.forEach((lv, i) => {
+    const btn = document.createElement('button');
+    btn.className = `cpu-level${i === cpuLevel ? ' active' : ''}`;
+    btn.dataset.level = String(i);
+    btn.innerHTML =
+      `<span class="cpu-pips">${'<i></i>'.repeat(i + 1)}</span>` +
+      `<span class="cpu-name">${lv.name}</span><span class="cpu-bot">${lv.bot}</span>`;
+    cpuLevelGroup.appendChild(btn);
+  });
+  cpuBlurbEl.textContent = CPU_LEVELS[cpuLevel].blurb;
+  markSegment(cpuSizeGroup, 'size', cpuSize);
+  relabelSizes(cpuSizeGroup, useLandscape());
+}
+
+cpuLevelGroup.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('.cpu-level');
+  if (!btn) return;
+  sfx.buttonTap();
+  cpuLevel = Number(btn.dataset.level) || 0;
+  saveCpuPrefs();
+  renderCpuSheet();
+  renderHome();
+});
+
+onSegmentPick(cpuSizeGroup, (el) => {
+  cpuSize = el.dataset.size as BoardSizeKey;
+  saveCpuPrefs();
+});
+
+$('cpu-btn').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  renderCpuSheet();
+  showOverlay(screenCpu);
+});
+
+$('cpu-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenCpu);
+});
+
+$('cpu-start-btn').addEventListener('click', () => {
+  hideOverlay(screenCpu);
+  const lv = CPU_LEVELS[cpuLevel];
+  const bot: Bot = {
+    id: `cpu-${cpuLevel}`,
+    name: lv.bot,
+    skill: lv.skill,
+    rating: lv.rating,
+    deep: lv.deep,
+    thinkMs: lv.deep ? [500, 900] : [380 + lv.skill * 240, 760 + lv.skill * 480],
+  };
+  void startBotMatch(bot, { size: cpuSize, mode: DEFAULT_MODE });
+});
+
+// ---------- Daily Blast ----------
+let dailyMode = false;
+let dailyPuzzle: DailyPuzzle | null = null;
+let dailyCountdownTimer = 0;
+
+function dailyPlayers(): PlayerConfig[] {
+  return [0, 1].map((i) => ({
+    id: i,
+    name: i === 0 ? 'You' : 'Rival',
+    color: PLAYER_THEMES[i].base,
+    colorLight: PLAYER_THEMES[i].light,
+    isAlive: true,
+  }));
+}
+
+function renderPuzzleHud() {
+  if (!dailyPuzzle) return;
+  const rec = dailyState.day(dailyPuzzle.day);
+  const used = rec?.tries.length ?? 0;
+  const tries = Array.from({ length: DAILY_TRIES }, (_, i) => {
+    const chain = rec?.tries[i];
+    const cls = chain === undefined ? (i === used ? 'now' : '') : chain >= dailyPuzzle!.best ? 'win' : 'used';
+    return `<i class="${cls}">${chain === undefined ? '' : chain}</i>`;
+  }).join('');
+  puzzleHudEl.innerHTML =
+    `<div class="ph-title">Daily Blast <span>#${dailyPuzzle.day}</span></div>` +
+    `<div class="ph-goal">Find the move with the <b>biggest chain</b> · best is ×${dailyPuzzle.best}</div>` +
+    `<div class="ph-tries">${tries}</div>`;
+  puzzleHudEl.classList.remove('hidden');
+}
+
+async function startDailyPuzzle() {
+  sfx.unlock();
+  if (net) disconnectNet();
+  onlineMode = false;
+  activeBot = null;
+  resetSeries();
+  const day = dayNumber();
+  dailyPuzzle = buildDailyPuzzle(day, dailyPlayers());
+  const e = new GameEngine({ rows: dailyPuzzle.rows, cols: dailyPuzzle.cols, players: dailyPuzzle.players });
+  e.loadSnapshot(structuredClone(dailyPuzzle.snapshot));
+  showScreen(screenGame);
+  if (!(await mountGame(e, orbStyle, { fromSnapshot: true, daily: true }))) return;
+  renderer!.setCellTapHandler(onCellTapDaily);
+  renderer!.setHoverTest((r, c) => !animating && !!engine && engine.canPlay(r, c));
+  matchBannerEl.classList.add('hidden');
+  renderPuzzleHud();
+  showBoardToast('Tap a cell to set it off');
+}
+
+async function onCellTapDaily(row: number, col: number) {
+  if (!engine || !renderer || animating || !dailyPuzzle) return;
+  if (!engine.canPlay(row, col)) return;
+  const puzzle = dailyPuzzle;
+  animating = true;
+  sfx.unlock();
+  const generation = soundGeneration;
+  const result = await applyAndAnimateMove(row, col);
+  if (!result || generation !== soundGeneration || !dailyMode) return;
+
+  const rec = dailyState.recordTry(puzzle.day, puzzle.best, result.chain);
+  renderPuzzleHud();
+  const perfect = result.chain >= puzzle.best;
+  if (perfect) {
+    showBoardToast(`×${result.chain} — perfect!`, PLAYER_THEMES[0].css);
+    sfx.win();
+    haptics.win();
+    renderer.celebrate(0, { row, col });
+  } else {
+    const left = DAILY_TRIES - rec.tries.length;
+    showBoardToast(
+      result.chain === 0
+        ? `No reaction · ${left} ${left === 1 ? 'try' : 'tries'} left`
+        : `×${result.chain} · the best is ×${puzzle.best}${left ? ` · ${left} left` : ''}`
+    );
+  }
+
+  await wait(perfect ? 1500 : 1300);
+  if (generation !== soundGeneration || !dailyMode) return;
+  if (rec.done) {
+    showDailyResult(puzzle.day);
+    return;
+  }
+  // Back to the starting position for the next try.
+  engine.loadSnapshot(structuredClone(puzzle.snapshot));
+  renderer.syncToEngine();
+  renderer.setTurnColor(PLAYER_THEMES[0].base);
+  animating = false;
+}
+
+function showDailyResult(day: number) {
+  const rec = dailyState.day(day);
+  const state = dailyState.get();
+  const best = rec?.best ?? 0;
+  const tries = rec?.tries ?? [];
+  const top = tries.length ? Math.max(...tries) : 0;
+  $('daily-eyebrow').textContent = `daily blast #${day}`;
+  $('daily-title').textContent = top >= best && best > 0 ? 'Perfect blast!' : top >= best - 1 ? 'So close!' : 'Nice try';
+  $('daily-score-value').textContent = `×${top}`;
+  $('daily-score-of').textContent = `best ×${best}`;
+  $('daily-tries').innerHTML = Array.from({ length: DAILY_TRIES }, (_, i) => `<span>${trySquare(tries[i], best)}</span>`).join('');
+  $('daily-verdict').textContent =
+    top >= best
+      ? `You found the deepest chain on the board${tries.length === 1 ? ' — first try' : ''}.`
+      : `The best move set off a ×${best} chain. A new board unlocks at midnight.`;
+  $('daily-streak-value').textContent = String(dailyState.liveStreak(dayNumber()));
+  $('daily-played-value').textContent = String(state.played);
+  $('daily-perfect-value').textContent = String(state.perfect);
+  const tick = () => {
+    const ms = msUntilNextDay();
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    const sec = Math.floor((ms % 60_000) / 1000);
+    $('daily-countdown').textContent = `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+  tick();
+  clearInterval(dailyCountdownTimer);
+  dailyCountdownTimer = window.setInterval(tick, 1000);
+  showOverlay(screenDaily);
+  renderHome();
+}
+
+dailyBtn.addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  const today = dayNumber();
+  if (dailyState.day(today)?.done) showDailyResult(today);
+  else void startDailyPuzzle();
+});
+
+$('daily-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  clearInterval(dailyCountdownTimer);
+  hideOverlay(screenDaily);
+  if (dailyMode) {
+    leaveGameScreen();
+    showScreen(screenDailyPage);
+  } else if (!screenDailyPage.classList.contains('hidden')) {
+    renderDailyPage();
+  }
+});
+
+$('daily-share-btn').addEventListener('click', async () => {
+  sfx.buttonTap();
+  const day = dayNumber();
+  const rec = dailyState.day(day);
+  if (!rec) return;
+  const text = shareText(day, rec.tries, rec.best, dailyState.liveStreak(day), PUBLIC_ORIGIN);
+  const outcome = await share({ title: `FISSILE Daily Blast #${day}`, text });
+  if (outcome === 'copied') flashButton($('daily-share-btn'), 'Copied!');
+});
+
+/** Swaps a button's label for a moment — "Copied!" and the like. */
+function flashButton(btn: HTMLElement, label: string) {
+  const original = btn.textContent;
+  btn.textContent = label;
+  setTimeout(() => {
+    btn.textContent = original;
+  }, 1500);
+}
+
+// ---------- Sharing a match ----------
+$('win-share-btn').addEventListener('click', async () => {
+  sfx.buttonTap();
+  if (!engine) return;
+  const winner = engine.winner;
+  const iWon = winner !== null && winner === localSeatId();
+  const chain = matchBestChain;
+  let text: string;
+  if (activeBot && activeBot.id.startsWith('cpu-')) {
+    const level = CPU_LEVELS[Number(activeBot.id.slice(4))]?.name.toLowerCase() ?? 'tough';
+    text = iWon
+      ? `I just beat the ${level} computer in FISSILE${chain >= 2 ? ` with a ×${chain} chain reaction` : ''} 💥 Think you can?`
+      : `The ${level} computer got me in FISSILE 😤 Can you beat it?`;
+  } else if (onlineMode) {
+    text = iWon
+      ? `Won an online FISSILE match${chain >= 2 ? ` with a ×${chain} chain` : ''} 💥 Come play me.`
+      : `Lost an online FISSILE match by a whisker. Rematch? 💥`;
+  } else {
+    const name = engine.players.find((p) => p.id === winner)?.name ?? 'Someone';
+    text = `${name} won our FISSILE match${chain >= 2 ? ` — biggest chain ×${chain}` : ''} 💥 Chain reaction strategy, free on Android.`;
+  }
+  const outcome = await share({ title: 'FISSILE', text, url: PUBLIC_ORIGIN });
+  if (outcome === 'copied') flashButton($('win-share-btn'), 'Copied!');
+});
+
+// ---------- Android back button ----------
+let lastBackAt = 0;
+onBackButton(() => {
+  // Topmost first: sheets, then the result card, then the screen under it.
+  const sheets: [HTMLElement, string][] = [
+    [screenDaily, 'daily-close-btn'],
+    [screenCpu, 'cpu-close-btn'],
+    [screenHowto, 'howto-close-btn'],
+    [screenSettings, 'settings-close-btn'],
+    [screenSetup, 'setup-close-btn'],
+  ];
+  for (const [el, close] of sheets) {
+    if (!el.classList.contains('hidden')) {
+      $(close).click();
+      return true;
+    }
+  }
+  if (!tauntPaletteEl.classList.contains('hidden') || !chatPaletteEl.classList.contains('hidden')) {
+    setTauntPaletteOpen(false);
+    setChatPaletteOpen(false);
+    return true;
+  }
+  if (!screenWin.classList.contains('hidden')) {
+    $('win-menu-btn').click();
+    return true;
+  }
+  if (!screenGame.classList.contains('hidden')) {
+    // A match is the one place a stray back press costs something, so it
+    // takes two.
+    const now = Date.now();
+    if (now - lastBackAt < 2000) {
+      lastBackAt = 0;
+      $('back-btn').click();
+    } else {
+      lastBackAt = now;
+      showBoardToast('Press back again to leave');
+    }
+    return true;
+  }
+  if (!screenLobby.classList.contains('hidden')) {
+    $('lobby-back-btn').click();
+    return true;
+  }
+  if (!screenRanked.classList.contains('hidden')) {
+    $('ranked-back-btn').click();
+    return true;
+  }
+  // Any tab but Play goes back to Play; on Play, back leaves the app.
+  const current = ALL_SCREENS.find((el) => !el.classList.contains('hidden')) ?? null;
+  const tab = tabOf(current);
+  if (tab && tab !== 'play') {
+    goTab('play');
+    return true;
+  }
+  return false;
+});
+
+/** A room code arrived as a link — from a chat app, a QR code, anywhere. */
+function openRoomFromLink(code: string) {
+  if (!/^[A-Z0-9]{3,8}$/.test(code)) return;
+  if (!screenGame.classList.contains('hidden') && engine && !engine.gameOver) {
+    // Never yank someone out of a live match. The code waits in the box.
+    joinCodeInput.value = code;
+    return;
+  }
+  joinCodeInput.value = code;
+  $('play-online-btn').click();
+}
+
+// ---------- Navigation ----------
+/*
+ * Five top-level pages behind a tab bar, two pushed pages (the ranked queue
+ * and a room's lobby) with a back header, and full-screen play. Sheets —
+ * match setup, difficulty, settings, how to play, a puzzle result — open
+ * over whatever page you are on and close back onto it.
+ *
+ * Moving between tabs slides in the direction of the tab you picked; pushing
+ * a page slides it in from the right and going back slides it out. One rule
+ * per kind of move, so the motion always says where you went.
+ */
+type TabKey = 'play' | 'daily' | 'online' | 'ranks' | 'profile';
+const TAB_ORDER: TabKey[] = ['play', 'daily', 'online', 'ranks', 'profile'];
+const TAB_SCREENS: Record<TabKey, HTMLElement> = {
+  play: screenMenu,
+  daily: screenDailyPage,
+  online: screenOnline,
+  ranks: screenBoards,
+  profile: screenProfile,
+};
+const TRANSITIONS = ['screen-in', 'enter-left', 'enter-right', 'enter-push', 'enter-pop'];
+
+function tabOf(el: HTMLElement | null): TabKey | null {
+  if (!el) return null;
+  return TAB_ORDER.find((k) => TAB_SCREENS[k] === el) ?? null;
+}
+
+function transitionFor(from: HTMLElement | null, to: HTMLElement): string {
+  const fromTab = tabOf(from);
+  const toTab = tabOf(to);
+  if (fromTab && toTab) return TAB_ORDER.indexOf(toTab) > TAB_ORDER.indexOf(fromTab) ? 'enter-right' : 'enter-left';
+  if (to.classList.contains('sub-page')) return 'enter-push';
+  if (from?.classList.contains('sub-page') && toTab) return 'enter-pop';
+  return 'screen-in';
+}
+
+function syncTabbar(el: HTMLElement) {
+  const tab = tabOf(el);
+  document.body.classList.toggle('with-tabbar', tab !== null);
+  tabbarEl.querySelectorAll<HTMLElement>('.tab').forEach((b) => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-current', on ? 'page' : 'false');
+  });
+  if (tab) tabbarEl.style.setProperty('--tab-i', String(TAB_ORDER.indexOf(tab)));
+}
+
+/** Data a page needs fresh each time it is arrived at. */
+function onScreenEnter(el: HTMLElement, from: HTMLElement | null) {
+  if (from === screenDailyPage && el !== screenDailyPage) {
+    clearInterval(dailyPageTimer);
+    dailyPageTimer = 0;
+  }
+  if (el === from) return;
+  if (el === screenDailyPage) {
+    renderDailyPage();
+  } else if (el === screenOnline) {
+    setQuickSearching(false);
+    hideQuickFallback();
+    // Before the round trip, not after: the card's job is to be in place
+    // already when the account lands.
+    showAccountSkeleton();
+    void refreshRooms();
+    void renderPresence();
+    void renderInvites();
+    // The guest account is minted on first visiting Online, not at boot: a
+    // player who only ever plays locally never gets one.
+    void ensureAccount();
+  } else if (el === screenBoards) {
+    friendMsgEl.textContent = '';
+    void ensureAccount().then(() => renderBoards());
+  } else if (el === screenProfile) {
+    void renderProfile();
+  }
+}
+
+/** A tab was chosen by the player. Choosing the tab you are already on
+ *  scrolls its page back to the top, as every app's tab bar does. */
+function goTab(tab: TabKey) {
+  sfx.unlock();
+  const el = TAB_SCREENS[tab];
+  if (!el.classList.contains('hidden')) {
+    el.querySelector<HTMLElement>('.page-body')?.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (tab === 'online') clearOnlineError();
+  showScreen(el);
+}
+
+tabbarEl.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('.tab');
+  if (!btn?.dataset.tab) return;
+  sfx.buttonTap();
+  goTab(btn.dataset.tab as TabKey);
+});
+
+// ---------- Daily page ----------
+let dailyPageTimer = 0;
+let dailyPreview: { day: number; puzzle: DailyPuzzle; svg: string } | null = null;
+
+/** Today's board, drawn flat: the same cells, owner tints and orb clusters as
+ *  the 3D board, with the near-critical ring on cells one orb short. */
+function puzzleSvg(p: DailyPuzzle): string {
+  const cell = 30;
+  const gap = 4;
+  const pad = 8;
+  const w = p.cols * (cell + gap) - gap + pad * 2;
+  const h = p.rows * (cell + gap) - gap + pad * 2;
+  const parts: string[] = [
+    `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" role="img">`,
+    `<rect width="${w}" height="${h}" rx="4" fill="#090c11"/>`,
+  ];
+  for (let r = 0; r < p.rows; r++) {
+    for (let c = 0; c < p.cols; c++) {
+      const x = pad + c * (cell + gap);
+      const y = pad + r * (cell + gap);
+      const data = p.snapshot.grid[r][c];
+      parts.push(`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3" fill="#161b23"/>`);
+      if (data.owner === null || data.orbs <= 0) continue;
+      const css = PLAYER_THEMES[data.owner % PLAYER_THEMES.length].css;
+      parts.push(`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3" fill="${css}" opacity="0.14"/>`);
+      const edges = (r === 0 || r === p.rows - 1 ? 1 : 0) + (c === 0 || c === p.cols - 1 ? 1 : 0);
+      const mass = 4 - edges;
+      const cx = x + cell / 2;
+      const cy = y + cell / 2;
+      if (data.orbs >= mass - 1) {
+        parts.push(`<circle cx="${cx}" cy="${cy}" r="${cell * 0.42}" fill="none" stroke="${css}" stroke-opacity="0.55" stroke-width="1"/>`);
+      }
+      for (const [ox, oy] of layoutFor(data.orbs)) {
+        parts.push(`<circle cx="${cx + ox * cell * 0.36}" cy="${cy + oy * cell * 0.36}" r="${cell * 0.16}" fill="${css}"/>`);
+      }
+    }
+  }
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+function todaysPuzzle(): DailyPuzzle {
+  const day = dayNumber();
+  if (!dailyPreview || dailyPreview.day !== day) {
+    const puzzle = buildDailyPuzzle(day, dailyPlayers());
+    dailyPreview = { day, puzzle, svg: puzzleSvg(puzzle) };
+  }
+  return dailyPreview.puzzle;
+}
+
+function renderDailyPage() {
+  const today = dayNumber();
+  const puzzle = todaysPuzzle();
+  const rec = dailyState.day(today);
+  const state = dailyState.get();
+  const tries = rec?.tries ?? [];
+  const top = tries.length ? Math.max(...tries) : 0;
+  const done = !!rec?.done;
+
+  $('dp-eyebrow').textContent = `puzzle #${today}`;
+  const preview = $('dp-preview');
+  preview.innerHTML = dailyPreview!.svg;
+  preview.classList.toggle('is-done', done);
+
+  $('dp-tries').innerHTML = Array.from({ length: DAILY_TRIES }, (_, i) => {
+    const chain = tries[i];
+    const cls = chain === undefined ? (i === tries.length && !done ? 'now' : '') : chain >= puzzle.best ? 'win' : 'used';
+    return `<i class="${cls}">${chain === undefined ? '' : `×${chain}`}</i>`;
+  }).join('');
+
+  const status = $('dp-status');
+  const play = $('dp-play-btn');
+  if (done) {
+    status.textContent =
+      top >= puzzle.best ? `Perfect. You found the ×${puzzle.best} chain.` : `Your best was ×${top}. The board held a ×${puzzle.best}.`;
+    play.textContent = 'See result';
+  } else if (tries.length) {
+    const left = DAILY_TRIES - tries.length;
+    status.textContent = `Best so far ×${top}. The deepest chain is ×${puzzle.best}.`;
+    play.textContent = `Keep going · ${left} ${left === 1 ? 'try' : 'tries'} left`;
+  } else {
+    status.textContent = `The deepest chain on this board is ×${puzzle.best}. Can you find it in one move?`;
+    play.textContent = "Play today's puzzle";
+  }
+  $('dp-share-btn').classList.toggle('hidden', !done);
+
+  $('dp-streak').textContent = String(dailyState.liveStreak(today));
+  $('dp-played').textContent = String(state.played);
+  $('dp-perfect').textContent = String(state.perfect);
+
+  const now = new Date();
+  $('dp-week').innerHTML = Array.from({ length: 7 }, (_, k) => {
+    const back = 6 - k;
+    const day = today - back;
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back);
+    const label = d.toLocaleDateString(undefined, { weekday: 'narrow' });
+    const r = dailyState.day(day);
+    const best = r?.tries.length ? Math.max(...r.tries) : null;
+    const cls = !r || !r.tries.length ? (back === 0 ? 'open' : 'missed') : best! >= r.best ? 'solved' : 'tried';
+    const mark = cls === 'solved' ? '✓' : best !== null ? `×${best}` : back === 0 ? '·' : '';
+    return `<div class="dp-day ${cls}${back === 0 ? ' today' : ''}"><span class="dp-mark">${mark}</span><span class="dp-dow">${label}</span></div>`;
+  }).join('');
+
+  const tick = () => {
+    const ms = msUntilNextDay();
+    const hh = Math.floor(ms / 3_600_000);
+    const mm = Math.floor((ms % 3_600_000) / 60_000);
+    const ss = Math.floor((ms % 60_000) / 1000);
+    $('dp-countdown').textContent = `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    // Midnight passed while the page was open: a new puzzle is out.
+    if (dayNumber() !== today && !screenDailyPage.classList.contains('hidden')) renderDailyPage();
+  };
+  tick();
+  clearInterval(dailyPageTimer);
+  dailyPageTimer = window.setInterval(tick, 1000);
+}
+
+$('dp-play-btn').addEventListener('click', () => dailyBtn.click());
+$('dp-share-btn').addEventListener('click', () => $('daily-share-btn').click());
+
+// ---------- Profile page extras ----------
+function openSettings() {
+  sfx.unlock();
+  sfx.buttonTap();
+  renderSettings();
+  showOverlay(screenSettings);
+}
+$('profile-settings-btn').addEventListener('click', openSettings);
+$('profile-settings-row').addEventListener('click', openSettings);
+$('profile-howto-row').addEventListener('click', () => $('howto-btn').click());
+$('app-version').textContent = `FISSILE ${__APP_VERSION__}${isNative ? ' · Android' : ''}`;
 
 // ---------- init ----------
 selectMode(applyStoredPrefs());
@@ -3141,8 +3819,7 @@ initProfile({
     // name, which is everyone who would press this button. The flag is read
     // once the account settles instead.
     wantsRename = true;
-    hideOverlay(screenProfile);
-    $('play-online-btn').click();
+    goTab('online');
   },
   // The title screen shows a summary line that includes the account, so it
   // has to be redrawn when the account changes underneath it.
@@ -3152,11 +3829,11 @@ initProfile({
 // through each panel's own close button rather than a second teardown path,
 // so a swipe and a tap can never leave the app in different states.
 for (const [screenId, closeId] of [
-  ['screen-profile', 'profile-close-btn'],
   ['screen-settings', 'settings-close-btn'],
   ['screen-setup', 'setup-close-btn'],
-  ['screen-boards', 'boards-close-btn'],
   ['screen-howto', 'howto-close-btn'],
+  ['screen-cpu', 'cpu-close-btn'],
+  ['screen-daily', 'daily-close-btn'],
 ] as const) {
   const screen = $(screenId);
   const card = screen.querySelector<HTMLElement>('.howto-card');
@@ -3178,15 +3855,35 @@ updateMuteIcon();
 // showScreen does more than reveal a section now — it starts and stops attract
 // mode — so the title screen has to be entered through it like any other.
 if (!checkRoomLinkParam()) showScreen(screenMenu);
+hideSplashWhenPainted();
+void initNative({
+  onPause: () => sfx.suspend(),
+  onResume: () => sfx.resume(),
+  onRoomLink: openRoomFromLink,
+});
 telemetry.start();
 exposeDebug();
+// The account, if this device has one, fills in the home screen's name and
+// avatar. Deferred past first paint — it is a network round trip, and the
+// menu must never wait on one.
+setTimeout(() => {
+  void account
+    .load()
+    .then(() => {
+      if (!screenMenu.classList.contains('hidden')) renderHome();
+      if (account.credentials) void renderInvites();
+    })
+    .catch(() => {});
+}, 1200);
 
 // Registered in production only: in dev the worker would serve yesterday's
 // bundle over Vite's, which looks exactly like a broken hot reload. This is
 // what makes the game installable — a Play Store TWA is an installed PWA in a
 // native wrapper, and Chrome will not offer installation without a fetch
 // handler, so without this there is no Android app.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+// Not in the installed app: there the whole game already ships inside the
+// APK, so a worker would only add a second, staler copy of it.
+if (import.meta.env.PROD && !isNative && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('/sw.js').catch((err) => {
       // Never fatal: the game runs perfectly well unregistered, it just is not

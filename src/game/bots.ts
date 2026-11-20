@@ -24,6 +24,9 @@ export interface Bot {
   /** Seconds it appears to "think", so a match against one has the rhythm of
    *  playing a person rather than a wall that answers instantly. */
   thinkMs: [number, number];
+  /** Plays a two-ply search instead of the ranked one-ply pick — the hardest
+   *  computer opponent only. */
+  deep?: boolean;
 }
 
 const NAMES: [string, number][] = [

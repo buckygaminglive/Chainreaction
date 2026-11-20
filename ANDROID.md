@@ -1,117 +1,78 @@
-# Packaging FISSILE for Google Play
+# The FISSILE Android app
 
-The Android app is a **Trusted Web Activity**: a thin native shell that runs
-this site inside the user's own Chrome. The engine, the Three.js renderer and
-the relay all work unchanged, there is no second codebase, and a web deploy
-*is* an app update for everything except the shell itself.
+From 1.1.0 (version code 5) the Play app is a **native Capacitor app**, not a
+Trusted Web Activity. The whole game — code, 3D renderer, sounds, music — is
+copied *into* the APK and runs from the phone's own storage:
 
-The trade is real and worth knowing before you start: a TWA is still Chrome
-under the hood. No native push, no Play Billing, and offline is only what the
-service worker caches. If you later need any of those, the upgrade path is
-Capacitor — same web build, but with a real native project to attach plugins
-to. Don't take it until something actually requires it.
+- it opens instantly and works with no internet (everything except online
+  play, which still talks to the relay);
+- there is never a browser address bar, and it does not depend on which
+  browser the phone has or whether Chrome is up to date;
+- Android's back button, native haptics, the system share sheet, a dark launch
+  splash and keep-screen-on during play are all wired in (`src/native.ts`).
 
----
+The package name is unchanged (`com.designdynastystudios.fissile`), so this
+uploads to the existing Play listing as an ordinary update.
 
-## What is already done
+## Build commands
 
-- `public/manifest.webmanifest` — name, `display: standalone`, theme colours,
-  and 192/512/maskable icons.
-- `public/sw.js` — the service worker. **Chrome will not offer installation
-  without a fetch handler**, and a TWA is an installed PWA, so this is what
-  makes an Android app possible at all. Registered from `main.ts` in
-  production builds only.
-- `public/.well-known/assetlinks.json` — present, with placeholders.
-- `public/privacy.html` — Play requires a privacy policy URL for every
-  listing. It is an accurate draft with bracketed values still to fill in and
-  has not been reviewed by a lawyer.
+| Command | What you get |
+| --- | --- |
+| `npm run android:debug` | `android/app/build/outputs/apk/debug/app-debug.apk` — sideload to test |
+| `npm run android:bundle` | `android/app/build/outputs/bundle/release/app-release.aab` — the Play upload |
+| `npm run android:apk` | signed release APK |
+| `npm run android:open` | opens the project in Android Studio |
 
-## What is not
+Each one rebuilds the web game, copies it into `android/` (`cap sync`) and
+runs Gradle, so an APK always carries the current code. Java comes from
+`JAVA_HOME`, or from the JDK inside Android Studio if that is unset.
 
-- **The name is not cleared.** FISSILE has not been checked for trademark, app
-  store or domain conflicts (roadmap §15). A Play listing is a public,
-  permanent, first-use-in-commerce record under that name, and the package id
-  below can never be changed once published. Clear the name first.
-- The relay is not deployed, so online play, ranks and friend codes do not
-  work in production yet.
+The Gradle wrapper is pinned to **9.5.0**: Gradle 9.6 removed an internal API
+that the Android Gradle Plugin 8.x still uses, and fails at configuration.
 
----
+## Signing the Play build
 
-## 1. Pick the package id — permanently
+Play only accepts an update signed with the **same upload key** as the
+earlier builds (`android.keystore`, alias `android`). The build reads it from
+a file you create yourself:
 
-```
-com.yourdomain.reacton
-```
+1. Copy `keystore.properties.example` to `keystore.properties`.
+2. Fill in `storePassword` and `keyPassword`.
+3. Run `npm run android:bundle` and upload the `.aab`.
 
-This can **never** be changed after the first upload. A new id is a new app
-with a new listing and no reviews or installs. Use a domain you control.
+`keystore.properties` and the keystore are gitignored. Never commit either.
+Without the file, release builds come out unsigned (Play will reject them).
 
-## 2. Install the toolchain
+## Every release
 
-Bubblewrap needs a JDK and the Android SDK; it will offer to fetch them.
+Bump both in `android/app/build.gradle`:
 
-```bash
-npm install -g @bubblewrap/cli
-```
+- `versionCode` — must be higher than every build Play has ever seen (5 now);
+- `versionName` — what players see (`1.1.0` now).
 
-## 3. Generate the shell
+## Things to know about the switch
 
-Run this from an empty directory *outside* this repo — it produces a separate
-Android project, not part of the web app.
+- **Saved data does not carry over from the old build.** The web-shell app
+  stored progress in Chrome under the website's address; the native app has
+  its own storage. Players who had the early-access build start fresh
+  (local stats, settings, and the device's online account).
+- **Minimum Android is now 7.0** (API 24, Capacitor's floor). The web shell
+  allowed 5.0. Phones older than 7.0 keep the version they have.
+- **Room links open the app.** Invites are `https://chainreaction-sooty.vercel.app/join?room=CODE`.
+  With the app installed, Android opens them in the app (verified by
+  `public/.well-known/assetlinks.json`, which already lists the Play signing
+  certificate); without it they open the website. `fissile://room/CODE` also
+  works. The `/join` path needs the web deploy that adds the rewrite in
+  `vercel.json`.
+- **Icons and splash** come from `npm run icons:app` then `npm run native:res`,
+  which write into `android/app/src/main/res`.
 
-```bash
-bubblewrap init --manifest https://YOUR-DOMAIN/manifest.webmanifest
-```
+## Troubleshooting
 
-It will ask for the package id, the launcher name, and the colours, then
-generate a signing keystore. **Keep that keystore and its password safe and
-backed up** — losing it means you cannot ship an update to your own app ever
-again. It is the one artefact in this whole process with no recovery path.
-
-```bash
-bubblewrap build
-```
-
-## 4. Upload, then complete the asset link
-
-The SHA-256 fingerprint you need is **not** the one from your local keystore
-if you use Play App Signing (the default, and recommended). Google re-signs
-the app, so the fingerprint that matters only exists after the first upload.
-
-1. Upload the `.aab` to Play Console — internal testing track is fine.
-2. Go to **Release → Setup → App integrity → App signing key certificate**.
-3. Copy the **SHA-256 certificate fingerprint**.
-4. Put it, and your package id, into `public/.well-known/assetlinks.json`.
-5. Redeploy the site.
-
-Verify it resolves before testing the app:
-
-```bash
-curl https://YOUR-DOMAIN/.well-known/assetlinks.json
-```
-
-**If this file is wrong or missing, the app still runs but shows a browser
-URL bar across the top** — that is the single most common TWA mistake, and
-that bar is what makes it look like a bookmark instead of an app.
-
-## 5. Listing requirements
-
-Play will ask for all of these before you can publish:
-
-- Privacy policy URL → `https://YOUR-DOMAIN/privacy.html`
-- App icon, 512×512 → `public/icon-512.png`
-- Feature graphic, 1024×500 → **not generated yet**; `scripts/make-icons.mjs`
-  is where it would go, alongside the OG card.
-- Phone screenshots, at least 2 → take from a real device, not the emulator.
-- Content rating questionnaire, data safety form, target audience.
-
-The data safety form is the one that needs care and matches what
-`privacy.html` already documents: a device-local record, a guest account with
-no email or password, an opt-out diagnostics channel that is **not currently
-sending anywhere**, and no advertising or third-party trackers.
-
-## Updating
-
-A web deploy updates the app — no new upload needed. Only changes to the
-shell (package id, launcher icon, name, targeted Android version) require
-rebuilding and re-uploading the `.aab`.
+- *`cap sync` fails with EPERM / ENOTEMPTY*: something is holding files open
+  under `android/`. Usually a running Gradle daemon (`android\gradlew.bat
+  --stop`) or a file watcher. `vite.config.mjs` keeps the dev server's watcher
+  out of `android/` for exactly this reason.
+- *"There is not enough space on the disk"*: a release build needs a few
+  hundred MB of scratch space under `android/app/build`. Free space on the
+  drive, or delete `android/app/build` (it is regenerated).

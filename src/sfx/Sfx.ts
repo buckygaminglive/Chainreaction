@@ -28,6 +28,10 @@ export class Sfx {
    *  rather than torn down and rebuilt on every play. */
   private musicEl: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
+  /** Shared white-noise source for every burst. */
+  private noise: AudioBuffer | null = null;
+  /** True while the app is backgrounded — nothing sounds until resume(). */
+  private suspended = false;
 
   get muted() {
     return this._muted;
@@ -65,9 +69,19 @@ export class Sfx {
       this.master = this.ctx.createGain();
       this.fxBus = this.ctx.createGain();
       this.musicBus = this.ctx.createGain();
+      // A limiter on the way out. A wide wave detonates a dozen voices in the
+      // same instant, and summed raw they clip into a harsh crackle on phone
+      // speakers — exactly at the moment that should sound best.
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -10;
+      limiter.knee.value = 8;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.18;
       this.fxBus.connect(this.master);
       this.musicBus.connect(this.master);
-      this.master.connect(this.ctx.destination);
+      this.master.connect(limiter);
+      limiter.connect(this.ctx.destination);
       this.applyGains();
     }
     if (this.ctx.state === 'suspended') {
@@ -141,7 +155,7 @@ export class Sfx {
   }
 
   private tryStartBed() {
-    if (!this.bedWanted || this._musicVolume <= 0) return;
+    if (!this.bedWanted || this._musicVolume <= 0 || this.suspended) return;
     if (!this.ctx || this.ctx.state !== 'running') return;
     this.ensureMusicGraph();
     if (!this.musicEl || !this.musicGain || !this.ctx) return;
@@ -167,102 +181,159 @@ export class Sfx {
     setTimeout(() => el.pause(), 650);
   }
 
-  // ---------- Effects ----------
-  private tone(freq: number, duration: number, type: OscillatorType, gainStart: number, delay = 0) {
-    if (this._muted) return;
-    const ctx = this.ensure();
-    const t0 = ctx.currentTime + delay;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t0);
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.linearRampToValueAtTime(gainStart, t0 + 0.025);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(this.fxBus!);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+  // ---------- Lifecycle ----------
+  /** The app went to the background (or the tab was hidden). Everything goes
+   *  quiet at once — an installed game that keeps playing music from a
+   *  locked phone gets uninstalled. */
+  suspend() {
+    this.suspended = true;
+    if (this.musicEl && !this.musicEl.paused) this.musicEl.pause();
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend().catch(() => {});
   }
 
-  /** Plays a frequency contour (in Hz) smoothly interpolated across `duration` seconds — used for soft sweeps. */
-  private curveTone(freqPoints: number[], duration: number, type: OscillatorType, gainStart: number, delay = 0) {
-    if (this._muted) return;
-    const ctx = this.ensure();
-    const t0 = ctx.currentTime + delay;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueCurveAtTime(new Float32Array(freqPoints), t0, duration);
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.linearRampToValueAtTime(gainStart, t0 + Math.min(0.05, duration * 0.3));
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(this.fxBus!);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
-  }
-
-  private noiseBurst(duration: number, gainStart: number, delay = 0, filterFreq = 900) {
-    if (this._muted) return;
-    const ctx = this.ensure();
-    const t0 = ctx.currentTime + delay;
-    const bufferSize = ctx.sampleRate * duration;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this.ctx && this.ctx.state === 'suspended') {
+      void this.ctx.resume().then(() => this.tryStartBed()).catch(() => {});
+    } else {
+      this.tryStartBed();
     }
+  }
+
+  // ---------- Effects ----------
+  private voice(
+    freq: number | number[],
+    duration: number,
+    type: OscillatorType,
+    gainStart: number,
+    opts: { delay?: number; attack?: number; detune?: number; pan?: number } = {}
+  ) {
+    if (this._muted || this.suspended) return;
+    const ctx = this.ensure();
+    const t0 = ctx.currentTime + (opts.delay ?? 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    if (Array.isArray(freq)) osc.frequency.setValueCurveAtTime(new Float32Array(freq), t0, duration);
+    else osc.frequency.setValueAtTime(freq, t0);
+    if (opts.detune) osc.detune.setValueAtTime(opts.detune, t0);
+    const attack = opts.attack ?? Math.min(0.012, duration * 0.2);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.linearRampToValueAtTime(gainStart, t0 + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain);
+    let out: AudioNode = gain;
+    if (opts.pan && typeof ctx.createStereoPanner === 'function') {
+      const panner = ctx.createStereoPanner();
+      panner.pan.setValueAtTime(Math.max(-1, Math.min(1, opts.pan)), t0);
+      gain.connect(panner);
+      out = panner;
+    }
+    out.connect(this.fxBus!);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.03);
+  }
+
+  private tone(freq: number, duration: number, type: OscillatorType, gainStart: number, delay = 0) {
+    this.voice(freq, duration, type, gainStart, { delay });
+  }
+
+  private curveTone(freqPoints: number[], duration: number, type: OscillatorType, gainStart: number, delay = 0) {
+    this.voice(freqPoints, duration, type, gainStart, { delay, attack: Math.min(0.05, duration * 0.3) });
+  }
+
+  private noiseBuffer(ctx: AudioContext): AudioBuffer {
+    if (this.noise && this.noise.sampleRate === ctx.sampleRate) return this.noise;
+    // One second of white noise, made once and sliced by every burst — a
+    // fresh buffer per explosion was the most expensive line in a cascade.
+    const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    this.noise = buffer;
+    return buffer;
+  }
+
+  private noiseBurst(duration: number, gainStart: number, delay = 0, filterFreq = 900, type: BiquadFilterType = 'lowpass') {
+    if (this._muted || this.suspended) return;
+    const ctx = this.ensure();
+    const t0 = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
-    src.buffer = buffer;
+    src.buffer = this.noiseBuffer(ctx);
     const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
+    filter.type = type;
     filter.frequency.value = filterFreq;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.linearRampToValueAtTime(gainStart, t0 + 0.02);
+    gain.gain.linearRampToValueAtTime(gainStart, t0 + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
     src.connect(filter);
     filter.connect(gain);
     gain.connect(this.fxBus!);
-    src.start(t0);
+    src.start(t0, Math.random() * 0.5, duration + 0.05);
   }
 
-  place() {
-    this.tone(560, 0.13, 'sine', 0.2);
-    this.tone(820, 0.1, 'sine', 0.1, 0.035);
+  /** Placing an orb: a soft "bloop" that rises with how full the cell is, so
+   *  loading a cell towards critical audibly builds tension. `fill` is 0–1. */
+  place(fill = 0.33) {
+    const base = 300 + fill * 360;
+    this.curveTone([base * 0.7, base * 1.25, base], 0.14, 'sine', 0.22);
+    this.tone(base * 2, 0.06, 'triangle', 0.05, 0.01);
   }
 
-  /** Rising whir during the pre-blast spin-up — plays *before* explode().
-   *  Starts higher the deeper into a chain it is, so the cascade audibly
-   *  climbs instead of repeating one note. */
+  /** Rising whir during the pre-blast spin-up — plays *before* explode(). */
   chargeUp(depth = 0) {
     const lift = 1 + Math.min(depth, 10) * 0.07;
-    this.curveTone([260 * lift, 520 * lift, 780 * lift], 0.19, 'sawtooth', 0.09);
+    this.curveTone([240 * lift, 480 * lift, 720 * lift], 0.12, 'sawtooth', 0.045);
   }
 
-  explode(strength = 1, depth = 0) {
-    // Slight random pitch variance so a long cascade of hits doesn't sound
-    // like the same sample looping, over a floor that rises with chain depth.
-    const lift = 1 + Math.min(depth, 10) * 0.05;
-    const pitch = (0.88 + Math.random() * 0.24) * lift;
-    this.curveTone([220 * pitch, 95 * pitch], 0.3, 'sine', 0.24 * strength);
-    this.noiseBurst(0.2, 0.14 * strength, 0, 800 * pitch);
+  /** One wave of a cascade detonating. The pitch climbs a pentatonic scale
+   *  with chain depth, so a long chain plays a little rising melody instead
+   *  of the same thud on repeat — the single biggest thing that makes a big
+   *  cascade *feel* big. `cells` is how many blew in this wave. */
+  explode(strength = 1, depth = 0, cells = 1) {
+    const step = Math.min(depth, PENTATONIC.length - 1);
+    const note = PENTATONIC[step];
+    const width = Math.min(1.4, 1 + (cells - 1) * 0.06);
+    const pan = (Math.random() - 0.5) * 0.5;
+    // Body: a pitched pluck on the scale degree.
+    this.voice(note, 0.32, 'triangle', 0.16 * strength, { pan });
+    this.voice(note * 2, 0.18, 'sine', 0.06 * strength, { pan, detune: 6 });
+    // Punch: a falling sub thump.
+    this.curveTone([150, 55], 0.22, 'sine', 0.3 * strength * width);
+    // Crack: filtered noise, brighter deeper into the chain.
+    this.noiseBurst(0.16, 0.16 * strength * width, 0, 1200 + step * 160);
   }
 
-  /** Short bright ping layered on top of a blast once a chain gets long
-   *  enough to be worth calling out — the audio half of the chain counter. */
+  /** A cell changing hands — a quick upward zip. */
+  capture() {
+    this.curveTone([520, 1040], 0.09, 'square', 0.035);
+  }
+
+  /** Short bright ping layered on a blast once a chain is worth calling out. */
   chainTick(depth: number) {
-    const step = Math.min(depth, 12);
-    this.tone(660 * Math.pow(1.06, step), 0.1, 'triangle', 0.13);
+    const step = Math.min(depth, PENTATONIC.length - 1);
+    this.tone(PENTATONIC[step] * 2, 0.12, 'triangle', 0.09);
+  }
+
+  /** The chain just crossed a milestone (×5, ×8, ×12…): a bright chord stab. */
+  combo(level: number) {
+    const root = 392 * Math.pow(1.122, Math.min(level, 6));
+    [1, 1.26, 1.5, 2].forEach((ratio, i) => {
+      this.voice(root * ratio, 0.5, 'sawtooth', 0.045, { delay: i * 0.018, detune: (i - 1.5) * 8 });
+      this.voice(root * ratio, 0.5, 'triangle', 0.06, { delay: i * 0.018 });
+    });
+    this.noiseBurst(0.35, 0.05, 0, 4000, 'highpass');
   }
 
   eliminate() {
-    this.curveTone([320, 150], 0.34, 'sine', 0.18);
+    this.curveTone([420, 180, 90], 0.5, 'sawtooth', 0.07);
+    this.curveTone([320, 140], 0.4, 'sine', 0.16);
   }
 
   turnChange() {
-    this.tone(460, 0.09, 'sine', 0.1);
+    this.tone(660, 0.07, 'sine', 0.06);
+    this.tone(880, 0.06, 'sine', 0.04, 0.05);
   }
 
   /** One clock tick per second in the last few seconds of a Blitz turn. */
@@ -271,14 +342,30 @@ export class Sfx {
   }
 
   win() {
-    const notes = [523.25, 659.25, 783.99, 1046.5];
-    notes.forEach((f, i) => this.tone(f, 0.4, 'sine', 0.24, i * 0.11));
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+    notes.forEach((f, i) => {
+      this.voice(f, 0.45, 'triangle', 0.18, { delay: i * 0.09 });
+      this.voice(f * 2, 0.3, 'sine', 0.05, { delay: i * 0.09 });
+    });
+    this.voice([1046.5, 1568], 0.9, 'sine', 0.12, { delay: 0.48 });
+  }
+
+  lose() {
+    [392, 349.2, 311.1, 261.6].forEach((f, i) => this.voice(f, 0.4, 'triangle', 0.14, { delay: i * 0.13 }));
   }
 
   buttonTap() {
-    this.tone(600, 0.06, 'sine', 0.13);
+    this.curveTone([520, 760], 0.05, 'sine', 0.1);
   }
 }
+
+/** C major pentatonic from C4 up three octaves — every step sounds good next
+ *  to every other, so a cascade of any length is always in tune. */
+const PENTATONIC = [
+  261.63, 293.66, 329.63, 392.0, 440.0,
+  523.25, 587.33, 659.25, 783.99, 880.0,
+  1046.5, 1174.66, 1318.51, 1567.98, 1760.0,
+];
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));

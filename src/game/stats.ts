@@ -71,3 +71,13 @@ export const stats = {
     write(s);
   },
 };
+
+/** How far through the current level, 0–1. Levels are spaced on a square
+ *  root of (matches + 2 × wins), so each takes a little longer than the last. */
+export function levelProgress(s: PlayerStats = stats.get()): number {
+  const points = s.matches + s.wins * 2;
+  const level = stats.level(s);
+  const floor = (level - 1) ** 2;
+  const next = level ** 2;
+  return Math.max(0, Math.min(1, (points - floor) / Math.max(1, next - floor)));
+}

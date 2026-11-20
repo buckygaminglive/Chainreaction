@@ -3517,3 +3517,1355 @@ html,
 body {
   overscroll-behavior-y: none;
 }
+
+/* =====================================================================
+   HOME — the menu is a small board.
+   Graphite cells with a visible tile edge (they press like keys), real glossy
+   orbs inside saying what each option is, the board's corner brackets around
+   them, one cyan accent. No gradients on chrome, no coloured glows on cards.
+   ===================================================================== */
+#screen-menu.home {
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  padding: max(14px, env(safe-area-inset-top)) 18px max(14px, env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+
+.home > * {
+  width: 100%;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.home-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+}
+
+.home-profile {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: transform var(--t-fast) var(--ease-pop);
+}
+
+.home-profile:active {
+  transform: scale(0.97);
+}
+
+.home-avatar {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+
+.home-avatar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-id {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.home-name {
+  font-weight: 600;
+  font-size: 14px;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-lv {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.home-xp {
+  width: 58px;
+  height: 2px;
+  background: var(--hairline-strong);
+  overflow: hidden;
+}
+
+.home-xp > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.8s var(--ease-soft);
+}
+
+.home-top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.home-top-actions .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.home-hero {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px 0 18px;
+}
+
+.home-hero .mark {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 16px;
+}
+
+/* ---------- the board ---------- */
+.home-board {
+  position: relative;
+  flex: none;
+  display: grid;
+  /* minmax(0, …), not 1fr: a long caption must ellipsize, not widen its
+     column past the edge of the screen. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  background: #090c11;
+  border-radius: 4px;
+}
+
+/* Registration brackets on the plate's corners — the in-game board frame. */
+.home-board::before,
+.home-board::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--grid-line), var(--grid-line)) top left / 18px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) top left / 1px 18px,
+    linear-gradient(var(--grid-line), var(--grid-line)) top right / 18px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) top right / 1px 18px,
+    linear-gradient(var(--grid-line), var(--grid-line)) bottom left / 18px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) bottom left / 1px 18px,
+    linear-gradient(var(--grid-line), var(--grid-line)) bottom right / 18px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) bottom right / 1px 18px;
+  background-repeat: no-repeat;
+}
+
+.home-board::after {
+  /* Edge ticks, one per column and row, like the lattice's measurement marks. */
+  inset: 0;
+  background:
+    linear-gradient(var(--grid-line), var(--grid-line)) 25% 0 / 1px 5px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 75% 0 / 1px 5px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 25% 100% / 1px 5px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 75% 100% / 1px 5px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 0 25% / 5px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 0 75% / 5px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 100% 25% / 5px 1px,
+    linear-gradient(var(--grid-line), var(--grid-line)) 100% 75% / 5px 1px;
+  background-repeat: no-repeat;
+}
+
+.home {
+  --grid-line: #2b3542;
+}
+
+/* A cell. The 4px bottom edge is the tile's side, the same machined block the
+   board is built from; pressing drops the face onto it. */
+.cell-btn {
+  --c: #161b23;
+  --own: transparent;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 132px;
+  padding: 12px 12px 11px;
+  text-align: left;
+  font-family: var(--font-ui);
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--own) 13%, #161b23);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 0 color-mix(in srgb, var(--own) 18%, #0b0e13);
+  transform: translateY(0);
+  cursor: pointer;
+  transition: transform 90ms var(--ease-out), box-shadow 90ms var(--ease-out);
+}
+
+.cell-btn:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 0 color-mix(in srgb, var(--own) 18%, #0b0e13);
+}
+
+/* Online is the cell that is "held": tinted cyan the way an owned cell is in
+   play. It is the one place the accent colours a surface. */
+.cell-online {
+  --own: #3ad9ff;
+}
+
+.cell-tag {
+  position: absolute;
+  top: 10px;
+  right: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cell-online .cell-tag {
+  color: var(--accent);
+}
+
+.cell-label {
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cell-cap {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ---------- orbs ----------
+   The same glossy particle the board draws, in CSS: a lit sphere with a
+   specular point, laid out like the game's 2-, 3- and 4-orb clusters. */
+.cell-orbs {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 0;
+  height: 0;
+}
+
+.cell-orbs i {
+  --s: 26px;
+  position: absolute;
+  left: calc(var(--x, 0px) - var(--s) / 2);
+  top: calc(var(--y, 0px) - var(--s) / 2);
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.95) 0 7%, transparent 18%),
+    radial-gradient(circle at 40% 36%, color-mix(in srgb, var(--o) 55%, white) 0%, var(--o) 48%, color-mix(in srgb, var(--o) 55%, black) 100%);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.45);
+  transition: transform 160ms var(--ease-pop);
+  animation: orb-idle 3.2s ease-in-out infinite;
+}
+
+.n2 i:nth-child(1) { --x: -12px; animation-delay: -0.4s; }
+.n2 i:nth-child(2) { --x: 12px; animation-delay: -1.9s; }
+
+.n3 i:nth-child(1) { --y: -11px; animation-delay: -0.2s; }
+.n3 i:nth-child(2) { --x: -11px; --y: 8px; animation-delay: -1.1s; }
+.n3 i:nth-child(3) { --x: 11px; --y: 8px; animation-delay: -2.3s; }
+
+.n4 i { --s: 23px; }
+.n4 i:nth-child(1) { --x: -11px; --y: -11px; animation-delay: -0.3s; }
+.n4 i:nth-child(2) { --x: 11px; --y: -11px; animation-delay: -1.3s; }
+.n4 i:nth-child(3) { --x: -11px; --y: 11px; animation-delay: -2.1s; }
+.n4 i:nth-child(4) { --x: 11px; --y: 11px; animation-delay: -2.8s; }
+
+@keyframes orb-idle {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -2px;
+  }
+}
+
+/* Pressing a cell loads it: the cluster strains outward, the way a cell
+   winds up just before it blows. */
+.cell-btn:active .n2 i:nth-child(1) { transform: translateX(-3px) scale(1.08); }
+.cell-btn:active .n2 i:nth-child(2) { transform: translateX(3px) scale(1.08); }
+.cell-btn:active .n3 i,
+.cell-btn:active .n4 i {
+  transform: scale(1.12);
+}
+
+/* Today's puzzle, unplayed: the near-critical ring the board uses for a cell
+   one orb from blowing. Solved, it settles to a single quiet orb. */
+.cell-ring {
+  position: absolute;
+  left: -30px;
+  top: -30px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 176, 32, 0.7);
+  animation: cell-critical 1.6s ease-in-out infinite;
+}
+
+@keyframes cell-critical {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+.cell-daily.is-done .cell-ring,
+.cell-daily.is-done .cell-orbs i:nth-child(n + 2) {
+  display: none;
+}
+
+.cell-daily.is-done .cell-orbs i:nth-child(1) {
+  --y: 0px;
+  animation: none;
+}
+
+.cell-daily:not(.is-done) .cell-orbs i {
+  animation: orb-agitated 0.5s ease-in-out infinite;
+}
+
+@keyframes orb-agitated {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  25% {
+    translate: 0.6px -0.6px;
+  }
+  75% {
+    translate: -0.6px 0.6px;
+  }
+}
+
+.home-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding-top: 14px;
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.text-link {
+  background: none;
+  border: none;
+  padding: 8px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.text-link:active {
+  color: var(--text);
+}
+
+/* Cells drop onto the plate one by one when the screen arrives. */
+.home.screen-in .cell-btn {
+  animation: cell-in 0.36s var(--ease-out) both;
+}
+.home.screen-in .cell-btn:nth-child(2) { animation-delay: 0.05s; }
+.home.screen-in .cell-btn:nth-child(3) { animation-delay: 0.1s; }
+.home.screen-in .cell-btn:nth-child(4) { animation-delay: 0.15s; }
+
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The attract match shows through behind the wordmark; the board area is
+   kept solid so the menu never fights it. */
+#app:has(#screen-menu:not(.hidden)) .attract-host::after {
+  background:
+    radial-gradient(70% 34% at 50% 28%, rgba(7, 9, 12, 0.6), rgba(7, 9, 12, 0.25) 70%, transparent),
+    linear-gradient(rgba(7, 9, 12, 0.65), transparent 16%, transparent 38%, rgba(7, 9, 12, 0.94) 58%);
+}
+
+@media (max-height: 680px) {
+  .home-hero .mark {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 10px;
+  }
+  .home-hero .logo {
+    font-size: 36px;
+  }
+  .cell-btn {
+    min-height: 112px;
+  }
+  .cell-orbs {
+    top: 36%;
+  }
+}
+
+@media (max-height: 590px) {
+  .home-hero .mark,
+  .home-hero .tagline {
+    display: none;
+  }
+  .home-hero {
+    padding: 2px 0 10px;
+  }
+  .cell-btn {
+    min-height: 92px;
+  }
+  .cell-orbs {
+    display: none;
+  }
+}
+
+/* Landscape tablets and monitors: wordmark left, board right. */
+@media (orientation: landscape) and (min-width: 700px) {
+  #screen-menu.home {
+    display: grid;
+    grid-template-columns: 1fr minmax(320px, 420px);
+    grid-template-rows: auto 1fr auto;
+    column-gap: 32px;
+  }
+  #screen-menu.home > * {
+    max-width: none;
+    margin: 0;
+  }
+  .home-top {
+    grid-column: 1 / -1;
+  }
+  .home-hero {
+    grid-column: 1;
+    grid-row: 2 / 4;
+  }
+  .home-board {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
+  }
+  .home-links {
+    grid-column: 2;
+    grid-row: 3;
+  }
+}
+
+.reduce-motion .home.screen-in .cell-btn,
+.reduce-motion .cell-orbs i,
+.reduce-motion .cell-ring {
+  animation: none !important;
+}
+
+/* ---------- vs Computer sheet ---------- */
+.cpu-levels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+
+.cpu-level {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 11px 4px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-pop), border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.cpu-level:active {
+  transform: scale(0.95);
+}
+
+.cpu-level.active {
+  color: var(--text);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.cpu-pips {
+  display: flex;
+  gap: 3px;
+  height: 8px;
+}
+
+.cpu-pips i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.cpu-level.active .cpu-pips i {
+  background: var(--accent);
+}
+
+.cpu-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.cpu-bot {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+/* ---------- Daily Blast ---------- */
+.daily-card {
+  text-align: center;
+}
+
+.daily-card h2 {
+  color: #ffd27a;
+}
+
+.daily-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 4px 0 10px;
+}
+
+.daily-score-value {
+  font-family: var(--font-mono);
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffb020;
+  text-shadow: 0 0 28px rgba(255, 176, 32, 0.55);
+}
+
+.daily-score-of {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.daily-tries {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+
+.daily-verdict {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.daily-metrics {
+  margin-bottom: 10px;
+}
+
+.daily-next {
+  margin: 0 0 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.daily-next span {
+  color: var(--text);
+}
+
+.puzzle-hud {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: min(92%, 420px);
+  padding: 9px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  background: rgba(10, 12, 16, 0.82);
+  backdrop-filter: blur(6px);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 3px;
+  pointer-events: none;
+}
+
+.ph-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #ffd27a;
+  letter-spacing: 0.04em;
+}
+
+.ph-title span {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.ph-goal {
+  grid-column: 1;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.ph-goal b {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.ph-tries {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ph-tries i {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--hairline-strong);
+  color: var(--text-dim);
+}
+
+.ph-tries i.now {
+  border-color: #ffb020;
+  box-shadow: 0 0 10px -2px rgba(255, 176, 32, 0.8);
+}
+
+.ph-tries i.used {
+  background: rgba(255, 51, 85, 0.16);
+  border-color: rgba(255, 51, 85, 0.4);
+  color: #ffb3c0;
+}
+
+.ph-tries i.win {
+  background: rgba(93, 240, 138, 0.18);
+  border-color: rgba(93, 240, 138, 0.55);
+  color: #c6ffd8;
+}
+
+/* With the puzzle card at the top, the chain counter drops below it. */
+#board-host:has(.puzzle-hud:not(.hidden)) .chain-readout {
+  top: 78px;
+}
+
+/* ---------- Board toast ---------- */
+.board-toast {
+  --toast-color: var(--accent);
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 5;
+  transform: translate(-50%, 12px);
+  opacity: 0;
+  pointer-events: none;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--toast-color) 50%, transparent);
+  background: rgba(10, 12, 16, 0.86);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px -10px color-mix(in srgb, var(--toast-color) 70%, transparent);
+  transition: opacity var(--t-base) var(--ease-out), transform var(--t-base) var(--ease-out);
+}
+
+.board-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- Chain callout, rebuilt ----------
+   The number is the hero: big, in the mover's colour, glowing. The word under
+   it names the tier, and crossing a milestone gets a punch. */
+.chain-readout {
+  --chain-color: var(--accent);
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 18px 7px;
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--chain-color) 45%, transparent);
+  box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--chain-color) 80%, transparent);
+}
+
+.chain-readout .cv {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--chain-color);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--chain-color) 75%, transparent);
+}
+
+.chain-readout .ck {
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--text);
+}
+
+.chain-readout[data-level='2'] .cv,
+.chain-readout[data-level='3'] .cv {
+  font-size: 38px;
+}
+
+.chain-readout[data-level='4'] .cv,
+.chain-readout[data-level='5'] .cv {
+  font-size: 46px;
+}
+
+.chain-readout.milestone {
+  animation: chain-milestone 0.55s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+@keyframes chain-milestone {
+  0% {
+    transform: translateX(-50%) scale(0.6) rotate(-6deg);
+  }
+  40% {
+    transform: translateX(-50%) scale(1.22) rotate(3deg);
+  }
+  70% {
+    transform: translateX(-50%) scale(0.96) rotate(-1deg);
+  }
+  100% {
+    transform: translateX(-50%) scale(1) rotate(0);
+  }
+}
+
+.share-btn {
+  flex: 0 0 auto !important;
+}
+
+.reduce-motion .chain-readout.milestone {
+  animation: none !important;
+}
+
+/* Sheets dock to the bottom edge whatever their height. The overlay is a
+   column flexbox, so its align-items is horizontal; a short sheet was being
+   centred vertically and floated mid-screen. */
+@media (max-width: 699px) {
+  .overlay .howto-card {
+    margin-top: auto;
+  }
+}
+
+/* =====================================================================
+   NAVIGATION — pages, headers, the tab bar, and how they move.
+   ===================================================================== */
+:root {
+  --tabbar-h: 60px;
+}
+
+/* A page owns its own scrolling: the header stays put and the body scrolls
+   under it. Overrides the older centred-column screen shells. */
+.screen.page {
+  padding: 0 !important;
+  overflow: hidden !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+
+.page-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(14px, env(safe-area-inset-top)) 18px 12px;
+}
+
+.page-back svg {
+  width: 20px;
+  height: 20px;
+}
+
+.page-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.page-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.page-title {
+  margin: 0;
+  font-weight: 300;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.page-actions .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.page-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.pill-k {
+  color: var(--text-dim);
+}
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 4px 16px 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The body scrolls; its children must never be squeezed to fit instead.
+   Without this, anything with overflow:hidden (the metric rows) has a
+   minimum height of zero and is the first thing the flexbox crushes. */
+.page-body > * {
+  flex-shrink: 0;
+}
+
+body.with-tabbar .tab-page .page-body {
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
+}
+
+/* The profile and standings blocks carry their own spacing from when they
+   were sheets; the body's gap would double it. */
+.page-body.profile-card {
+  gap: 0;
+}
+
+.page-body.boards-card {
+  max-width: 560px;
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.section-action {
+  margin-left: auto;
+}
+
+.lobby-code {
+  text-align: center;
+  padding: 4px 0 2px;
+}
+
+.board-panel {
+  padding: 6px;
+}
+
+/* ---------- tab bar ---------- */
+.tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(9, 12, 17, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--hairline);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform var(--t-slow) var(--ease-soft), visibility 0s linear var(--t-slow);
+}
+
+body.with-tabbar .tabbar {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--t-slow) var(--ease-soft), visibility 0s;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.tab svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--t-fast) var(--ease-pop), color var(--t-fast) var(--ease-out);
+}
+
+.tab svg .fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+.tab-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tab.active {
+  color: var(--text);
+}
+
+.tab.active svg {
+  color: var(--accent);
+}
+
+.tab:active svg {
+  transform: scale(0.86);
+}
+
+.tab-dot {
+  position: absolute;
+  top: 9px;
+  left: calc(50% + 7px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffb020;
+  box-shadow: 0 0 0 2px #090c11;
+}
+
+#tab-dot-online {
+  background: #ff3355;
+}
+
+/* The active marker is a particle riding the bar's top edge, sliding to the
+   tab you pick. */
+.tab-orb {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  width: 20%;
+  height: 7px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  transform: translateX(calc(var(--tab-i, 0) * 100%));
+  transition: transform var(--t-slow) var(--ease-soft);
+}
+
+.tab-orb::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0 18%, var(--accent) 55%, #0c7fa0 100%);
+  box-shadow: 0 0 8px rgba(58, 217, 255, 0.7);
+}
+
+/* Room for the bar under the home screen's board. */
+body.with-tabbar #screen-menu.home {
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px);
+}
+
+/* ---------- moves between pages ---------- */
+.enter-right {
+  animation: page-in-right 0.26s var(--ease-out) both;
+}
+.enter-left {
+  animation: page-in-left 0.26s var(--ease-out) both;
+}
+.enter-push {
+  animation: page-push 0.3s var(--ease-soft) both;
+}
+.enter-pop {
+  animation: page-pop 0.26s var(--ease-out) both;
+}
+
+@keyframes page-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes page-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes page-push {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes page-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.reduce-motion .enter-right,
+.reduce-motion .enter-left,
+.reduce-motion .enter-push,
+.reduce-motion .enter-pop {
+  animation: none !important;
+}
+
+/* ---------- Daily page ---------- */
+.dp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 44%) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.dp-hero > .primary-btn,
+.dp-hero > .ghost-btn {
+  grid-column: 1 / -1;
+}
+
+.dp-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dp-preview.is-done {
+  opacity: 0.6;
+  filter: saturate(0.6);
+}
+
+.dp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dp-status {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.dp-tries {
+  display: flex;
+  gap: 6px;
+}
+
+.dp-tries i {
+  flex: 1;
+  height: 30px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--hairline-strong);
+  color: var(--text-dim);
+}
+
+.dp-tries i.now {
+  border-color: #ffb020;
+  color: #ffd27a;
+}
+
+.dp-tries i.used {
+  background: rgba(255, 51, 85, 0.12);
+  border-color: rgba(255, 51, 85, 0.35);
+  color: #ffb3c0;
+}
+
+.dp-tries i.win {
+  background: rgba(93, 240, 138, 0.14);
+  border-color: rgba(93, 240, 138, 0.5);
+  color: #c6ffd8;
+}
+
+.dp-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dp-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.dp-mark {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  background: #161b23;
+  box-shadow: 0 3px 0 #0b0e13;
+  color: var(--text-dim);
+}
+
+.dp-day.solved .dp-mark {
+  background: color-mix(in srgb, #5df08a 18%, #161b23);
+  color: #c6ffd8;
+}
+
+.dp-day.tried .dp-mark {
+  background: color-mix(in srgb, #ffb020 16%, #161b23);
+  color: #ffd27a;
+}
+
+.dp-day.missed .dp-mark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.dp-day.today .dp-mark {
+  outline: 1px solid var(--accent-line);
+  outline-offset: 2px;
+}
+
+.dp-dow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.dp-rules {
+  margin: 0;
+  padding: 0 0 0 20px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+
+.dp-rules li::marker {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+/* ---------- list rows (profile → more) ---------- */
+.list-group {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.list-row:first-child {
+  border-top: none;
+}
+
+.list-row:active {
+  background: var(--panel-2);
+}
+
+.list-go {
+  color: var(--text-faint);
+  font-size: 15px;
+}
+
+.app-version {
+  margin: 14px 0 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* On its own page the standings list is part of the page scroll, not a
+   scroll box nested inside it. */
+.page-body .board-rows {
+  max-height: none;
+  overflow: visible;
+}

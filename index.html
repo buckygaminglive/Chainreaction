@@ -52,60 +52,165 @@
            screen change never has to re-parent a live WebGL canvas. -->
       <div id="attract-host" class="attract-host hidden" aria-hidden="true"></div>
 
-      <!-- TITLE SCREEN — one decision. Everything that configures a match
-           lives in the setup sheet below, defaulted to whatever was played
-           last, so arriving at the game is not arriving at a form. -->
-      <section id="screen-menu" class="screen">
-        <!-- Mute keeps a corner because it is the one control worth reaching
-             mid-thought. Everything else is in the stack. -->
-        <button id="mute-btn-menu" class="icon-btn corner-btn" aria-label="Toggle sound">🔊</button>
+      <!-- TAB BAR — the five top-level places. Shown on those five pages and
+           nowhere else: a match, the lobby and the ranked queue each take the
+           whole screen, and say how to get back in their own header. -->
+      <nav id="tabbar" class="tabbar" aria-label="Main">
+        <button class="tab" data-tab="play" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/><circle class="fill" cx="17" cy="17" r="2.1"/></svg><span class="tab-label">Play</span></button>
+        <button class="tab" data-tab="daily" aria-label="Daily"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="fill" cx="12" cy="12" r="3.2"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M5.3 18.7l2.5-2.5M16.2 7.8l2.5-2.5"/></svg><span class="tab-label">Daily</span><i id="tab-dot-daily" class="tab-dot hidden"></i></button>
+        <button class="tab" data-tab="online" aria-label="Online"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5M12 3.5C9.4 5.9 8.1 8.7 8.1 12s1.3 6.1 3.9 8.5"/></svg><span class="tab-label">Online</span><i id="tab-dot-online" class="tab-dot hidden"></i></button>
+        <button class="tab" data-tab="ranks" aria-label="Ranks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5V13h4.5v7.5M9.75 20.5V8.5h4.5v12M15.5 20.5V11H20v9.5M2.5 20.5h19"/></svg><span class="tab-label">Ranks</span></button>
+        <button class="tab" data-tab="profile" aria-label="Profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c.9-4 3.8-6.3 7.5-6.3s6.6 2.3 7.5 6.3"/></svg><span class="tab-label">Profile</span></button>
+        <span class="tab-orb" aria-hidden="true"></span>
+      </nav>
 
-        <div class="menu-inner title-inner">
-          <div class="logo-wrap">
-            <!-- The brand mark from favicon.svg, animated: the core charges,
-                 goes critical, and fires into its four neighbours. The logo
-                 demonstrates the mechanic. -->
-            <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-              <circle class="mark-shell" cx="32" cy="32" r="19" />
-              <g class="mark-traces">
-                <path d="M32 23V15" /><path d="M32 41v8" />
-                <path d="M23 32h-8" /><path d="M41 32h8" />
-              </g>
-              <g class="mark-nodes">
-                <circle cx="32" cy="12" r="3.4" /><circle cx="32" cy="52" r="3.4" />
-                <circle cx="12" cy="32" r="3.4" /><circle cx="52" cy="32" r="3.4" />
-              </g>
-              <circle class="mark-wave" cx="32" cy="32" r="10" />
-              <circle class="mark-core" cx="32" cy="32" r="10" />
-            </svg>
-            <h1 class="logo">FISSILE</h1>
-            <p class="tagline">critical mass · propagation · capture</p>
+
+      <!-- HOME — the menu is a small board. Each way to play is a cell, with
+           real orbs in it saying what it is: one against one for the
+           computer, a crowd of colours for online, a primed cluster for
+           today's puzzle. Same tiles, same orbs, same frame as the game, so
+           the first screen already looks like the thing you are about to play. -->
+      <section id="screen-menu" class="screen home">
+        <header class="home-top">
+          <button id="profile-btn" class="home-profile" aria-label="Open profile">
+            <span id="home-avatar" class="home-avatar"></span>
+            <span class="home-id">
+              <span id="home-name" class="home-name">Player</span>
+              <span class="home-level">
+                <span id="level-chip" class="home-lv">LV 1</span>
+                <span class="home-xp" aria-hidden="true"><span id="home-xp-fill"></span></span>
+              </span>
+            </span>
+          </button>
+          <div class="home-top-actions">
+            <button id="mute-btn-menu" class="icon-btn" aria-label="Toggle sound">🔊</button>
+            <button id="settings-btn" class="icon-btn" aria-label="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.6 7.6 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.6 7.6 0 0 0 2.6-1.5l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="home-hero">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+            <circle class="mark-shell" cx="32" cy="32" r="19" />
+            <g class="mark-traces">
+              <path d="M32 23V15" /><path d="M32 41v8" />
+              <path d="M23 32h-8" /><path d="M41 32h8" />
+            </g>
+            <g class="mark-nodes">
+              <circle cx="32" cy="12" r="3.4" /><circle cx="32" cy="52" r="3.4" />
+              <circle cx="12" cy="32" r="3.4" /><circle cx="52" cy="32" r="3.4" />
+            </g>
+            <circle class="mark-wave" cx="32" cy="32" r="10" />
+            <circle class="mark-core" cx="32" cy="32" r="10" />
+          </svg>
+          <h1 class="logo">FISSILE</h1>
+          <p class="tagline">critical mass · chain reaction</p>
+        </div>
+
+        <div class="home-board" role="group" aria-label="Play">
+          <button id="daily-btn" class="cell-btn cell-daily">
+            <span id="daily-streak" class="cell-tag">#1</span>
+            <span class="cell-orbs n3" aria-hidden="true">
+              <i style="--o:#ffb020"></i><i style="--o:#ffb020"></i><i style="--o:#ffb020"></i>
+              <b class="cell-ring"></b>
+            </span>
+            <span class="cell-label">Daily Blast</span>
+            <span id="daily-sub" class="cell-cap">find the max chain</span>
+          </button>
+
+          <button id="play-online-btn" class="cell-btn cell-online">
+            <span class="cell-tag">live</span>
+            <span class="cell-orbs n4" aria-hidden="true">
+              <i style="--o:#3ad9ff"></i><i style="--o:#ff3355"></i><i style="--o:#5df08a"></i><i style="--o:#a878ff"></i>
+            </span>
+            <span class="cell-label">Online</span>
+            <span class="cell-cap">ranked · rooms</span>
+          </button>
+
+          <button id="cpu-btn" class="cell-btn cell-cpu">
+            <span class="cell-tag">1P</span>
+            <span class="cell-orbs n2" aria-hidden="true">
+              <i style="--o:#3ad9ff"></i><i style="--o:#ff3355"></i>
+            </span>
+            <span class="cell-label">vs Computer</span>
+            <span id="cpu-sub" class="cell-cap">normal</span>
+          </button>
+
+          <button id="play-btn" class="cell-btn cell-local" aria-haspopup="dialog">
+            <span class="cell-tag">2–6P</span>
+            <span class="cell-orbs n3" aria-hidden="true">
+              <i style="--o:#5df08a"></i><i style="--o:#ff5cc0"></i><i style="--o:#ffb020"></i>
+            </span>
+            <span class="cell-label">Pass &amp; Play</span>
+            <span class="cell-cap">one phone</span>
+          </button>
+        </div>
+
+        <nav class="home-links" aria-label="More">
+          <button id="howto-btn" class="text-link">How to play</button>
+        </nav>
+      </section>
+
+      <!-- DAILY — today's puzzle, the streak and the week. The board itself is
+           drawn on the page, so you can study it before you commit a try. -->
+      <section id="screen-daily-page" class="screen page tab-page hidden">
+        <header class="page-head">
+          <div class="page-titles">
+            <span id="dp-eyebrow" class="page-eyebrow">puzzle #1</span>
+            <h1 class="page-title">Daily Blast</h1>
+          </div>
+          <div class="page-actions">
+            <span class="page-pill"><span class="pill-k">next in</span> <span id="dp-countdown">--:--</span></span>
+          </div>
+        </header>
+        <div class="page-body">
+          <div class="panel dp-hero">
+            <div id="dp-preview" class="dp-preview" aria-label="Today's board"></div>
+            <div class="dp-side">
+              <p id="dp-status" class="dp-status">One move. Set off the biggest chain reaction on the board.</p>
+              <div id="dp-tries" class="dp-tries" aria-label="Tries"></div>
+            </div>
+            <button id="dp-play-btn" class="primary-btn">Play today's puzzle</button>
+            <button id="dp-share-btn" class="ghost-btn wide-btn hidden">Share result</button>
           </div>
 
-          <!-- One centred column, every option the same width. Play local
-               opens the match setup rather than starting immediately: the
-               settings are the first thing you want when you have chosen to
-               play locally, not something to have configured beforehand. -->
-          <nav class="title-actions" aria-label="Main menu">
-            <button id="play-btn" class="primary-btn" aria-haspopup="dialog">Play local</button>
-            <button id="play-online-btn" class="ghost-btn wide-btn">Play online</button>
-            <button id="profile-btn" class="ghost-btn wide-btn">Profile</button>
-            <button id="settings-btn" class="ghost-btn wide-btn">Options</button>
-            <button id="howto-btn" class="ghost-btn wide-btn">How to play</button>
-          </nav>
+          <div class="win-metrics dp-metrics">
+            <div class="win-metric"><span class="mv" id="dp-streak">0</span><span class="mk">day streak</span></div>
+            <div class="win-metric"><span class="mv" id="dp-played">0</span><span class="mk">played</span></div>
+            <div class="win-metric"><span class="mv" id="dp-perfect">0</span><span class="mk">perfect</span></div>
+          </div>
 
-          <p id="level-chip" class="profile-line"></p>
+          <section class="page-section">
+            <h2 class="section-label">This week</h2>
+            <div id="dp-week" class="dp-week"></div>
+          </section>
+
+          <section class="page-section">
+            <h2 class="section-label">How it works</h2>
+            <ol class="dp-rules">
+              <li>Everyone in the world gets the same board today.</li>
+              <li>You have three tries. Each one is a single move.</li>
+              <li>Match the deepest chain the board allows for a perfect score — then send it to your group.</li>
+            </ol>
+          </section>
         </div>
       </section>
 
-      <!-- PROFILE — identity, rank and record in one place.
-           An overlay rather than a screen: it is opened from the title and
-           from the online lobby, and both want to be returned to afterwards
-           rather than replaced. -->
-      <section id="screen-profile" class="screen hidden overlay">
-        <div class="howto-card profile-card" role="dialog" aria-label="Profile">
-          <div class="win-eyebrow">operator file</div>
-
+      <!-- PROFILE — identity, rank, record and the app's own settings. -->
+      <section id="screen-profile" class="screen page tab-page hidden">
+        <header class="page-head">
+          <div class="page-titles">
+            <span class="page-eyebrow">operator file</span>
+            <h1 class="page-title">Profile</h1>
+          </div>
+          <div class="page-actions">
+            <button id="profile-settings-btn" class="icon-btn" aria-label="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.6 7.6 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.6 7.6 0 0 0 2.6-1.5l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </header>
+        <div class="page-body profile-card">
           <!-- IDENTITY -->
           <div class="profile-head">
             <button id="profile-avatar-btn" class="profile-avatar" aria-label="Change avatar" aria-haspopup="true"></button>
@@ -120,8 +225,6 @@
             </div>
           </div>
 
-          <!-- AVATAR PICKER — collapsed until asked for, so the profile opens
-               as a summary rather than as a form. -->
           <div id="profile-avatar-picker" class="avatar-picker hidden" role="group" aria-label="Choose an avatar"></div>
 
           <!-- RANK -->
@@ -145,21 +248,84 @@
             <div class="win-metric"><span class="mv" id="profile-chain">×0</span><span class="mk">best chain</span></div>
           </div>
 
-          <!-- HISTORY -->
           <div class="field">
             <div class="field-label">Recent matches <span class="field-unit">ranked only</span></div>
             <div id="profile-history" class="history-list"></div>
           </div>
 
-          <!-- LOCAL RECORD — kept visibly separate from the ranked record.
-               One is this device's own tally and the other is the account's;
-               adding them together would be a number that means nothing. -->
           <div class="field">
             <div class="field-label">On this device <span class="field-unit">local play</span></div>
             <div id="profile-local" class="profile-local"></div>
           </div>
 
-          <button id="profile-close-btn" class="ghost-btn">Back</button>
+          <div class="field">
+            <div class="field-label">More</div>
+            <div class="list-group">
+              <button id="profile-settings-row" class="list-row"><span>Settings</span><span class="list-go">›</span></button>
+              <button id="profile-howto-row" class="list-row"><span>How to play</span><span class="list-go">›</span></button>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/feedback.html" target="_blank" rel="noopener"><span>Send feedback</span><span class="list-go">↗</span></a>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/privacy.html" target="_blank" rel="noopener"><span>Privacy policy</span><span class="list-go">↗</span></a>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/terms.html" target="_blank" rel="noopener"><span>Terms</span><span class="list-go">↗</span></a>
+            </div>
+            <p id="app-version" class="app-version">FISSILE</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- VS COMPUTER — one decision (how hard), two optional ones. Opens with
+           whatever was played last, so a returning player is one tap from a
+           game: open, Start. -->
+      <section id="screen-cpu" class="screen hidden overlay">
+        <div class="howto-card setup-card cpu-card" role="dialog" aria-label="Play against the computer">
+          <div class="win-eyebrow">solo</div>
+          <h2>vs Computer</h2>
+
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Difficulty</div>
+              <div id="cpu-level-group" class="cpu-levels"></div>
+              <p id="cpu-level-blurb" class="mode-blurb"></p>
+            </div>
+            <div class="field">
+              <div class="field-label">Lattice <span class="field-unit">board</span></div>
+              <div id="cpu-size-group" class="segmented">
+                <button class="segment" data-size="small">9×5</button>
+                <button class="segment active" data-size="medium">11×6</button>
+                <button class="segment" data-size="large">13×7</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="setup-actions">
+            <button id="cpu-start-btn" class="primary-btn">Start</button>
+            <button id="cpu-close-btn" class="ghost-btn">Back</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- DAILY BLAST RESULT — the same puzzle for everyone today, a score out
+           of the best possible, and a result built to be pasted into a group
+           chat. -->
+      <section id="screen-daily" class="screen hidden overlay">
+        <div class="howto-card daily-card" role="dialog" aria-label="Daily Blast result">
+          <div class="win-eyebrow" id="daily-eyebrow">daily blast</div>
+          <h2 id="daily-title">Daily Blast</h2>
+          <div class="daily-score">
+            <span id="daily-score-value" class="daily-score-value">×0</span>
+            <span id="daily-score-of" class="daily-score-of">best ×0</span>
+          </div>
+          <div id="daily-tries" class="daily-tries"></div>
+          <p id="daily-verdict" class="daily-verdict"></p>
+          <div class="win-metrics daily-metrics">
+            <div class="win-metric"><span class="mv" id="daily-streak-value">0</span><span class="mk">day streak</span></div>
+            <div class="win-metric"><span class="mv" id="daily-played-value">0</span><span class="mk">played</span></div>
+            <div class="win-metric"><span class="mv" id="daily-perfect-value">0</span><span class="mk">perfect</span></div>
+          </div>
+          <p class="daily-next">New puzzle in <span id="daily-countdown">--:--</span></p>
+          <div class="setup-actions">
+            <button id="daily-share-btn" class="primary-btn">Share result</button>
+            <button id="daily-close-btn" class="ghost-btn">Done</button>
+          </div>
         </div>
       </section>
 
@@ -287,23 +453,19 @@
         </div>
       </section>
 
-      <!-- ONLINE: CREATE / JOIN -->
-      <section id="screen-online" class="screen hidden">
-        <button id="online-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Back to menu">←</button>
-        <div class="menu-inner">
-          <div class="logo-wrap">
-            <h1 class="logo logo-sm">PLAY ONLINE</h1>
-            <p class="tagline">private room · server authoritative</p>
+      <!-- ONLINE — your rank and the ranked queue, then a room with friends,
+           then the rooms anyone can join. -->
+      <section id="screen-online" class="screen page tab-page hidden">
+        <header class="page-head">
+          <div class="page-titles">
+            <span class="page-eyebrow">server authoritative</span>
+            <h1 class="page-title">Online</h1>
           </div>
-
-          <!-- IDENTITY — who you are and where you rank, then the one thing
-               most people came here to press.
-
-               The name field used to sit open at the top of this screen on
-               every visit. It is needed once. After that it is a form you have
-               already filled in, taking the most valuable space on the screen
-               to ask a question you have answered — so it collapses behind
-               Edit and the rank card stands in its place. -->
+          <div class="page-actions">
+            <span id="online-presence" class="page-pill"><span class="dot-live"></span> <span id="online-presence-n">—</span> <span class="pill-k">online</span></span>
+          </div>
+        </header>
+        <div class="page-body">
           <div class="panel">
             <div id="account-strip" class="account-strip hidden"></div>
             <p id="account-offline" class="field-note hidden">
@@ -321,36 +483,27 @@
 
             <div id="invite-inbox" class="invite-inbox hidden"></div>
 
-            <!-- Directly under the rank, because that is what it moves. -->
             <button id="open-ranked-btn" class="primary-btn">Ranked match</button>
-            <button id="online-profile-btn" class="ghost-btn wide-btn">My profile</button>
-            <button id="leaderboard-btn" class="ghost-btn wide-btn">Leaderboards &amp; friends</button>
           </div>
 
-          <!-- PRIVATE ROOM — first of the two ways in. Playing with someone you
-               already know is the more common reason to open this screen, and
-               it asks nothing of the queue. -->
-          <div class="panel">
-            <div class="field">
-              <div class="field-label">Play with a friend <span class="field-unit">private room</span></div>
-              <button id="create-room-btn" class="primary-btn">Create a private room</button>
-              <div class="join-row" style="margin-top:10px">
+          <section class="page-section">
+            <h2 class="section-label">Play with a friend <span class="field-unit">private room</span></h2>
+            <div class="panel">
+              <button id="create-room-btn" class="ghost-btn wide-btn">Create a private room</button>
+              <div class="join-row">
                 <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
                 <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
               </div>
               <p class="field-note">Private rooms never appear in a public list and never affect anyone's rating.</p>
             </div>
-          </div>
+          </section>
 
-          <div class="panel">
-            <div class="field">
-              <div class="field-label">
-                Open rooms
-                <button id="rooms-refresh-btn" class="link-btn" style="margin-left:auto">Refresh</button>
-              </div>
+          <section class="page-section">
+            <h2 class="section-label">Open rooms <button id="rooms-refresh-btn" class="link-btn section-action">Refresh</button></h2>
+            <div class="panel">
               <div id="rooms-list" class="rooms-list"></div>
             </div>
-          </div>
+          </section>
           <div id="online-error" class="online-error hidden"></div>
         </div>
       </section>
@@ -362,11 +515,17 @@
            one action, and it has a live state of its own to occupy the
            screen while searching. Folded into the hub it was simply the
            tallest thing there, permanently open. -->
-      <section id="screen-ranked" class="screen hidden">
-        <button id="ranked-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Back">←</button>
-        <div class="menu-inner">
-          <h2 class="screen-title">RANKED MATCH</h2>
-          <p class="tagline">moves your rank</p>
+      <section id="screen-ranked" class="screen page sub-page hidden">
+        <header class="page-head">
+          <button id="ranked-back-btn" class="icon-btn page-back" aria-label="Back">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-titles">
+            <span class="page-eyebrow">moves your rank</span>
+            <h1 class="page-title">Ranked match</h1>
+          </div>
+        </header>
+        <div class="page-body">
 
           <div class="panel">
             <div class="field">
@@ -411,13 +570,21 @@
       </section>
 
 
-      <section id="screen-lobby" class="screen hidden">
-        <button id="lobby-back-btn" class="icon-btn corner-btn corner-btn-left" aria-label="Leave room">←</button>
-        <div class="menu-inner">
-          <div class="logo-wrap">
+      <section id="screen-lobby" class="screen page sub-page hidden">
+        <header class="page-head">
+          <button id="lobby-back-btn" class="icon-btn page-back" aria-label="Leave room">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-titles">
+            <span class="page-eyebrow">waiting room</span>
+            <h1 class="page-title">Room</h1>
+          </div>
+        </header>
+        <div class="page-body">
+          <div class="logo-wrap lobby-code">
             <p class="tagline">room code</p>
-            <button id="room-code-btn" class="room-code" title="Tap to copy invite link">-----</button>
-            <p id="lobby-hint" class="tagline lobby-hint">tap to copy the invite link</p>
+            <button id="room-code-btn" class="room-code" title="Tap to share the invite link">-----</button>
+            <p id="lobby-hint" class="tagline lobby-hint">tap to share the invite link</p>
           </div>
 
           <div class="panel">
@@ -497,6 +664,8 @@
         <div id="board-host">
           <div id="chain-readout" class="chain-readout" aria-live="polite"></div>
           <div id="board-flash" class="board-flash"></div>
+          <div id="board-toast" class="board-toast" aria-live="polite"></div>
+          <div id="puzzle-hud" class="puzzle-hud hidden"></div>
           <div id="taunt-feed" class="taunt-feed" aria-live="polite"></div>
         </div>
         <div id="taunt-bar" class="taunt-bar hidden">
@@ -531,23 +700,29 @@
           <p id="rematch-state" class="rematch-state hidden"></p>
           <div class="win-actions">
             <button id="play-again-btn" class="primary-btn small-btn">Run again</button>
+            <button id="win-share-btn" class="ghost-btn small-btn share-btn" aria-label="Share result">Share</button>
             <button id="win-menu-btn" class="ghost-btn small-btn">Menu</button>
           </div>
         </div>
       </section>
 
-      <!-- LEADERBOARDS & FRIENDS -->
-      <section id="screen-boards" class="screen hidden overlay">
-        <div class="howto-card boards-card">
-          <div class="win-eyebrow">standings</div>
-          <h2>Leaderboards</h2>
-
+      <!-- RANKS — world and friends standings, and adding friends. -->
+      <section id="screen-boards" class="screen page tab-page hidden">
+        <header class="page-head">
+          <div class="page-titles">
+            <span class="page-eyebrow">standings</span>
+            <h1 class="page-title">Ranks</h1>
+          </div>
+        </header>
+        <div class="page-body boards-card">
           <div id="board-tabs" class="segmented">
             <button class="segment active" data-board="world">World</button>
             <button class="segment" data-board="friends">Friends</button>
           </div>
 
-          <div id="board-rows" class="board-rows"></div>
+          <div class="panel board-panel">
+            <div id="board-rows" class="board-rows"></div>
+          </div>
 
           <div id="friend-tools" class="field hidden">
             <div class="field-label">Add a friend</div>
@@ -559,7 +734,6 @@
           </div>
 
           <div id="my-code" class="my-code hidden"></div>
-          <button id="boards-close-btn" class="primary-btn">Close</button>
         </div>
       </section>
 
