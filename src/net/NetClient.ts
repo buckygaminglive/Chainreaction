@@ -2,12 +2,7 @@ import { account } from './account';
 import type { EngineSnapshot, PlayerConfig } from '../game/types';
 import type { GameModeKey } from '../game/modes';
 import type { BoardSizeKey, ClientMsg, NetPlayer, OrbStyleKey, PublicRoom, ServerMsg } from './protocol';
-
-/** Set VITE_RELAY_URL (e.g. in a gitignored .env.local) to point the client at
- *  a local `wrangler dev` instead of production — necessary any time the
- *  protocol changes, since client and relay have to move together. */
-const RELAY_BASE =
-  import.meta.env.VITE_RELAY_URL ?? 'https://chain-reaction-relay.buckygaminglive.workers.dev';
+import { RELAY_BASE } from './relay';
 // How often the socket's own state is inspected. Purely local, so it can be
 // frequent — this is what makes a dropped connection visible to the player
 // almost immediately rather than at the next ping.

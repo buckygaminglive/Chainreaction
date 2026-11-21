@@ -1,4 +1,5 @@
 import type { LeaderboardRow, MatchRecord, PlayerProfile, RoomInvite } from './protocol';
+import { RELAY_BASE } from './relay';
 
 /**
  * The device's guest account.
@@ -11,8 +12,6 @@ import type { LeaderboardRow, MatchRecord, PlayerProfile, RoomInvite } from './p
  * shareable in the meantime, and account linking is additive later.
  */
 
-const RELAY_BASE =
-  import.meta.env.VITE_RELAY_URL ?? 'https://chain-reaction-relay.buckygaminglive.workers.dev';
 const KEY = 'reacton.account.v1';
 
 interface StoredAccount {
