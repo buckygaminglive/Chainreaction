@@ -24,7 +24,9 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'store-assets', 'screenshots');
+// Raw captures. The picks that go to Play are copied up a level by hand,
+// one folder per form factor, after looking at them.
+const OUT = join(ROOT, 'store-assets', 'screenshots', 'raw');
 const ORIGIN = process.env.SHOT_ORIGIN ?? 'http://localhost:5173';
 const PORT = 9333;
 
@@ -249,11 +251,13 @@ const HELPERS = `
 async function load(page) {
   await page.send('Page.navigate', { url: ORIGIN });
   await sleep(2500);
-  // A previous run's prefs would otherwise decide which mode and board size
-  // these screenshots show.
+  // A previous run's prefs, puzzle progress and computer level would otherwise
+  // decide what these screenshots show.
   await page.evaluate('localStorage.clear()');
   await page.send('Page.reload', { ignoreCache: true });
   await sleep(3500);
+  // Silence the capture run; the screenshots are the same either way.
+  await page.evaluate(`document.getElementById('mute-btn-menu').click(); true`);
 }
 
 async function startLocalGame(page) {
@@ -265,19 +269,46 @@ async function startLocalGame(page) {
   );
 }
 
+/** The chain depth the on-board callout is showing, or 0 when hidden. */
+const CHAIN_DEPTH = `(() => {
+  const el = document.getElementById('chain-readout');
+  if (!el.classList.contains('show')) return 0;
+  return parseInt((el.querySelector('.cv')?.textContent || '').replace(/\\D/g, ''), 10) || 0;
+})()`;
+
+/**
+ * Photographs the moment a cascade reaches `depth`. Polled rather than timed:
+ * waves accelerate as a chain deepens, so a fixed delay lands on a different
+ * wave every run.
+ */
+async function shotAtDepth(page, name, depth, timeoutMs = 9000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if ((await page.evaluate(CHAIN_DEPTH)) >= depth) break;
+    await sleep(30);
+  }
+  await page.shot(name);
+}
+
+async function waitUntil(page, expr, timeoutMs = 15000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (await page.evaluate(expr)) return true;
+    await sleep(80);
+  }
+  return false;
+}
+
 async function run(page) {
   await load(page);
 
-  console.log('title + menu');
-  await sleep(3000); // let the attract board build a reaction behind the type
-  await page.shot('01-title.png');
-
-  console.log('setup sheet');
-  await page.evaluate(`document.getElementById('play-btn').click()`);
-  await sleep(1400);
-  await page.shot('02-modes.png');
+  console.log('home');
+  await sleep(2500); // let the attract board build a reaction behind the type
+  await page.shot('01-home.png');
 
   console.log('cascade');
+  await page.evaluate(`document.getElementById('play-btn').click()`);
+  await sleep(900);
   await startLocalGame(page);
   // Let two AI players build a position first. A board worth photographing is
   // one a real game would actually reach.
@@ -287,10 +318,10 @@ async function run(page) {
         await window.__shot.play(0.8);
         if (window.__shot.engine().gameOver) break;
       }
-      // Keep playing until something big is on offer rather than settling for
-      // whatever the last move happens to leave behind.
+      // Keep playing until a chain deep enough to earn a named callout is on
+      // offer, rather than settling for whatever the last move left behind.
       let best = window.__shot.bestChain();
-      for (let tries = 0; tries < 20 && best && best.chain < 6; tries++) {
+      for (let tries = 0; tries < 40 && best && best.chain < 8; tries++) {
         await window.__shot.play(0.8);
         if (window.__shot.engine().gameOver) break;
         best = window.__shot.bestChain();
@@ -301,19 +332,16 @@ async function run(page) {
   if (setup.wrong.length) {
     throw new Error(`board and renderer disagree:\n  ${setup.wrong.join('\n  ')}`);
   }
-  console.log(`  firing a ${setup.best.chain}-wave chain at ${setup.best.row},${setup.best.col}`);
+  const depth = setup.best.chain;
+  console.log(`  firing a ${depth}-wave chain at ${setup.best.row},${setup.best.col}`);
   await page.evaluate(`window.__shot.fire(${JSON.stringify(setup.best)})`);
-  // A place is ~0.55s and each wave ~0.5s, so these three land during the
-  // third, fourth and fifth waves. Which one looks best is not something to
-  // work out on paper.
-  for (const [ms, name] of [[1150, '03a'], [1600, '03b'], [2050, '03c']]) {
-    await sleep(ms - (name === '03a' ? 0 : 450));
-    await page.shot(`03-cascade-${name}.png`);
-  }
+  await shotAtDepth(page, '02-cascade-a.png', Math.min(3, depth));
+  await shotAtDepth(page, '02-cascade-b.png', Math.min(5, depth));
+  await shotAtDepth(page, '02-cascade-c.png', Math.max(2, depth - 1));
 
   console.log('board once the chain settles');
-  await sleep(3200);
-  await page.shot('04-board.png');
+  await sleep(3500);
+  await page.shot('03-board.png');
 
   console.log('endgame');
   const moves = await page.evaluate(`
@@ -327,18 +355,58 @@ async function run(page) {
   `);
   console.log(`  game ended after ${moves} more moves`);
   await sleep(2800);
-  await page.shot('05-victory.png');
+  await page.shot('04-victory.png');
+
+  console.log('daily page');
+  await page.evaluate(`document.getElementById('win-menu-btn').click(); true`);
+  await sleep(900);
+  await page.evaluate(`document.querySelector('.tab[data-tab=daily]').click(); true`);
+  await sleep(1400);
+  await page.shot('05-daily.png');
+
+  console.log('daily blast');
+  await page.evaluate(`document.getElementById('dp-play-btn').click(); true`);
+  await sleep(3600);
+  // The puzzle's deepest move, found on scratch copies of the live board and
+  // played through the board's own tap handler — the same path a finger takes.
+  const daily = await page.evaluate(`
+    (() => {
+      const best = window.__shot.bestChain();
+      window.__debug.renderer.onCellTap(best.row, best.col);
+      return best;
+    })()
+  `);
+  console.log(`  solving with the ×${daily.chain} move at ${daily.row},${daily.col}`);
+  await shotAtDepth(page, '06-daily-blast.png', Math.max(2, daily.chain - 1));
+  await waitUntil(page, `!document.getElementById('screen-daily').classList.contains('hidden')`);
+  await sleep(700);
+  await page.shot('07-daily-result.png');
+
+  console.log('vs computer');
+  await page.evaluate(`
+    (async () => {
+      document.getElementById('daily-close-btn').click();
+      await new Promise((r) => setTimeout(r, 700));
+      document.querySelector('.tab[data-tab=play]').click();
+      await new Promise((r) => setTimeout(r, 700));
+      document.getElementById('cpu-btn').click();
+      await new Promise((r) => setTimeout(r, 500));
+      document.querySelector('.cpu-level[data-level="3"]').click();
+    })()
+  `);
+  await sleep(900);
+  await page.shot('08-vs-computer.png');
 
   console.log('how to play');
   await page.evaluate(`
     (async () => {
-      document.getElementById('win-menu-btn').click();
-      await new Promise((r) => setTimeout(r, 900));
+      document.getElementById('cpu-close-btn').click();
+      await new Promise((r) => setTimeout(r, 600));
       document.getElementById('howto-btn').click();
     })()
   `);
   await sleep(1600);
-  await page.shot('06-howto.png');
+  await page.shot('09-howto.png');
 }
 
 await waitForServer();

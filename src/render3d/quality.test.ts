@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FrameWatcher, QUALITY, nextTierDown } from './quality.ts';
+import { FrameWatcher, PRESETS, TIER_ORDER, SHADOW_MAP_SIZE, PARTICLE_DENSITY, ORB_SEGMENTS, nextTierDown, pixelRatioFor } from './quality.ts';
 
 /**
  * A monotonic clock the watcher is fed from.
@@ -26,26 +26,47 @@ function run(watcher: FrameWatcher, clock: Clock, count: number, ms: number): nu
 }
 
 test('tiers get cheaper all the way down', () => {
-  const order = ['high', 'medium', 'low'] as const;
-  for (let i = 1; i < order.length; i++) {
-    const prev = QUALITY[order[i - 1]];
-    const cur = QUALITY[order[i]];
-    assert.ok(cur.maxPixelRatio <= prev.maxPixelRatio, `${order[i]} pixel ratio not lower`);
-    assert.ok(cur.shadowMapSize <= prev.shadowMapSize, `${order[i]} shadow map not smaller`);
-    assert.ok(Number(cur.antialias) <= Number(prev.antialias), `${order[i]} gained antialias`);
+  for (let i = 1; i < TIER_ORDER.length; i++) {
+    const prev = PRESETS[TIER_ORDER[i - 1]];
+    const cur = PRESETS[TIER_ORDER[i]];
+    const name = TIER_ORDER[i];
+    assert.ok(cur.resolution <= prev.resolution, `${name} resolution went up`);
+    assert.ok(Number(cur.antialias) <= Number(prev.antialias), `${name} gained antialias`);
+    assert.ok(SHADOW_MAP_SIZE[cur.shadows] <= SHADOW_MAP_SIZE[prev.shadows], `${name} shadows got heavier`);
+    assert.ok(PARTICLE_DENSITY[cur.particles] <= PARTICLE_DENSITY[prev.particles], `${name} gained particles`);
+    assert.ok(ORB_SEGMENTS[cur.orbDetail][0] <= ORB_SEGMENTS[prev.orbDetail][0], `${name} orbs got denser`);
+  }
+});
+
+test('crispness is the last thing given up', () => {
+  // Every tier but the bottom draws at native resolution with smooth edges:
+  // blur and jagged rims are the most visible losses, so they come last.
+  for (const tier of ['ultra', 'high', 'medium'] as const) {
+    assert.equal(PRESETS[tier].resolution, 1, `${tier} draws below native resolution`);
+    assert.equal(PRESETS[tier].antialias, true, `${tier} has jagged edges`);
   }
 });
 
 test('the cheapest tier turns shadows off', () => {
   // A shadow pass is a second render of the whole scene. Shrinking the map
   // does not change that, so the bottom tier has to drop it entirely.
-  assert.equal(QUALITY.low.shadows, false);
+  assert.equal(PRESETS.low.shadows, 'off');
 });
 
 test('stepping stops at the bottom', () => {
+  assert.equal(nextTierDown('ultra'), 'high');
   assert.equal(nextTierDown('high'), 'medium');
   assert.equal(nextTierDown('medium'), 'low');
   assert.equal(nextTierDown('low'), null);
+});
+
+test('full resolution means every physical pixel, up to a ceiling', () => {
+  // A typical 1080p phone reports ~2.75: full resolution must draw at that,
+  // not at a capped 1.5 stretched up to fit.
+  assert.equal(pixelRatioFor(PRESETS.high, 2.75), 2.75);
+  assert.equal(pixelRatioFor(PRESETS.high, 4), 3);
+  assert.equal(pixelRatioFor(PRESETS.low, 2), 1.5);
+  assert.equal(pixelRatioFor({ ...PRESETS.low, resolution: 0.5 }, 0.8), 0.5);
 });
 
 test('a healthy 60fps device is never demoted', () => {

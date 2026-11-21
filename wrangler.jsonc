@@ -13,6 +13,15 @@
     ]
   },
 
+  // Built-in rate limiters for the routes every player hits. Unlike the
+  // RateLimiter Durable Object they use none of the daily Durable Object
+  // allowance. Periods can only be 10 or 60 seconds.
+  "ratelimits": [
+    { "name": "RL_SOCKET", "namespace_id": "4101", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_CREATE", "namespace_id": "4102", "simple": { "limit": 6, "period": 60 } },
+    { "name": "RL_QUICKMATCH", "namespace_id": "4103", "simple": { "limit": 12, "period": 60 } }
+  ],
+
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
     { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] },

@@ -5,7 +5,7 @@ import {
   DoubleSide,
   Mesh,
   MeshBasicMaterial,
-  MeshPhysicalMaterial,
+  type Material,
   Object3D,
   OrthographicCamera,
   RingGeometry,
@@ -299,7 +299,7 @@ export function travelOrb3d(
   group: Object3D,
   from: Vector3,
   to: Vector3,
-  material: MeshPhysicalMaterial,
+  material: Material,
   geometry: SphereGeometry,
   radius: number,
   opts: { speed?: number; fx?: Fx; color?: number } = {}

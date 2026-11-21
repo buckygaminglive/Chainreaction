@@ -13,8 +13,12 @@ const RELAY_BASE =
 // almost immediately rather than at the next ping.
 const WATCHDOG_INTERVAL_MS = 1000;
 // Tight enough that a turn-based match notices a silently dead link in about
-// ten seconds rather than half a minute. The traffic is a few bytes either way.
+// ten seconds rather than half a minute.
 const PING_INTERVAL_MS = 5000;
+// In a lobby nothing is at stake between messages, so the heartbeat slows
+// down. Every ping is a request against the server's daily allowance, and a
+// lobby is where people sit longest waiting for a friend.
+const LOBBY_PING_INTERVAL_MS = 15000;
 const PONG_TIMEOUT_MS = 6000;
 // Mobile networks and backgrounded tabs can kill a WebSocket without ever firing
 // a close event promptly — a heartbeat plus these retries recover from that.
@@ -72,6 +76,8 @@ export class NetClient {
   private name = '';
   private intentionalClose = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  /** A match has started in this room — the heartbeat runs at full rate. */
+  private matchLive = false;
   private pongTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private token: string | null = null;
@@ -211,7 +217,15 @@ export class NetClient {
       const ws = new WebSocket(`${base}/api/room/${this.roomCode}?${params}`);
       this.ws = ws;
       let settled = false;
+      /** The relay accepted us into the room. Only a connection that got this
+       *  far can "drop"; one that never did simply failed to connect. */
+      let welcomed = false;
       let downHandled = false;
+      const failHandshake = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('Could not reach the game server. Online play may be down for a moment — try again shortly.'));
+      };
 
       /** This connection is finished, however we found out.
        *
@@ -224,7 +238,14 @@ export class NetClient {
         downHandled = true;
         if (this.ws !== ws) return; // a newer socket has already taken over
         this.stopHeartbeat();
-        if (!settled) return; // handshake never completed — reject() covered it
+        // Never welcomed: the connect promise is rejected instead. This used to
+        // test `settled`, which the error handler had already set — so a
+        // connection that never opened ran the whole reconnect ladder and
+        // ended on "lost connection to the room", for a room never joined.
+        if (!welcomed) {
+          failHandshake();
+          return;
+        }
         if (this.intentionalClose) {
           this.onDisconnect();
           return;
@@ -258,15 +279,15 @@ export class NetClient {
         this.handleMessage(msg);
         if (!settled && msg.type === 'welcome') {
           settled = true;
+          welcomed = true;
           this.reconnectAttempt = 0;
           if (isReconnect) this.onReconnected();
           resolve();
         }
       };
       ws.onerror = () => {
-        if (!settled) {
-          settled = true;
-          reject(new Error('Could not connect to that room.'));
+        if (!welcomed) {
+          failHandshake();
           return;
         }
         markDown();
@@ -312,7 +333,7 @@ export class NetClient {
       }
 
       tick += WATCHDOG_INTERVAL_MS;
-      if (tick < PING_INTERVAL_MS) return;
+      if (tick < (this.matchLive ? PING_INTERVAL_MS : LOBBY_PING_INTERVAL_MS)) return;
       tick = 0;
 
       this.send({ type: 'ping' });
@@ -353,6 +374,7 @@ export class NetClient {
         this.onPlayers(this.players, this.hostId);
         break;
       case 'resume':
+        this.matchLive = true;
         // The relay only sends this when it recognised our seat in a live
         // match, so reaching here means the reconnect actually worked.
         this.onResume(msg.rows, msg.cols, msg.orbStyle, msg.mode, msg.snapshot);
@@ -363,6 +385,7 @@ export class NetClient {
         this.onPlayers(this.players, this.hostId, msg.isPublic);
         break;
       case 'gameStarted':
+        this.matchLive = true;
         // Defaulted here rather than at the call site so every consumer sees a
         // real mode. An older relay sends neither field, and Classic with a
         // plain lattice is exactly what such a relay is actually running.

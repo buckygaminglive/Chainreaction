@@ -12,8 +12,10 @@ let cached: CanvasTexture | null = null;
 export function orbSurfaceTexture(): CanvasTexture {
   if (cached) return cached;
 
-  const w = 256;
-  const h = 128;
+  // 512×256: at full screen resolution a smaller map visibly softens the
+  // marbling on the larger orbs.
+  const w = 512;
+  const h = 256;
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -29,7 +31,7 @@ export function orbSurfaceTexture(): CanvasTexture {
   for (let i = 0; i < blotchCount; i++) {
     const x = Math.random() * w;
     const y = Math.random() * h;
-    const r = 8 + Math.random() * 22;
+    const r = 16 + Math.random() * 44;
     const shade = 0.55 + Math.random() * 0.3;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, `rgba(0,0,0,${1 - shade})`);
@@ -60,7 +62,7 @@ export function orbSurfaceTexture(): CanvasTexture {
   for (let i = 0; i < 10; i++) {
     const x = Math.random() * w;
     const y = Math.random() * h;
-    const r = 2 + Math.random() * 4;
+    const r = 4 + Math.random() * 8;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);

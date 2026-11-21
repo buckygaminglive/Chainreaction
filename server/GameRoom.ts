@@ -22,6 +22,11 @@ export interface Env {
   MATCHMAKER: DurableObjectNamespace<Matchmaker>;
   PLAYER_HUB: DurableObjectNamespace<PlayerHub>;
   RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
+  /** Cloudflare's built-in rate limiters for the high-volume routes. Optional
+   *  so an environment without them falls back to the Durable Object one. */
+  RL_SOCKET?: RateLimit;
+  RL_CREATE?: RateLimit;
+  RL_QUICKMATCH?: RateLimit;
 }
 
 export const PLAYER_HUB_SINGLETON = 'global';
@@ -115,6 +120,13 @@ const ABSENT_TURN_GRACE_MS = 45_000;
  *  used to live forever: storage nothing would ever read again, and a public
  *  listing outliving the room it points at. */
 const IDLE_ROOM_TTL_MS = 30 * 60_000;
+
+/** The soonest the idle check may run again. Without a floor, a room whose
+ *  idle deadline had already passed armed its alarm for that past instant,
+ *  which fires immediately — and re-arms, and fires — in a loop that burned
+ *  the account's whole daily Durable Object allowance and took every room
+ *  down with it. */
+const IDLE_RECHECK_MS = 5 * 60_000;
 
 export class GameRoom extends DurableObject<Env> {
   private engine: GameEngine | null = null;
@@ -604,7 +616,11 @@ export class GameRoom extends DurableObject<Env> {
    * and the handler works out what was actually due.
    */
   private async armAlarm() {
-    const candidates = [this.turnDeadline, this.absentDeadline, this.lastActivity + IDLE_ROOM_TTL_MS];
+    // The idle check is never scheduled in the past or the next instant —
+    // see IDLE_RECHECK_MS. The two turn deadlines are exact on purpose: when
+    // one is overdue it should fire now, and the handler clears it.
+    const idleAt = Math.max(this.lastActivity + IDLE_ROOM_TTL_MS, Date.now() + IDLE_RECHECK_MS);
+    const candidates = [this.turnDeadline, this.absentDeadline, idleAt];
     const next = Math.min(...candidates.filter((t) => t > 0));
     if (!Number.isFinite(next)) return;
     const current = await this.ctx.storage.getAlarm();
@@ -615,9 +631,20 @@ export class GameRoom extends DurableObject<Env> {
     await this.ready;
     const now = Date.now();
 
-    // An empty room nothing has touched is storage nobody will ever read again
-    // and a public listing pointing at nothing.
-    if (this.ctx.getWebSockets().length === 0 && now >= this.lastActivity + IDLE_ROOM_TTL_MS) {
+    // Nothing — not one message, not even a heartbeat — for the whole TTL. A
+    // live client pings every few seconds, so any socket still attached
+    // belongs to a client that is gone or frozen: a phone with the app in the
+    // background keeps its connection open but stops sending. Those sockets
+    // used to keep the room "occupied" forever; they are closed instead, and
+    // the room ends.
+    if (now >= this.lastActivity + IDLE_ROOM_TTL_MS) {
+      for (const ws of this.ctx.getWebSockets()) {
+        try {
+          ws.close(1001, 'Room closed after being idle');
+        } catch {
+          /* already closed */
+        }
+      }
       await this.shutDown();
       return;
     }

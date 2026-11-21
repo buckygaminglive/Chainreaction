@@ -49,7 +49,8 @@ import { account } from './net/account';
 import { initProfile, renderProfile } from './ui/profile';
 import { attachSheet, attachSwipePager } from './ui/sheet';
 import { avatarSvg, defaultAvatarFor } from './render/avatar';
-import { initialTier } from './render3d/quality';
+import { pixelRatioFor, type GraphicsDetail, type OrbDetail, type ParticleLevel, type ShadowLevel } from './render3d/quality';
+import { currentAutoTier, currentDetail, getGraphics, onGraphicsChange, setGraphics, type FpsCap, type GraphicsPreset } from './render3d/graphics';
 import { telemetry } from './net/telemetry';
 import {
   TAUNTS,
@@ -527,6 +528,7 @@ function persistPrefs() {
 
 // ---------- Settings ----------
 function renderSettings() {
+  renderGraphicsSettings();
   volumeRange.value = String(Math.round(sfx.volume * 100));
   volumeValueEl.textContent = `${Math.round(sfx.volume * 100)}%`;
   musicRange.value = String(Math.round(sfx.musicVolume * 100));
@@ -1087,12 +1089,13 @@ async function startAttract() {
   // The same measurement that picks the render tier answers this: a phone
   // that will be dropped to 'low' should not be spending its first seconds
   // downloading and compiling a 3D engine to animate a menu background.
-  if (initialTier() === 'low') return;
+  const gfx = getGraphics();
+  if (gfx.preset === 'low' || (gfx.preset === 'auto' && currentAutoTier() === 'low')) return;
   const token = ++attractToken;
   const { ThreeRenderer: Renderer } = await import('./render3d/ThreeRenderer');
   if (token !== attractToken) return;
   attractEngine = newAttractEngine();
-  const board = new Renderer(attractEngine, colorOf, 'dots');
+  const board = new Renderer(attractEngine, colorOf, 'dots', { background: true });
   await board.init(attractHost);
   if (token !== attractToken) {
     board.destroy();
@@ -1752,6 +1755,11 @@ async function mountGame(
   if (engine !== newEngine) return false;
   renderer = new Renderer(engine, colorOf, style);
   await renderer.init(boardHost);
+  renderer.onStats = (fps) => {
+    fpsMeterEl.textContent = `${fps} FPS`;
+  };
+  fpsMeterEl.textContent = '';
+  fpsMeterEl.classList.toggle('hidden', !getGraphics().showFps);
   renderer.resetVisual();
   // Keep the tiles-in animation either way, but a resumed match then adopts
   // the live position instead of starting from an empty lattice.
@@ -3574,6 +3582,114 @@ function openRoomFromLink(code: string) {
   joinCodeInput.value = code;
   $('play-online-btn').click();
 }
+
+
+// ---------- Graphics settings ----------
+const fpsMeterEl = $('fps-meter');
+const gfxPresetGroup = $('gfx-preset-group');
+const gfxResGroup = $('gfx-res-group');
+const gfxAaGroup = $('gfx-aa-group');
+const gfxShadowGroup = $('gfx-shadow-group');
+const gfxOrbGroup = $('gfx-orb-group');
+const gfxGlowGroup = $('gfx-glow-group');
+const gfxParticleGroup = $('gfx-particle-group');
+const gfxFpsGroup = $('gfx-fps-group');
+const gfxShowFpsGroup = $('gfx-showfps-group');
+
+const TIER_NAMES: Record<string, string> = { ultra: 'Ultra', high: 'High', medium: 'Medium', low: 'Low' };
+
+let gpuLabel: string | null = null;
+/** The GPU the board is drawn on, named the way a player would recognise it.
+ *  Software rasterisers are called out, because that is the one answer that
+ *  explains a slow board. */
+function gpuName(): string {
+  if (gpuLabel !== null) return gpuLabel;
+  let raw = renderer?.gpuName() || attractRenderer?.gpuName() || '';
+  if (!raw) {
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
+      if (gl) {
+        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+        raw = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+      }
+    } catch {
+      raw = '';
+    }
+  }
+  if (/swiftshader|llvmpipe|software/i.test(raw)) {
+    gpuLabel = 'software rendering';
+    return gpuLabel;
+  }
+  // "ANGLE (Vendor, Model (0x1234) Direct3D11 …)" → "Model"
+  const angle = raw.match(/^ANGLE \(([^,]+),\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?(?:\s+Direct3D.*|\s+OpenGL.*|,.*)?\)?$/i);
+  gpuLabel = (angle ? angle[2] : raw).replace(/\s+/g, ' ').trim().slice(0, 40);
+  return gpuLabel;
+}
+
+function renderGraphicsSettings() {
+  const s = getGraphics();
+  const d = currentDetail();
+  markSegment(gfxPresetGroup, 'gfxPreset', s.preset);
+  markSegment(gfxResGroup, 'gfxRes', String(d.resolution));
+  markSegment(gfxAaGroup, 'gfxAa', d.antialias ? '1' : '0');
+  markSegment(gfxShadowGroup, 'gfxShadow', d.shadows);
+  markSegment(gfxOrbGroup, 'gfxOrb', d.orbDetail);
+  markSegment(gfxGlowGroup, 'gfxGlow', d.glow ? '1' : '0');
+  markSegment(gfxParticleGroup, 'gfxParticles', d.particles);
+  markSegment(gfxFpsGroup, 'gfxFps', String(s.fps));
+  markSegment(gfxShowFpsGroup, 'gfxShowfps', s.showFps ? '1' : '0');
+
+  const gpu = gpuName();
+  $('gfx-gpu').textContent = gpu ? `GPU · ${gpu}` : '';
+  const note =
+    s.preset === 'auto'
+      ? `Auto is drawing at ${TIER_NAMES[currentAutoTier()]} — the best your phone holds smoothly. It steps down on its own if frames drop.`
+      : s.preset === 'custom'
+        ? 'Custom — your own mix. Pick a preset to reset every control.'
+        : `${TIER_NAMES[s.preset]} — fixed. Auto would adjust to keep play smooth.`;
+  $('gfx-note').textContent = note;
+  const pr = pixelRatioFor(d, window.devicePixelRatio || 1);
+  $('gfx-res-px').textContent = `${Math.round(window.innerWidth * pr)}×${Math.round(window.innerHeight * pr)}`;
+}
+
+onSegmentPick(gfxPresetGroup, (el) => {
+  const preset = el.dataset.gfxPreset as GraphicsPreset;
+  // Choosing Auto again means "measure again": forget the tier it settled on.
+  setGraphics(preset === 'auto' ? { preset, autoTier: null } : { preset });
+  renderGraphicsSettings();
+});
+
+/** Any individual control turns the preset into Custom, starting from what
+ *  was on screen — so only the control touched actually changes. */
+function setDetail(patch: Partial<GraphicsDetail>) {
+  setGraphics({ preset: 'custom', custom: { ...currentDetail(), ...patch } });
+  renderGraphicsSettings();
+}
+
+onSegmentPick(gfxResGroup, (el) => setDetail({ resolution: Number(el.dataset.gfxRes) }));
+onSegmentPick(gfxAaGroup, (el) => setDetail({ antialias: el.dataset.gfxAa === '1' }));
+onSegmentPick(gfxShadowGroup, (el) => setDetail({ shadows: el.dataset.gfxShadow as ShadowLevel }));
+onSegmentPick(gfxOrbGroup, (el) => setDetail({ orbDetail: el.dataset.gfxOrb as OrbDetail }));
+onSegmentPick(gfxGlowGroup, (el) => setDetail({ glow: el.dataset.gfxGlow === '1' }));
+onSegmentPick(gfxParticleGroup, (el) => setDetail({ particles: el.dataset.gfxParticles as ParticleLevel }));
+onSegmentPick(gfxFpsGroup, (el) => {
+  setGraphics({ fps: Number(el.dataset.gfxFps) as FpsCap });
+  renderGraphicsSettings();
+});
+onSegmentPick(gfxShowFpsGroup, (el) => {
+  setGraphics({ showFps: el.dataset.gfxShowfps === '1' });
+  renderGraphicsSettings();
+});
+
+// Whoever changes the settings — this sheet, or Auto stepping down mid-match —
+// the meter and an open sheet follow.
+onGraphicsChange(() => {
+  fpsMeterEl.classList.toggle('hidden', !getGraphics().showFps || !renderer);
+  if (!screenSettings.classList.contains('hidden')) renderGraphicsSettings();
+});
+
 
 // ---------- Navigation ----------
 /*

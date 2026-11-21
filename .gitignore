@@ -49,3 +49,6 @@ keystore.properties
 certificates/
 # Machine-specific Android SDK path, written by bubblewrap.
 local.properties
+
+# Raw store-screenshot captures; the picks are copied up a level by hand.
+store-assets/screenshots/raw/

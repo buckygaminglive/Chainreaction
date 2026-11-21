@@ -40,7 +40,16 @@ import { EMOJI_STAGES, stageForRemaining } from '../render/emoji';
 import { emojiTexture } from './emojiTexture';
 import { orbSurfaceTexture } from './orbSurfaceTexture';
 import { Fx, haloTexture, punchCamera, shakeCamera, travelOrb3d } from './fx3d';
-import { FrameWatcher, QUALITY, initialTier, nextTierDown, type QualityTier } from './quality';
+import {
+  FrameWatcher,
+  ORB_SEGMENTS,
+  PARTICLE_DENSITY,
+  SHADOW_MAP_SIZE,
+  nextTierDown,
+  pixelRatioFor,
+  type GraphicsDetail,
+} from './quality';
+import { currentAutoTier, getGraphics, onGraphicsChange, resolveDetail, setGraphics } from './graphics';
 import { EXPLOSION_SPIN_UP_MS, waveSpeed } from './timing';
 
 export type OrbStyle = 'dots' | 'emoji';
@@ -126,17 +135,26 @@ export class ThreeRenderer {
   private t = 0;
   private baseCameraPos = new Vector3();
   private dirLight!: DirectionalLight;
-  /** Current render quality. Starts as a guess and is lowered by measurement;
-   *  never raised — see quality.ts. */
-  private tier: QualityTier = initialTier();
+  /** What the board is drawn with right now: the player's preset or custom
+   *  mix, or Auto's measured tier. Re-resolved whenever settings change. */
+  private gfx: GraphicsDetail;
+  /** The board behind the menu: always drawn light, never judges the device. */
+  private background: boolean;
   private frames = new FrameWatcher();
+  private unsubscribeGraphics: (() => void) | null = null;
+  /** Frame-rate cap and FPS meter bookkeeping. */
+  private lastDrawAt = 0;
+  private fpsFrames = 0;
+  private fpsSince = 0;
+  /** Called about twice a second with the measured frame rate. */
+  onStats: ((fps: number) => void) | null = null;
 
   private cells: CellView[][] = [];
   private tileMeshes: Mesh[] = [];
   private renderState: RenderCell[][] = [];
   private tileGeo!: RoundedBoxGeometry;
   private criticalRingGeo = new RingGeometry(CELL_SIZE * 0.38, CELL_SIZE * 0.405, 48);
-  private orbGeo = new SphereGeometry(ORB_RADIUS, 24, 18);
+  private orbGeo: SphereGeometry;
   private neutralTileMat = new MeshStandardMaterial({ color: CELL_IDLE, roughness: 0.88, metalness: 0.08 });
   // Unowned special sites get their own base tone; once a player takes one the
   // owner tint takes over and the etched perimeter outline (below) is what
@@ -145,7 +163,7 @@ export class ThreeRenderer {
   private damperTileMat = new MeshStandardMaterial({ color: 0x11161d, roughness: 0.95, metalness: 0.04 });
   private voidTileMat = new MeshStandardMaterial({ color: 0x080a0e, roughness: 1, metalness: 0 });
   private tileMatCache = new Map<number, MeshStandardMaterial>();
-  private orbMatCache = new Map<number, MeshPhysicalMaterial>();
+  private orbMatCache = new Map<number, MeshStandardMaterial>();
   private ringMatCache = new Map<number, MeshBasicMaterial>();
   /** Substrate plate + etched frame/tick marks, disposed together on teardown. */
   private substrateParts: { geo: BufferGeometry; mat: MeshBasicMaterial | LineBasicMaterial | MeshStandardMaterial }[] = [];
@@ -187,11 +205,40 @@ export class ThreeRenderer {
   private onContextLostBound = (e: Event) => this.handleContextLost(e);
   private onContextRestoredBound = () => this.handleContextRestored();
 
-  constructor(engine: GameEngine, colorOf: (playerId: number) => ColorTheme, orbStyle: OrbStyle = 'emoji') {
+  constructor(
+    engine: GameEngine,
+    colorOf: (playerId: number) => ColorTheme,
+    orbStyle: OrbStyle = 'emoji',
+    opts: { background?: boolean } = {}
+  ) {
     this.engine = engine;
     this.colorOf = colorOf;
     this.orbStyle = orbStyle;
+    this.background = opts.background === true;
     this.camera.up.set(0, 0, -1);
+    this.gfx = this.resolveGfx();
+    const [w, h] = ORB_SEGMENTS[this.gfx.orbDetail];
+    this.orbGeo = new SphereGeometry(ORB_RADIUS, w, h);
+  }
+
+  /** The detail to draw with, from the player's settings. */
+  private resolveGfx(): GraphicsDetail {
+    const d = resolveDetail(getGraphics(), currentAutoTier());
+    if (!this.background) return d;
+    // The attract board sits at a quarter opacity behind a scrim. Spending the
+    // GPU on full quality there would take it from the menu in front.
+    return { ...d, resolution: Math.min(d.resolution, 0.75), antialias: false, shadows: 'off', particles: 'low' };
+  }
+
+  /** The GPU this board is being drawn on, as the driver names it. */
+  gpuName(): string {
+    try {
+      const gl = this.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    } catch {
+      return '';
+    }
   }
 
   setCellTapHandler(fn: (row: number, col: number) => void) {
@@ -219,7 +266,9 @@ export class ThreeRenderer {
 
     this.scene.add(this.boardGroup, this.fxGroup);
     this.fx = new Fx(this.fxGroup);
-    this.fx.setDensity(this.fxDensity());
+    this.fx.setDensity(PARTICLE_DENSITY[this.gfx.particles]);
+    this.applyTextureFiltering();
+    this.unsubscribeGraphics = onGraphicsChange(() => this.applyGraphics());
     this.setupLights();
     this.buildGrid();
     this.buildLastMoveMarker();
@@ -233,21 +282,20 @@ export class ThreeRenderer {
   }
 
   private createRenderer(): WebGLRenderer {
-    const q = QUALITY[this.tier];
-    // Antialiasing is decided here and can never be revisited: it is fixed when
-    // the WebGL context is created. That is the reason touch devices do not
-    // start with it — a runtime step-down could not take it away again.
+    // Multisampling is fixed when the WebGL context is created, so changing it
+    // later means a new renderer — see replaceRenderer.
     const renderer = new WebGLRenderer({
-      antialias: q.antialias,
+      antialias: this.gfx.antialias,
       alpha: true,
+      // Ask for the discrete / performance GPU where a device has a choice.
       powerPreference: 'high-performance',
     });
     renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio));
+    renderer.setPixelRatio(pixelRatioFor(this.gfx, window.devicePixelRatio || 1));
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
-    renderer.shadowMap.enabled = q.shadows;
+    renderer.shadowMap.enabled = this.gfx.shadows !== 'off';
     renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -262,61 +310,148 @@ export class ThreeRenderer {
   }
 
   private startLoop() {
+    cancelAnimationFrame(this.raf);
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
-      if (this.frames.sample(now)) this.stepDownQuality();
+      const settings = getGraphics();
+      // Frame-rate cap: skip the vsync ticks in between. The 2ms slack keeps
+      // a 60 cap on a 60Hz screen from dropping frames to timer jitter.
+      if (settings.fps > 0 && this.lastDrawAt && now - this.lastDrawAt < 1000 / settings.fps - 2) return;
+      this.lastDrawAt = now;
+      if (!this.background && settings.preset === 'auto') {
+        // Judged against the cap: a 30fps cap is not a slow device.
+        const budget = settings.fps === 30 ? 45 : 22;
+        if (this.frames.sample(now, budget)) this.stepDownQuality();
+      }
       this.tick();
       this.renderer.render(this.scene, this.camera);
+      this.countFrame(now);
     };
     this.raf = requestAnimationFrame(loop);
   }
 
+  private countFrame(now: number) {
+    if (!this.onStats) return;
+    if (!this.fpsSince) {
+      this.fpsSince = now;
+      this.fpsFrames = 0;
+      return;
+    }
+    this.fpsFrames++;
+    const span = now - this.fpsSince;
+    if (span >= 500) {
+      this.onStats(Math.round((this.fpsFrames * 1000) / span));
+      this.fpsSince = now;
+      this.fpsFrames = 0;
+    }
+  }
+
   /**
-   * Drops a quality tier after sustained bad frame times.
-   *
-   * Everything here is changeable on a live context. Antialiasing is not, which
-   * is why it is not in this list — it was decided when the context was made.
+   * Auto only: drops a tier after sustained bad frame times, and remembers the
+   * tier for this device so the next match starts where this one settled.
    *
    * One way only. Climbing back up when frames recover means the recovery
    * itself makes things heavy again, and the renderer spends the match
-   * oscillating; a step change in quality is much more noticeable than the
-   * quality difference it is chasing.
+   * oscillating between looks.
    */
   private stepDownQuality() {
-    const next = nextTierDown(this.tier);
+    const next = nextTierDown(currentAutoTier());
     if (!next) return;
-    this.tier = next;
-    const q = QUALITY[next];
+    console.info(`[render] Auto stepped down to ${next} — sustained low frame rate`);
+    // Broadcast: this renderer and any other live one re-apply through
+    // applyGraphics.
+    setGraphics({ autoTier: next });
+  }
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio));
-    this.renderer.shadowMap.enabled = q.shadows;
-    if (this.dirLight) {
-      this.dirLight.castShadow = q.shadows;
-      this.dirLight.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
-      // The existing depth target was allocated at the old size; without
-      // dropping it Three keeps rendering into the old one and the change does
-      // nothing at all.
-      this.dirLight.shadow.map?.dispose();
-      this.dirLight.shadow.map = null as unknown as typeof this.dirLight.shadow.map;
+  /** Re-reads the settings and changes whatever differs, on the live board. */
+  private applyGraphics() {
+    if (!this.renderer) return;
+    const prev = this.gfx;
+    const next = this.resolveGfx();
+    this.gfx = next;
+    if (next.antialias !== prev.antialias) {
+      this.replaceRenderer();
+    } else {
+      this.layout();
+      this.applyShadows(false);
     }
+    if (next.orbDetail !== prev.orbDetail) this.rebuildOrbs();
+    this.applyTextureFiltering();
+    this.fx.setDensity(PARTICLE_DENSITY[next.particles]);
+    // Judge the new settings on their own frames, not the old ones'.
+    this.frames.reset();
+  }
+
+  private applyShadows(force: boolean) {
+    const on = this.gfx.shadows !== 'off';
+    const size = SHADOW_MAP_SIZE[this.gfx.shadows] || 512;
+    const changed = force || this.renderer.shadowMap.enabled !== on || this.dirLight.shadow.mapSize.x !== size;
+    this.renderer.shadowMap.enabled = on;
+    this.dirLight.castShadow = on;
+    if (!changed) return;
+    this.dirLight.shadow.mapSize.set(size, size);
+    // The old depth target was allocated at the old size; Three keeps drawing
+    // into it unless it is dropped.
+    this.dirLight.shadow.map?.dispose();
+    this.dirLight.shadow.map = null as unknown as typeof this.dirLight.shadow.map;
     // Materials compiled against the old shadow configuration still carry it.
     this.scene.traverse((o) => {
       const mesh = o as { material?: { needsUpdate?: boolean } | { needsUpdate?: boolean }[] };
       if (!mesh.material) return;
-      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-        m.needsUpdate = true;
-      }
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.needsUpdate = true;
     });
-
-    this.fx?.setDensity(this.fxDensity());
-    // Judge the new settings on their own merits rather than on frames drawn
-    // under the old ones.
-    this.frames.reset();
-    console.info(`[render] stepped down to ${next} — sustained low frame rate`);
   }
 
-  private fxDensity(): number {
-    return this.tier === 'high' ? 1 : this.tier === 'medium' ? 0.75 : 0.5;
+  /** New orb geometry and materials for a different orb detail level. */
+  private rebuildOrbs() {
+    const [w, h] = ORB_SEGMENTS[this.gfx.orbDetail];
+    const old = this.orbGeo;
+    this.orbGeo = new SphereGeometry(ORB_RADIUS, w, h);
+    for (const m of this.orbMatCache.values()) m.dispose();
+    this.orbMatCache.clear();
+    for (let r = 0; r < this.engine.rows; r++) {
+      for (let c = 0; c < this.engine.cols; c++) this.drawCell(r, c);
+    }
+    old.dispose();
+  }
+
+  /** Anisotropic filtering keeps the orb surface sharp where the camera's
+   *  lean views it at a grazing angle. */
+  private applyTextureFiltering() {
+    const tex = orbSurfaceTexture();
+    const want =
+      this.gfx.orbDetail === 'ultra'
+        ? this.renderer?.capabilities.getMaxAnisotropy() ?? 8
+        : this.gfx.orbDetail === 'high'
+          ? 4
+          : 1;
+    if (tex.anisotropy !== want) {
+      tex.anisotropy = want;
+      tex.needsUpdate = true;
+    }
+  }
+
+  /** Swaps in a new WebGL renderer on a fresh canvas. The scene graph —
+   *  meshes, materials, game state — carries over untouched; only the GPU
+   *  side is rebuilt. Used for anti-aliasing changes and context restores. */
+  private replaceRenderer() {
+    const old = this.renderer;
+    old.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
+    old.domElement.removeEventListener('pointermove', this.onPointerMoveBound);
+    old.domElement.removeEventListener('pointerleave', this.onPointerLeaveBound);
+    old.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
+    old.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
+    const canvasIndex = Array.from(this.host.children).indexOf(old.domElement);
+    old.domElement.remove();
+    old.dispose();
+
+    this.renderer = this.createRenderer();
+    // Back into the same slot, so the HUD overlays drawn after it stay on top.
+    const after = this.host.children[canvasIndex] ?? null;
+    this.host.insertBefore(this.renderer.domElement, after);
+    this.applyShadows(true);
+    this.layout();
+    this.startLoop();
   }
 
   /** Mobile GPUs reclaim the WebGL context when backgrounded/low on memory —
@@ -330,22 +465,8 @@ export class ThreeRenderer {
   private handleContextRestored() {
     console.warn('WebGL context restored — rebuilding the renderer.');
     // The dead context can't reliably resume rendering even after this event in
-    // some browsers, so swap in a fresh canvas/renderer bound to the new
-    // context. The scene graph itself (game state, meshes, materials) was
-    // never lost — only the GPU-side resources — so nothing needs rebuilding.
-    const old = this.renderer;
-    old.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
-    old.domElement.removeEventListener('pointermove', this.onPointerMoveBound);
-    old.domElement.removeEventListener('pointerleave', this.onPointerLeaveBound);
-    old.domElement.removeEventListener('webglcontextlost', this.onContextLostBound);
-    old.domElement.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
-    this.host.removeChild(old.domElement);
-    old.dispose();
-
-    this.renderer = this.createRenderer();
-    this.host.appendChild(this.renderer.domElement);
-    this.layout();
-    this.startLoop();
+    // some browsers, so swap in a fresh canvas/renderer bound to a new context.
+    this.replaceRenderer();
   }
 
   /** Clinical, not warm: a cool overhead key with a cyan bounce, so the board
@@ -356,8 +477,9 @@ export class ThreeRenderer {
 
     this.dirLight = new DirectionalLight(0xf2f8ff, 1.25);
     this.dirLight.position.set(2.4, 6, 3.2);
-    this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(QUALITY[this.tier].shadowMapSize, QUALITY[this.tier].shadowMapSize);
+    this.dirLight.castShadow = this.gfx.shadows !== 'off';
+    const mapSize = SHADOW_MAP_SIZE[this.gfx.shadows] || 512;
+    this.dirLight.shadow.mapSize.set(mapSize, mapSize);
     this.dirLight.shadow.bias = -0.002;
     this.scene.add(this.dirLight, this.dirLight.target);
 
@@ -648,7 +770,7 @@ export class ThreeRenderer {
     // HiDPI and a standard monitor, and when the browser zooms. A renderer
     // holding the ratio it saw at startup draws at the wrong scale for the
     // buffer it is drawing into.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[this.tier].maxPixelRatio));
+    this.renderer.setPixelRatio(pixelRatioFor(this.gfx, window.devicePixelRatio || 1));
     this.renderer.setSize(w, h, false);
 
     const rows = this.engine.rows;
@@ -730,20 +852,24 @@ export class ThreeRenderer {
     return mat;
   }
 
-  private getOrbMaterial(playerId: number): MeshPhysicalMaterial {
+  private getOrbMaterial(playerId: number): MeshStandardMaterial {
     let mat = this.orbMatCache.get(playerId);
     if (!mat) {
       const theme = this.colorOf(playerId);
-      mat = new MeshPhysicalMaterial({
+      const common = {
         color: theme.base,
         map: orbSurfaceTexture(),
         emissive: theme.base,
         emissiveIntensity: 0.62,
-        roughness: 0.18,
         metalness: 0.1,
-        clearcoat: 1,
-        clearcoatRoughness: 0.12,
-      });
+      };
+      // Clearcoat is a second specular layer on every orb pixel — the single
+      // most expensive thing in the scene's shaders, so Standard orb detail
+      // goes without it.
+      mat =
+        this.gfx.orbDetail === 'standard'
+          ? new MeshStandardMaterial({ ...common, roughness: 0.24 })
+          : new MeshPhysicalMaterial({ ...common, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.12 });
       this.orbMatCache.set(playerId, mat);
     }
     return mat;
@@ -771,7 +897,7 @@ export class ThreeRenderer {
     if (nearCritical) view.criticalRing.material = this.getRingMaterial(state.owner!);
     if (state.owner !== null && state.orbs > 0) {
       view.haloMat.color.setHex(this.colorOf(state.owner).base);
-      view.halo.visible = true;
+      if (this.gfx.glow) view.halo.visible = true;
     }
 
     if (state.owner === null || state.orbs <= 0) {
@@ -945,7 +1071,7 @@ export class ThreeRenderer {
         const owned = state.owner !== null && state.orbs > 0;
         // Halo: a resting glow that grows with how full the cell is, plus any
         // capture flare still decaying. An empty cell keeps only the flare.
-        view.haloBoost *= boostDecay;
+        view.haloBoost = this.gfx.glow ? view.haloBoost * boostDecay : 0;
         if (view.haloBoost < 0.01) view.haloBoost = 0;
         if (!owned && view.haloBoost === 0) {
           if (view.halo.visible) view.halo.visible = false;
@@ -955,10 +1081,14 @@ export class ThreeRenderer {
         const fill = owned ? Math.min(1, state.orbs / Math.max(1, massHere)) : 0;
         const hot = owned && state.orbs >= massHere - 1;
         const pulse = hot ? 0.5 + 0.5 * Math.sin(this.t * 0.22 + r * 1.7 + c) : 0;
-        view.halo.visible = true;
-        view.haloMat.opacity = Math.min(1, 0.16 + fill * 0.34 + pulse * 0.28 + view.haloBoost);
-        const hs = 0.85 + fill * 0.25 + pulse * 0.1 + view.haloBoost * 0.3;
-        view.halo.scale.set(hs, hs, 1);
+        if (this.gfx.glow) {
+          view.halo.visible = true;
+          view.haloMat.opacity = Math.min(1, 0.16 + fill * 0.34 + pulse * 0.28 + view.haloBoost);
+          const hs = 0.85 + fill * 0.25 + pulse * 0.1 + view.haloBoost * 0.3;
+          view.halo.scale.set(hs, hs, 1);
+        } else if (view.halo.visible) {
+          view.halo.visible = false;
+        }
         if (!owned) continue;
         const mass = this.engine.criticalMass(r, c);
         const seed = r * 7.3 + c * 13.1;
@@ -1336,6 +1466,9 @@ export class ThreeRenderer {
   }
 
   destroy() {
+    this.unsubscribeGraphics?.();
+    this.unsubscribeGraphics = null;
+    this.onStats = null;
     this.ro?.disconnect();
     cancelAnimationFrame(this.raf);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDownBound);
@@ -1353,6 +1486,9 @@ export class ThreeRenderer {
     this.haloGeo.dispose();
     this.lastMoveGeo.dispose();
     this.lastMoveMat.dispose();
+    for (const m of this.orbMatCache.values()) m.dispose();
+    this.orbMatCache.clear();
+    this.orbGeo.dispose();
     this.criticalRingGeo.dispose();
     for (const mat of this.ringMatCache.values()) mat.dispose();
     this.ringMatCache.clear();

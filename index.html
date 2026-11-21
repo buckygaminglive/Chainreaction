@@ -335,6 +335,92 @@
           <div class="win-eyebrow">calibration</div>
           <h2>Settings</h2>
 
+          <h3 class="section-label">Graphics</h3>
+          <div class="panel gfx-panel">
+            <div class="field">
+              <div class="field-label">Quality <span id="gfx-gpu" class="field-unit"></span></div>
+              <div id="gfx-preset-group" class="segmented seg-5">
+                <button class="segment" data-gfx-preset="auto">Auto</button>
+                <button class="segment" data-gfx-preset="low">Low</button>
+                <button class="segment" data-gfx-preset="medium">Med</button>
+                <button class="segment" data-gfx-preset="high">High</button>
+                <button class="segment" data-gfx-preset="ultra">Ultra</button>
+              </div>
+              <p id="gfx-note" class="field-note"></p>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Resolution <span id="gfx-res-px" class="field-unit"></span></div>
+              <div id="gfx-res-group" class="segmented">
+                <button class="segment" data-gfx-res="0.5">50%</button>
+                <button class="segment" data-gfx-res="0.75">75%</button>
+                <button class="segment" data-gfx-res="1">Full</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Anti-aliasing <span class="field-unit">smooth edges</span></div>
+              <div id="gfx-aa-group" class="segmented">
+                <button class="segment" data-gfx-aa="0">Off</button>
+                <button class="segment" data-gfx-aa="1">On</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Shadows</div>
+              <div id="gfx-shadow-group" class="segmented">
+                <button class="segment" data-gfx-shadow="off">Off</button>
+                <button class="segment" data-gfx-shadow="soft">Soft</button>
+                <button class="segment" data-gfx-shadow="sharp">Sharp</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Orb detail</div>
+              <div id="gfx-orb-group" class="segmented">
+                <button class="segment" data-gfx-orb="standard">Standard</button>
+                <button class="segment" data-gfx-orb="high">Glossy</button>
+                <button class="segment" data-gfx-orb="ultra">Ultra</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Glow <span class="field-unit">light under orbs</span></div>
+              <div id="gfx-glow-group" class="segmented">
+                <button class="segment" data-gfx-glow="0">Off</button>
+                <button class="segment" data-gfx-glow="1">On</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Particles <span class="field-unit">sparks per blast</span></div>
+              <div id="gfx-particle-group" class="segmented">
+                <button class="segment" data-gfx-particles="low">Low</button>
+                <button class="segment" data-gfx-particles="medium">Med</button>
+                <button class="segment" data-gfx-particles="high">High</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Frame rate</div>
+              <div id="gfx-fps-group" class="segmented">
+                <button class="segment" data-gfx-fps="30">30</button>
+                <button class="segment" data-gfx-fps="60">60</button>
+                <button class="segment" data-gfx-fps="0">Max</button>
+              </div>
+              <p class="field-note">30 saves battery. Max follows your screen — 90 or 120 on fast phones.</p>
+            </div>
+
+            <div class="field">
+              <div class="field-label">FPS counter</div>
+              <div id="gfx-showfps-group" class="segmented">
+                <button class="segment" data-gfx-showfps="0">Off</button>
+                <button class="segment" data-gfx-showfps="1">On</button>
+              </div>
+            </div>
+          </div>
+
+          <h3 class="section-label">Sound &amp; feel</h3>
           <div class="panel">
             <div class="field">
               <div class="field-label">Master <span class="field-unit" id="volume-value">80%</span></div>
@@ -665,6 +751,7 @@
           <div id="chain-readout" class="chain-readout" aria-live="polite"></div>
           <div id="board-flash" class="board-flash"></div>
           <div id="board-toast" class="board-toast" aria-live="polite"></div>
+          <div id="fps-meter" class="fps-meter hidden" aria-hidden="true"></div>
           <div id="puzzle-hud" class="puzzle-hud hidden"></div>
           <div id="taunt-feed" class="taunt-feed" aria-live="polite"></div>
         </div>
