@@ -11,6 +11,7 @@ import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Share } from '@capacitor/share';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
 
@@ -79,6 +80,64 @@ export async function share(opts: { title: string; text: string; url?: string })
   }
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+export type ImageShareOutcome = 'shared' | 'saved' | 'failed';
+
+/**
+ * Shares a picture — the result card — through the system sheet, so it can go
+ * straight to an Instagram story, a WhatsApp chat or the gallery.
+ *
+ * In the app the image is written to the cache folder first, because the
+ * Android share sheet takes files, not bytes. On the web it goes through the
+ * Web Share API where the browser can share files, and is downloaded where it
+ * cannot.
+ */
+export async function shareImage(
+  blob: Blob,
+  opts: { title: string; text: string; url?: string; filename?: string }
+): Promise<ImageShareOutcome> {
+  const filename = opts.filename ?? 'fissile.png';
+  try {
+    if (isNative) {
+      const written = await Filesystem.writeFile({
+        path: filename,
+        data: await blobToBase64(blob),
+        directory: Directory.Cache,
+      });
+      await Share.share({ title: opts.title, text: opts.text, url: opts.url, files: [written.uri], dialogTitle: opts.title });
+      return 'shared';
+    }
+    const file = new File([blob], filename, { type: 'image/png' });
+    if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: opts.title, text: opts.url ? `${opts.text} ${opts.url}` : opts.text });
+      return 'shared';
+    }
+  } catch (err) {
+    if (err instanceof Error && /abort|cancel/i.test(`${err.name} ${err.message}`)) return 'failed';
+  }
+  try {
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 4000);
+    return 'saved';
+  } catch {
+    return 'failed';
+  }
+}
+
 // ---------- Haptics ----------
 
 /** Native haptics where available. On a phone the system haptic engine is a
@@ -120,6 +179,12 @@ export function onBackButton(handler: BackHandler) {
   backResolver = handler;
 }
 
+/** Closes the app for real (after the player confirmed). On the web there is
+ *  nothing to close, so it does nothing. */
+export function exitApp() {
+  if (isNative) void App.exitApp();
+}
+
 // ---------- Lifecycle ----------
 
 interface NativeHooks {
@@ -140,8 +205,10 @@ export async function initNative(hooks: NativeHooks) {
 
   if (!isNative) return;
 
+  // MainActivity runs the game full screen; this hides the status bar again
+  // if anything (an older plugin, a dialog) brought it back before JS loaded.
   void StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-  void StatusBar.setBackgroundColor({ color: '#07090c' }).catch(() => {});
+  void StatusBar.hide().catch(() => {});
 
   void App.addListener('backButton', () => {
     if (backResolver()) return;

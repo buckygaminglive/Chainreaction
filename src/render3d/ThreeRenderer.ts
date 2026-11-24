@@ -36,8 +36,6 @@ import type { GameEngine } from '../game/GameEngine';
 import type { CellKind, MoveEvent } from '../game/types';
 import { layoutFor } from '../render/orbLayout';
 import { BOARD_BG_BOTTOM, CELL_IDLE, GRID_LINE, type ColorTheme } from '../render/theme';
-import { EMOJI_STAGES, stageForRemaining } from '../render/emoji';
-import { emojiTexture } from './emojiTexture';
 import { orbSurfaceTexture } from './orbSurfaceTexture';
 import { Fx, haloTexture, punchCamera, shakeCamera, travelOrb3d } from './fx3d';
 import {
@@ -120,7 +118,6 @@ export { EXPLOSION_SPIN_UP_MS } from './timing';
 export class ThreeRenderer {
   private engine: GameEngine;
   private colorOf: (playerId: number) => ColorTheme;
-  private orbStyle: OrbStyle;
 
   private scene = new Scene();
   private camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
@@ -144,6 +141,14 @@ export class ThreeRenderer {
   private unsubscribeGraphics: (() => void) | null = null;
   /** Frame-rate cap and FPS meter bookkeeping. */
   private lastDrawAt = 0;
+  /** Until when the board counts as busy (a move resolving, a celebration, a
+   *  finger on the glass). In Auto, a board that is not busy draws at 30fps:
+   *  the orbs' slow idle drift looks the same, and the GPU does half the work,
+   *  which is what keeps a phone from warming up over a long match. */
+  private busyUntil = 0;
+  markBusy(ms = 600) {
+    this.busyUntil = Math.max(this.busyUntil, performance.now() + ms);
+  }
   private fpsFrames = 0;
   private fpsSince = 0;
   /** Called about twice a second with the measured frame rate. */
@@ -190,6 +195,16 @@ export class ThreeRenderer {
     side: DoubleSide,
   });
   private lastMoveGeo = new RingGeometry(CELL_SIZE * 0.6, CELL_SIZE * 0.645, 4, 1);
+  /** The lesson's "tap here": a pulsing frame on one cell, built on first use. */
+  private hint: Mesh | null = null;
+  private hintGeo: RingGeometry | null = null;
+  private hintMat = new MeshBasicMaterial({
+    color: 0x3ad9ff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: DoubleSide,
+  });
 
   private onCellTap: (row: number, col: number) => void = () => {};
   /** The cell under the cursor, or null. Mouse only — a finger has no hover
@@ -199,8 +214,14 @@ export class ThreeRenderer {
   /** Asked before lighting a cell: hovering somewhere you cannot play is a
    *  worse signal than no hover at all. */
   private canHover: (row: number, col: number) => boolean = () => false;
-  private onPointerDownBound = (e: PointerEvent) => this.handlePointerDown(e);
-  private onPointerMoveBound = (e: PointerEvent) => this.handlePointerMove(e);
+  private onPointerDownBound = (e: PointerEvent) => {
+    this.markBusy(800);
+    this.handlePointerDown(e);
+  };
+  private onPointerMoveBound = (e: PointerEvent) => {
+    this.markBusy(300);
+    this.handlePointerMove(e);
+  };
   private onPointerLeaveBound = () => this.setHover(null);
   private onContextLostBound = (e: Event) => this.handleContextLost(e);
   private onContextRestoredBound = () => this.handleContextRestored();
@@ -208,17 +229,26 @@ export class ThreeRenderer {
   constructor(
     engine: GameEngine,
     colorOf: (playerId: number) => ColorTheme,
-    orbStyle: OrbStyle = 'emoji',
+    _orbStyle: OrbStyle = 'dots',
     opts: { background?: boolean } = {}
   ) {
     this.engine = engine;
     this.colorOf = colorOf;
-    this.orbStyle = orbStyle;
     this.background = opts.background === true;
     this.camera.up.set(0, 0, -1);
     this.gfx = this.resolveGfx();
     const [w, h] = ORB_SEGMENTS[this.gfx.orbDetail];
     this.orbGeo = new SphereGeometry(ORB_RADIUS, w, h);
+  }
+
+  /** Screen density to draw at. Auto stops at 2× — on a 3× phone screen the
+   *  difference is invisible at arm's length but costs over twice the pixels,
+   *  and that fill rate is most of what makes a phone hot. The dimmed title
+   *  board needs even less. */
+  private densityCap(): number {
+    const dpr = window.devicePixelRatio || 1;
+    if (this.background) return Math.min(dpr, 1.25);
+    return getGraphics().preset === 'auto' ? Math.min(dpr, 2) : dpr;
   }
 
   /** The detail to draw with, from the player's settings. */
@@ -251,13 +281,8 @@ export class ThreeRenderer {
     this.canHover = fn;
   }
 
-  setOrbStyle(style: OrbStyle) {
-    if (this.orbStyle === style) return;
-    this.orbStyle = style;
-    for (let r = 0; r < this.engine.rows; r++) {
-      for (let c = 0; c < this.engine.cols; c++) this.drawCell(r, c);
-    }
-  }
+  /** Kept for callers; there is only one orb style now. */
+  setOrbStyle(_style: OrbStyle) {}
 
   async init(host: HTMLElement) {
     this.host = host;
@@ -291,7 +316,7 @@ export class ThreeRenderer {
       powerPreference: 'high-performance',
     });
     renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(pixelRatioFor(this.gfx, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(pixelRatioFor(this.gfx, this.densityCap()));
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
@@ -316,11 +341,18 @@ export class ThreeRenderer {
       const settings = getGraphics();
       // Frame-rate cap: skip the vsync ticks in between. The 2ms slack keeps
       // a 60 cap on a 60Hz screen from dropping frames to timer jitter.
-      if (settings.fps > 0 && this.lastDrawAt && now - this.lastDrawAt < 1000 / settings.fps - 2) return;
+      let cap: number = settings.fps;
+      if (this.background) {
+        // The title-screen board sits dimmed behind the menu: 24fps is plenty.
+        cap = 24;
+      } else if (settings.preset === 'auto' && now > this.busyUntil && !this.fx.busy) {
+        cap = 30;
+      }
+      if (cap > 0 && this.lastDrawAt && now - this.lastDrawAt < 1000 / cap - 2) return;
       this.lastDrawAt = now;
       if (!this.background && settings.preset === 'auto') {
         // Judged against the cap: a 30fps cap is not a slow device.
-        const budget = settings.fps === 30 ? 45 : 22;
+        const budget = cap > 0 && cap <= 30 ? 45 : 22;
         if (this.frames.sample(now, budget)) this.stepDownQuality();
       }
       this.tick();
@@ -576,6 +608,32 @@ export class ThreeRenderer {
     this.boardGroup.add(this.lastMove);
   }
 
+  /** Puts the pulsing hint frame on a cell, or takes it away with null. */
+  setHint(cell: { row: number; col: number } | null, color = 0x3ad9ff) {
+    if (!this.hint) {
+      this.hintGeo = new RingGeometry(CELL_SIZE * 0.58, CELL_SIZE * 0.7, 4, 1);
+      this.hint = new Mesh(this.hintGeo, this.hintMat);
+      this.hint.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+      this.hint.renderOrder = 4;
+      this.hint.visible = false;
+      this.boardGroup.add(this.hint);
+    }
+    gsap.killTweensOf(this.hintMat);
+    gsap.killTweensOf(this.hint.scale);
+    if (!cell) {
+      this.hint.visible = false;
+      return;
+    }
+    const p = this.cellPos(cell.row, cell.col);
+    this.hint.position.set(p.x, TILE_HEIGHT + 0.012, p.z);
+    this.hintMat.color.set(color);
+    this.hintMat.opacity = 1;
+    this.hint.scale.set(1, 1, 1);
+    this.hint.visible = true;
+    gsap.to(this.hint.scale, { x: 1.16, y: 1.16, duration: 0.55, ease: 'sine.inOut', yoyo: true, repeat: -1 });
+    gsap.to(this.hintMat, { opacity: 0.4, duration: 0.55, ease: 'sine.inOut', yoyo: true, repeat: -1 });
+  }
+
   /** Moves the last-move frame onto a cell, in the mover's colour. */
   private markLastMove(row: number, col: number, color: number) {
     if (!this.lastMove) return;
@@ -770,7 +828,7 @@ export class ThreeRenderer {
     // HiDPI and a standard monitor, and when the browser zooms. A renderer
     // holding the ratio it saw at startup draws at the wrong scale for the
     // buffer it is drawing into.
-    this.renderer.setPixelRatio(pixelRatioFor(this.gfx, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(pixelRatioFor(this.gfx, this.densityCap()));
     this.renderer.setSize(w, h, false);
 
     const rows = this.engine.rows;
@@ -911,12 +969,6 @@ export class ThreeRenderer {
 
     const positions = layoutFor(state.orbs);
     const orbMat = this.getOrbMaterial(state.owner);
-    let emojiChar: string | null = null;
-    if (this.orbStyle === 'emoji') {
-      const mass = this.engine.criticalMass(r, c);
-      const remaining = mass - state.orbs;
-      emojiChar = EMOJI_STAGES[stageForRemaining(remaining)];
-    }
 
     for (const [ox, oy] of positions) {
       const px = ox * CELL_SIZE * ORB_SPREAD;
@@ -932,18 +984,6 @@ export class ThreeRenderer {
       // turntable no matter how fast it goes.
       this.attachOrbitState(sphere, px, ORB_RADIUS, pz);
       view.orbGroup.add(sphere);
-
-      if (emojiChar) {
-        const mat = new SpriteMaterial({ map: emojiTexture(emojiChar), transparent: true, depthWrite: false });
-        const sprite = new Sprite(mat);
-        const spriteY = ORB_RADIUS * 2 + 0.15;
-        sprite.position.set(px, spriteY, pz);
-        const size = positions.length >= 3 ? 0.3 : 0.36;
-        sprite.scale.set(size, size, 1);
-        // Ride along with the sphere it labels, using that sphere's orbit.
-        this.attachOrbitState(sprite, px, spriteY, pz, sphere.userData.orbit);
-        view.orbGroup.add(sprite);
-      }
     }
   }
 
@@ -1117,8 +1157,8 @@ export class ThreeRenderer {
         if (animating) {
           // leave scale to the tween
         } else if (nearCritical) {
-          const speed = this.orbStyle === 'emoji' ? 0.4 : 0.25;
-          const amount = this.orbStyle === 'emoji' ? 0.06 : 0.04;
+          const speed = 0.25;
+          const amount = 0.04;
           const pulse = 1 + Math.sin(this.t * speed + seed) * amount;
           view.orbGroup.scale.set(pulse, pulse, pulse);
           // The ring expands on the same phase as the cluster but with a much
@@ -1203,6 +1243,21 @@ export class ThreeRenderer {
   }
 
   async playEvents(
+    events: MoveEvent[],
+    onEventStart?: (ev: MoveEvent) => void,
+    onWaveSettled?: (wave: number, cellsExploded: number, captured: number) => void,
+    onBlast?: (wave: number, cellsExploded: number) => void
+  ): Promise<void> {
+    // Full frame rate for the whole cascade, and a moment after it settles.
+    this.busyUntil = Number.POSITIVE_INFINITY;
+    try {
+      await this.playEventsInner(events, onEventStart, onWaveSettled, onBlast);
+    } finally {
+      this.busyUntil = performance.now() + 700;
+    }
+  }
+
+  private async playEventsInner(
     events: MoveEvent[],
     onEventStart?: (ev: MoveEvent) => void,
     onWaveSettled?: (wave: number, cellsExploded: number, captured: number) => void,
@@ -1445,6 +1500,7 @@ export class ThreeRenderer {
   /** A celebratory flare on every cell the winner holds, rippling outward
    *  from the cell that ended it. Purely visual. */
   celebrate(playerId: number, from?: { row: number; col: number }) {
+    this.markBusy(4000);
     const theme = this.colorOf(playerId);
     const origin = from ?? { row: (this.engine.rows - 1) / 2, col: (this.engine.cols - 1) / 2 };
     for (let r = 0; r < this.engine.rows; r++) {
@@ -1486,6 +1542,9 @@ export class ThreeRenderer {
     this.haloGeo.dispose();
     this.lastMoveGeo.dispose();
     this.lastMoveMat.dispose();
+    if (this.hint) gsap.killTweensOf([this.hintMat, this.hint.scale]);
+    this.hintGeo?.dispose();
+    this.hintMat.dispose();
     for (const m of this.orbMatCache.values()) m.dispose();
     this.orbMatCache.clear();
     this.orbGeo.dispose();

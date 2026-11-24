@@ -23,11 +23,13 @@ import {
   isNative,
   onBackButton,
   share,
+  shareImage,
   roomLink,
   roomCodeFromUrl,
   PUBLIC_ORIGIN,
+  exitApp,
 } from './native';
-import { rankFor, rankProgress, nextRankAt } from './game/rank';
+import { RANKS, rankFor, rankProgress, nextRankAt } from './game/rank';
 import { rankBadgeSvg } from './render/rankBadge';
 import {
   prefs,
@@ -42,13 +44,21 @@ import {
 import type { ThreeRenderer, OrbStyle } from './render3d/ThreeRenderer';
 import { PLAYER_THEMES } from './render/theme';
 import { modePreview } from './render/modePreview';
+import { modeArtSvg } from './art/modeArt';
 import { sfx } from './sfx/Sfx';
 import { haptics } from './sfx/Haptics';
 import { NetClient } from './net/NetClient';
 import { account } from './net/account';
 import { initProfile, renderProfile } from './ui/profile';
 import { attachSheet, attachSwipePager } from './ui/sheet';
-import { avatarSvg, defaultAvatarFor } from './render/avatar';
+import { ICON_SOUND_OFF, ICON_SOUND_ON } from './ui/icons';
+import { avatarSvg, crewFor, defaultAvatarFor, DEFAULT_AVATAR } from './render/avatar';
+import { renderShareCard } from './art/shareImage';
+import type { ShareCardData, ShareCell } from './art/shareCard';
+import { randomPlayerName } from './game/names';
+import { Nova } from './guide/nova';
+import { Commentator } from './guide/commentator';
+import { novaFaceSvg } from './guide/novaFace';
 import { pixelRatioFor, type GraphicsDetail, type OrbDetail, type ParticleLevel, type ShadowLevel } from './render3d/quality';
 import { currentAutoTier, currentDetail, getGraphics, onGraphicsChange, setGraphics, type FpsCap, type GraphicsPreset } from './render3d/graphics';
 import { telemetry } from './net/telemetry';
@@ -59,6 +69,8 @@ import {
   CHAT_PHRASES,
   CHAT_COOLDOWN_MS,
 } from './net/taunts';
+import { TYPED_COOLDOWN_MS, TYPED_MAX, cleanTyped } from './net/chatFilter';
+import { LEAVE_PENALTY, PLACE_POINTS, ordinal, type RankedPlayers } from './net/rankPoints';
 import type { BoardSizeKey, NetPlayer } from './net/protocol';
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -188,6 +200,8 @@ let intentionalDisconnect = false;
  *  client kicks the game off automatically once the room fills, so neither
  *  side has to find and press Start. */
 let quickMatchPending = false;
+/** True for a match that came from the ranked queue — leaving it costs points. */
+let rankedMatch = false;
 
 function disconnectNet() {
   intentionalDisconnect = true;
@@ -245,7 +259,6 @@ const playerRosterEl = $('player-roster');
 const boardSizeGroup = $('board-size-group');
 const orientationGroup = $('orientation-group');
 const lobbyOrientationGroup = $('lobby-orientation-group');
-const orbStyleGroup = $('orb-style-group');
 const modeGroup = $('mode-group');
 const modeBlurbEl = $('mode-blurb');
 const modePreviewEl = $('mode-preview');
@@ -280,6 +293,45 @@ const winRankEl = $('win-rank');
 const playAgainBtn = $('play-again-btn');
 const confettiLayer = $('confetti-layer');
 
+// ---------- Nova ----------
+/** The computer has a face and a voice: Nova guides the lesson and talks
+ *  through every match against her. */
+const nova = new Nova(sfx);
+const commentator = new Commentator(nova);
+const novaDockEl = $('nova-dock');
+const winNovaEl = $('win-nova');
+const lessonBarEl = $('lesson-bar');
+const lessonStepEl = $('lesson-step');
+const lessonActionsEl = $('lesson-actions');
+document.querySelectorAll<HTMLElement>('.nova-stage .nova-pfp').forEach((el) => {
+  el.innerHTML = novaFaceSvg(128);
+});
+const NOVA_GAMES_KEY = 'fissile.nova.games';
+/** Finished games against Nova — the first few get coaching tips. */
+let novaGames = 0;
+try {
+  novaGames = Math.max(0, Number(localStorage.getItem(NOVA_GAMES_KEY)) || 0);
+} catch {
+  /* storage unavailable */
+}
+/** How the last game against her went, so a rematch opens with the right line. */
+let novaLastResult: 'won' | 'lost' | null = null;
+let novaLastLevel: number | null = null;
+/** The interactive lesson is mounted. Like a Daily puzzle, it uses a real
+ *  board but scores nothing and never shows the result card. */
+let lessonMode = false;
+/** Bumped whenever a lesson starts or is abandoned, so a script still
+ *  awaiting a tap from an old lesson does nothing when it resumes. */
+let lessonToken = 0;
+
+function startNovaCommentary(level: number) {
+  nova.attach(novaDockEl);
+  const rematch = novaLastLevel === level ? novaLastResult : null;
+  novaLastLevel = level;
+  commentator.start({ level, aiId: AI_PLAYER_ID, humanId: 0, rematch, gamesPlayed: novaGames });
+  commentator.armIdle();
+}
+
 const nameInput = $<HTMLInputElement>('name-input');
 const nameSaveBtn = $('name-save-btn');
 const nameNoteEl = $('name-note');
@@ -312,7 +364,6 @@ const lobbyPlayersEl = $('lobby-players');
 const lobbyColorPickerEl = $('lobby-color-picker');
 const lobbyHostControls = $('lobby-host-controls');
 const lobbyBoardSizeGroup = $('lobby-board-size-group');
-const lobbyOrbStyleGroup = $('lobby-orb-style-group');
 const lobbyModeGroup = $('lobby-mode-group');
 const lobbyModeBlurbEl = $('lobby-mode-blurb');
 const lobbyStartBtn = $<HTMLButtonElement>('lobby-start-btn');
@@ -320,6 +371,7 @@ const lobbyInviteField = $('lobby-invite-field');
 const lobbyInviteListEl = $('lobby-invite-list');
 const inviteInboxEl = $('invite-inbox');
 const lobbyWaitMsg = $('lobby-wait-msg');
+const lobbyStartHint = $('lobby-start-hint');
 const connStatusEl = $('conn-status');
 
 // Before a game exists (menu swatches, lobby color picker) this is a plain index
@@ -349,7 +401,7 @@ function themeForSeat(seat: number, mode = modeKey) {
  *  match was not ranked. Held until the next one starts rather than shown and
  *  forgotten — the result card is composed before the relay has finished
  *  talking to the ladder, so the number arrives after the card is already up. */
-let lastRated: { rating: number; delta: number } | null = null;
+let lastRated: { rating: number; delta: number; place?: number; left?: boolean } | null = null;
 
 /**
  * The ranked readout on the result card: the tier you are now, and what this
@@ -374,7 +426,7 @@ function renderWinRank() {
     `<div class="win-rank-badge">${rankBadgeSvg(rank, 40)}</div>` +
     `<div class="win-rank-meta">` +
     `<span class="win-rank-name" style="color:${rank.css}">${rank.name}</span>` +
-    `<span class="win-rank-rating">${lastRated.rating} rating</span>` +
+    `<span class="win-rank-rating">${lastRated.place ? `${ordinal(lastRated.place)}${lastRated.left ? ' (left)' : ''} · ` : ''}${lastRated.rating} pts</span>` +
     `</div>` +
     `<span class="win-rank-delta is-${sign}">${label}</span>`;
 }
@@ -479,12 +531,17 @@ function applyStoredPrefs() {
   const stored = prefs.get();
   numPlayers = stored.players;
   boardSizeKey = stored.boardSize;
-  orbStyle = stored.orbStyle;
   muted = stored.muted;
   motionPref = stored.motion;
   orientationPref = stored.orientation;
   localNames = stored.names;
   callsign = stored.callsign;
+  if (!callsign) {
+    // First launch: hand out a proper name straight away and keep it, so the
+    // home screen, the ladder and every room agree on who this is.
+    callsign = randomName();
+    prefs.save({ ...stored, callsign });
+  }
   // Set here rather than at module load: prefs are not read until this runs,
   // so anywhere earlier the stored callsign is still empty and the random
   // fallback wins every time.
@@ -494,7 +551,6 @@ function applyStoredPrefs() {
   sfx.musicVolume = stored.music;
   haptics.enabled = stored.haptics;
   markSegment(boardSizeGroup, 'size', boardSizeKey);
-  markSegment(orbStyleGroup, 'style', orbStyle);
   // 'auto' resolves against this screen, so the control shows what will
   // actually happen rather than the word "auto".
   const landscape = useLandscape();
@@ -529,6 +585,8 @@ function persistPrefs() {
 // ---------- Settings ----------
 function renderSettings() {
   renderGraphicsSettings();
+  markSegment(novaChatterGroup, 'chatter', nova.prefs.chatter);
+  markSegment(novaVoiceGroup, 'novavoice', nova.prefs.voice ? '1' : '0');
   volumeRange.value = String(Math.round(sfx.volume * 100));
   volumeValueEl.textContent = `${Math.round(sfx.volume * 100)}%`;
   musicRange.value = String(Math.round(sfx.musicVolume * 100));
@@ -555,6 +613,16 @@ function applyMotionPref() {
   else if (!screenMenu.classList.contains('hidden')) scheduleAttract();
 }
 
+const novaChatterGroup = $('nova-chatter-group');
+const novaVoiceGroup = $('nova-voice-group');
+onSegmentPick(novaChatterGroup, (el) => {
+  const chatter = el.dataset.chatter;
+  if (chatter === 'lots' || chatter === 'some' || chatter === 'off') nova.setPrefs({ chatter });
+});
+onSegmentPick(novaVoiceGroup, (el) => {
+  nova.setPrefs({ voice: el.dataset.novavoice === '1' });
+});
+
 volumeRange.addEventListener('input', () => {
   sfx.unlock();
   sfx.volume = Number(volumeRange.value) / 100;
@@ -579,27 +647,43 @@ function renderProfileStrip() {
 /** Builds one of the two mode pickers. `onlineOnly` hides modes the relay
  *  can't referee rather than letting the host pick something that will be
  *  rejected. */
-function renderModeGrid(host: HTMLElement, selected: GameModeKey, onlineOnly: boolean, pick: (m: GameModeKey) => void) {
+function renderModeGrid(host: HTMLElement, selected: GameModeKey, onlineOnly: boolean, pick: (m: GameModeKey) => void, freeForAllOnly = false) {
+  // Cards with key art, in a row that scrolls sideways and snaps — seven
+  // modes are too many to read as a grid of words on a phone.
+  const keepScroll = host.scrollLeft;
   host.innerHTML = '';
+  host.classList.add('mode-cards');
+  let active: HTMLElement | null = null;
   for (const key of MODE_ORDER) {
     const mode = GAME_MODES[key];
     if (onlineOnly && !mode.online) continue;
+    if (freeForAllOnly && mode.teams) continue;
     const btn = document.createElement('button');
-    btn.className = 'mode-chip' + (key === selected ? ' active' : '');
+    btn.className = 'mode-card' + (key === selected ? ' active' : '');
     btn.dataset.mode = key;
-    btn.textContent = mode.name;
-    if (!onlineOnly && !mode.online) {
-      const tag = document.createElement('span');
-      tag.className = 'local-tag';
-      tag.textContent = 'local';
-      btn.appendChild(tag);
-    }
+    btn.setAttribute('aria-pressed', String(key === selected));
+    btn.innerHTML =
+      `<span class="mc-art">${modeArtSvg(key, 160)}</span>` +
+      `<span class="mc-name">${mode.name}${!onlineOnly && !mode.online ? '<span class="local-tag">local</span>' : ''}</span>`;
     btn.addEventListener('click', () => {
       sfx.unlock();
       sfx.buttonTap();
       pick(key);
     });
+    if (key === selected) active = btn;
     host.appendChild(btn);
+  }
+  host.scrollLeft = keepScroll;
+  // Bring the picked card fully into view without yanking the page.
+  if (active) {
+    const card = active;
+    requestAnimationFrame(() => {
+      const left = card.offsetLeft - host.offsetLeft;
+      const right = left + card.offsetWidth;
+      if (left < host.scrollLeft || right > host.scrollLeft + host.clientWidth) {
+        host.scrollTo({ left: Math.max(0, left - 12), behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }
+    });
   }
 }
 
@@ -646,7 +730,7 @@ function selectLobbyMode(key: GameModeKey) {
  *  would reject is a guaranteed dead end. */
 function selectQuickMode(key: GameModeKey) {
   quickMode = key;
-  renderModeGrid(quickModeGroup, quickMode, true, selectQuickMode);
+  renderModeGrid(quickModeGroup, quickMode, true, selectQuickMode, true);
   renderQuickPreview();
 }
 
@@ -659,13 +743,21 @@ function selectQuickMode(key: GameModeKey) {
  * moment an opponent is found, so this is the last point at which the choice
  * can still be changed.
  */
+/** A mode's description as it plays online, where every turn is on a clock:
+ *  20 seconds unless the mode sets its own. */
+function onlineBlurb(key: GameModeKey): string {
+  const spec = GAME_MODES[key];
+  if (spec.turnSeconds) return spec.blurb;
+  return `${spec.blurb.replace(/^Untimed\.\s*/, '')} Online: 20 seconds per turn; miss three and you're out.`;
+}
+
 function renderQuickPreview() {
-  const size = boardDims(quickBoardSize);
+  const size = boardDims(quickBoardSize === 'auto' ? 'medium' : quickBoardSize);
   const { svg, caption, hasSpecials } = modePreview(quickMode, size.rows, size.cols);
   quickPreviewEl.innerHTML = svg;
-  quickCaptionEl.textContent = caption;
+  quickCaptionEl.textContent = quickBoardSize === 'auto' ? 'Auto: any board size. Shown at 11×6.' : caption;
   quickLegendEl.classList.toggle('hidden', !hasSpecials);
-  quickModeBlurbEl.textContent = GAME_MODES[quickMode].blurb;
+  quickModeBlurbEl.textContent = onlineBlurb(quickMode);
 }
 
 function stepPlayers(delta: number) {
@@ -715,19 +807,9 @@ onSegmentPick(lobbyOrientationGroup, (el) => {
   net?.setLobby({ landscape: lobbyLandscape });
 });
 
-onSegmentPick(orbStyleGroup, (el) => {
-  orbStyle = el.dataset.style as OrbStyle;
-  renderer?.setOrbStyle(orbStyle);
-  persistPrefs();
-});
-
 onSegmentPick(lobbyBoardSizeGroup, (el) => {
   lobbyBoardSize = el.dataset.size as BoardSizeKey;
   net?.setLobby({ boardSize: lobbyBoardSize, landscape: lobbyLandscape });
-});
-
-onSegmentPick(lobbyOrbStyleGroup, (el) => {
-  lobbyOrbStyle = el.dataset.style as OrbStyle;
 });
 
 onSegmentPick(lobbyVisibilityGroup, (el) => {
@@ -822,9 +904,13 @@ window.addEventListener('keydown', (e) => {
 });
 
 function updateMuteIcon() {
-  const icon = muted ? '🔇' : '🔊';
-  $('mute-btn-menu').textContent = icon;
-  $('mute-btn-game').textContent = icon;
+  const icon = muted ? ICON_SOUND_OFF : ICON_SOUND_ON;
+  for (const id of ['mute-btn-menu', 'mute-btn-game']) {
+    const btn = $(id);
+    btn.innerHTML = icon;
+    btn.setAttribute('aria-pressed', String(muted));
+    btn.setAttribute('aria-label', muted ? 'Sound off — tap to turn on' : 'Sound on — tap to mute');
+  }
 }
 function toggleMute() {
   muted = !muted;
@@ -832,6 +918,78 @@ function toggleMute() {
   updateMuteIcon();
   persistPrefs();
 }
+
+// ---------- Sound menu ----------
+/**
+ * The speaker button opens a small menu instead of muting everything at once:
+ * game sounds, music and Nova's voice each switch on their own, plus a mute
+ * for all of it. Game-sound and music switches are kept on this device.
+ */
+const SOUND_KEY = 'fissile.sound.v1';
+const soundMenuEl = $('sound-menu');
+try {
+  const saved = JSON.parse(localStorage.getItem(SOUND_KEY) ?? '{}');
+  sfx.fxMuted = saved.fx === false;
+  sfx.musicMuted = saved.music === false;
+} catch {
+  // Unreadable storage: everything stays on.
+}
+function saveSoundPrefs() {
+  try {
+    localStorage.setItem(SOUND_KEY, JSON.stringify({ fx: !sfx.fxMuted, music: !sfx.musicMuted }));
+  } catch {
+    // Private mode: lasts for this session.
+  }
+}
+
+function renderSoundMenu() {
+  const state: Record<string, boolean> = { fx: !sfx.fxMuted, music: !sfx.musicMuted, nova: nova.prefs.voice };
+  soundMenuEl.querySelectorAll<HTMLInputElement>('input[data-sound]').forEach((el) => {
+    el.checked = state[el.dataset.sound ?? ''] ?? true;
+    el.disabled = muted;
+  });
+  soundMenuEl.classList.toggle('all-muted', muted);
+  soundMenuEl.querySelector('.sound-all')!.textContent = muted ? 'Turn sound back on' : 'Mute everything';
+}
+
+function openSoundMenu(anchor: HTMLElement) {
+  sfx.unlock();
+  renderSoundMenu();
+  soundMenuEl.classList.remove('hidden');
+  const r = anchor.getBoundingClientRect();
+  const w = soundMenuEl.offsetWidth;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w));
+  soundMenuEl.style.left = `${left}px`;
+  soundMenuEl.style.top = `${r.bottom + 8}px`;
+}
+
+function closeSoundMenu() {
+  soundMenuEl.classList.add('hidden');
+}
+
+soundMenuEl.addEventListener('change', (e) => {
+  const el = e.target as HTMLInputElement;
+  const which = el.dataset.sound;
+  if (which === 'fx') sfx.fxMuted = !el.checked;
+  else if (which === 'music') sfx.musicMuted = !el.checked;
+  else if (which === 'nova') {
+    nova.setPrefs({ voice: el.checked });
+    markSegment(novaVoiceGroup, 'novavoice', el.checked ? '1' : '0');
+  }
+  saveSoundPrefs();
+  if (!sfx.fxMuted) sfx.buttonTap();
+});
+soundMenuEl.querySelector('.sound-all')!.addEventListener('click', () => {
+  toggleMute();
+  renderSoundMenu();
+  if (!muted) sfx.buttonTap();
+});
+document.addEventListener('pointerdown', (e) => {
+  if (soundMenuEl.classList.contains('hidden')) return;
+  const t = e.target as HTMLElement;
+  if (soundMenuEl.contains(t) || t.closest('#mute-btn-menu, #mute-btn-game')) return;
+  closeSoundMenu();
+});
 
 // A system-level motion change while the game is open should still be picked
 // up — but only while the player is on auto, or their own choice is not a
@@ -841,14 +999,92 @@ if (typeof matchMedia === 'function') {
     if (motionPref === 'auto') applyMotionPref();
   });
 }
-$('mute-btn-menu').addEventListener('click', toggleMute);
-$('mute-btn-game').addEventListener('click', toggleMute);
+for (const id of ['mute-btn-menu', 'mute-btn-game']) {
+  const btn = $(id);
+  btn.addEventListener('click', () => {
+    if (soundMenuEl.classList.contains('hidden')) openSoundMenu(btn);
+    else closeSoundMenu();
+  });
+}
 
 $('back-btn').addEventListener('click', () => {
   sfx.buttonTap();
-  if (onlineMode) leaveOnlineGame();
+  void confirmLeaveMatch().then((ok) => {
+    if (ok) leaveMatchNow();
+  });
+});
+
+/** Leaves the board for the menu. In a live online match the relay is told
+ *  first, so the seat comes out of the game straight away rather than the
+ *  others waiting out three turn clocks on someone who has gone. */
+function leaveMatchNow() {
+  if (onlineMode) {
+    if (engine && !engine.gameOver) net?.sendLeave();
+    leaveOnlineGame();
+  }
   leaveGameScreen();
   showScreen(screenMenu);
+}
+
+/** Whether leaving now would abandon a match that is still being played. */
+function matchIsLive(): boolean {
+  return !!engine && !engine.gameOver && !lessonMode && screenWin.classList.contains('hidden');
+}
+
+function confirmLeaveMatch(): Promise<boolean> {
+  if (!matchIsLive()) return Promise.resolve(true);
+  const ranked = onlineMode && rankedMatch;
+  return confirmDialog({
+    title: 'Leave this match?',
+    body: ranked
+      ? `This is a ranked match. Leaving counts as a loss and costs you ${-LEAVE_PENALTY} points.`
+      : onlineMode
+        ? "You'll be taken out of the match and the others will carry on without you."
+        : 'This game will end and its progress will be lost.',
+    ok: 'Leave',
+    cancel: 'Keep playing',
+    danger: true,
+  });
+}
+
+// ---------- Confirm dialog ----------
+const screenConfirm = $('screen-confirm');
+let confirmResolve: ((ok: boolean) => void) | null = null;
+
+/** A small yes/no sheet. Resolves false when dismissed any other way (Back,
+ *  tapping outside), so a stray tap never confirms anything. */
+function confirmDialog(opts: { title: string; body: string; ok: string; cancel: string; danger?: boolean }): Promise<boolean> {
+  confirmResolve?.(false);
+  $('confirm-title').textContent = opts.title;
+  $('confirm-body').textContent = opts.body;
+  const okBtn = $('confirm-ok-btn');
+  okBtn.textContent = opts.ok;
+  okBtn.classList.toggle('danger-btn', opts.danger === true);
+  $('confirm-cancel-btn').textContent = opts.cancel;
+  showOverlay(screenConfirm);
+  okBtn.focus();
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+
+function closeConfirm(ok: boolean) {
+  hideOverlay(screenConfirm);
+  const r = confirmResolve;
+  confirmResolve = null;
+  r?.(ok);
+}
+
+$('confirm-ok-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  closeConfirm(true);
+});
+$('confirm-cancel-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  closeConfirm(false);
+});
+screenConfirm.addEventListener('click', (e) => {
+  if (e.target === screenConfirm) closeConfirm(false);
 });
 
 playAgainBtn.addEventListener('click', () => {
@@ -866,7 +1102,9 @@ playAgainBtn.addEventListener('click', () => {
   // A rematch against a bot is another game against *that* bot — falling
   // through to startLocalGame would silently turn it into pass-and-play.
   if (activeBot) {
-    void startBotMatch(activeBot);
+    // The vs-computer sheet's own size and mode, not quick match's.
+    const cpu = activeBot.id.startsWith('cpu-');
+    void startBotMatch(activeBot, cpu ? { size: cpuSize, mode: DEFAULT_MODE } : {});
     return;
   }
   const mode = GAME_MODES[modeKey];
@@ -1374,12 +1612,33 @@ function buildTauntPalette() {
  *  list rather than from a per-group counter. */
 function buildChatPalette() {
   chatPaletteEl.innerHTML = '';
+  const tabs = document.createElement('div');
+  tabs.className = 'segmented chat-tabs';
+  tabs.innerHTML =
+    '<button class="segment" data-chat-tab="quick">Quick</button>' + '<button class="segment" data-chat-tab="type">Type ✏️</button>';
+  tabs.addEventListener('click', (e) => {
+    const tab = (e.target as HTMLElement).closest<HTMLElement>('[data-chat-tab]')?.dataset.chatTab;
+    if (tab !== 'quick' && tab !== 'type') return;
+    sfx.buttonTap();
+    setChatTab(tab);
+  });
+  chatPaletteEl.appendChild(tabs);
+
+  const quick = document.createElement('div');
+  quick.className = 'chat-pane';
+  quick.dataset.pane = 'quick';
+  chatPaletteEl.appendChild(quick);
+  const typePane = document.createElement('div');
+  typePane.className = 'chat-pane chat-type-pane';
+  typePane.dataset.pane = 'type';
+  chatPaletteEl.appendChild(typePane);
+
   let index = 0;
   for (const group of CHAT_GROUPS) {
     const heading = document.createElement('div');
     heading.className = 'chat-group-label';
     heading.textContent = group.label;
-    chatPaletteEl.appendChild(heading);
+    quick.appendChild(heading);
 
     const row = document.createElement('div');
     row.className = 'chat-group';
@@ -1391,9 +1650,183 @@ function buildChatPalette() {
       btn.addEventListener('click', () => sendChat(i));
       row.appendChild(btn);
     }
-    chatPaletteEl.appendChild(row);
+    quick.appendChild(row);
+  }
+  setChatTab(chatPrefs.tab);
+}
+
+// ---------- Typed chat ----------
+/**
+ * Free-text chat, opt-in. Off by default; the player turns it on (from the
+ * chat panel's Type tab or in Settings) and can turn it off again mid-match.
+ * Off means both directions: you cannot type, and other players' typed
+ * messages are not shown to you, so nobody receives free text they did not
+ * ask for. The relay filters every message before broadcasting
+ * (src/net/chatFilter.ts); this side filters again and adds per-player mute
+ * and report.
+ */
+interface ChatPrefs {
+  typed: boolean;
+  tab: 'quick' | 'type';
+}
+const CHAT_PREFS_KEY = 'fissile.chat.v1';
+const chatPrefs: ChatPrefs = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CHAT_PREFS_KEY) ?? '{}');
+    return { typed: raw.typed === true, tab: raw.tab === 'type' ? 'type' : 'quick' };
+  } catch {
+    return { typed: false, tab: 'quick' };
+  }
+})();
+function saveChatPrefs() {
+  try {
+    localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(chatPrefs));
+  } catch {
+    // Private mode: the choice lasts for this session only.
   }
 }
+/** Seats whose typed messages this player has muted, for the current room. */
+const mutedSeats = new Set<number>();
+const typedChatGroup = $('typed-chat-group');
+
+function setTypedChat(on: boolean) {
+  chatPrefs.typed = on;
+  saveChatPrefs();
+  markSegment(typedChatGroup, 'typed', on ? '1' : '0');
+  renderTypePane();
+}
+
+function setChatTab(tab: 'quick' | 'type') {
+  chatPrefs.tab = tab;
+  saveChatPrefs();
+  chatPaletteEl
+    .querySelectorAll<HTMLElement>('[data-chat-tab]')
+    .forEach((b) => b.classList.toggle('active', b.dataset.chatTab === tab));
+  chatPaletteEl
+    .querySelectorAll<HTMLElement>('.chat-pane')
+    .forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== tab));
+  if (tab === 'type') renderTypePane();
+}
+
+function renderTypePane() {
+  const pane = chatPaletteEl.querySelector<HTMLElement>('.chat-type-pane');
+  if (!pane) return;
+  if (!chatPrefs.typed) {
+    pane.innerHTML =
+      '<p class="chat-type-note">Write your own messages. They are filtered, links and numbers are removed, and anyone can mute or report you, so keep it friendly.</p>' +
+      '<p class="chat-type-note dim">While this is off, other players’ typed messages stay hidden from you.</p>' +
+      '<button type="button" class="primary-btn chat-type-on">Turn on typed chat</button>';
+    pane.querySelector('.chat-type-on')!.addEventListener('click', () => {
+      sfx.buttonTap();
+      setTypedChat(true);
+      pane.querySelector<HTMLInputElement>('.chat-input')?.focus();
+    });
+    return;
+  }
+  pane.innerHTML =
+    '<form class="chat-type-form" autocomplete="off">' +
+    `<input class="text-input chat-input" maxlength="${TYPED_MAX}" placeholder="Say something…" enterkeyhint="send" aria-label="Type a message" />` +
+    '<button type="submit" class="primary-btn chat-send">Send</button>' +
+    '</form>' +
+    '<div class="chat-type-foot"><span class="chat-type-hint"></span><button type="button" class="chat-type-off">Turn off typed chat</button></div>';
+  const form = pane.querySelector<HTMLFormElement>('form')!;
+  const input = pane.querySelector<HTMLInputElement>('.chat-input')!;
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (sendSay(input.value)) input.value = '';
+  });
+  pane.querySelector('.chat-type-off')!.addEventListener('click', () => {
+    sfx.buttonTap();
+    setTypedChat(false);
+  });
+}
+
+function typedHint(text: string) {
+  const el = chatPaletteEl.querySelector<HTMLElement>('.chat-type-hint');
+  if (!el) return;
+  el.textContent = text;
+  setTimeout(() => {
+    if (el.textContent === text) el.textContent = '';
+  }, 2200);
+}
+
+function sendSay(raw: string): boolean {
+  if (!net || !onlineMode || !chatPrefs.typed) return false;
+  const text = cleanTyped(raw);
+  if (!text) {
+    typedHint(raw.trim() ? 'That can’t be sent.' : '');
+    return false;
+  }
+  const now = performance.now();
+  // Shares the quick-chat clock, the same as the relay does.
+  if (now - lastChatAt < TYPED_COOLDOWN_MS) {
+    typedHint('Slow down a moment…');
+    return false;
+  }
+  if (!net.sendSay(text)) return false;
+  lastChatAt = now;
+  sfx.buttonTap();
+  setChatPaletteOpen(false);
+  showSay(myPlayerId, text);
+  return true;
+}
+
+function receiveSay(from: number, raw: string) {
+  if (from === myPlayerId || !chatPrefs.typed || mutedSeats.has(from)) return;
+  const text = cleanTyped(raw);
+  if (text) showSay(from, text);
+}
+
+/** A typed bubble. Someone else's can be tapped for Mute / Report, and it
+ *  stays up while those are showing. */
+function showSay(fromPlayerId: number, text: string) {
+  const who = engine?.players.find((p) => p.id === fromPlayerId);
+  const name = who?.name ?? 'Player';
+  const theme = colorOf(fromPlayerId);
+  const mine = fromPlayerId === myPlayerId;
+  const bubble = document.createElement('div');
+  bubble.className = 'taunt-bubble chat-bubble typed-bubble' + (mine ? '' : ' can-act');
+  bubble.dataset.from = String(fromPlayerId);
+  bubble.style.borderColor = `${theme.css}66`;
+  bubble.innerHTML =
+    `<span class="tn" style="color:${theme.css}">${escapeHtml(name)}</span>` +
+    `<span class="cp">${escapeHtml(text)}</span>`;
+  tauntFeedEl.appendChild(bubble);
+  while (tauntFeedEl.childElementCount > 4) tauntFeedEl.firstElementChild?.remove();
+  let timer = setTimeout(() => bubble.remove(), 5200);
+  if (mine) return;
+  bubble.addEventListener('click', () => {
+    if (bubble.querySelector('.chat-actions')) return;
+    clearTimeout(timer);
+    bubble.classList.add('held');
+    const actions = document.createElement('div');
+    actions.className = 'chat-actions';
+    actions.innerHTML = '<button type="button" data-act="mute">Mute</button><button type="button" data-act="report">Report</button>';
+    actions.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const act = (e.target as HTMLElement).dataset.act;
+      if (act !== 'mute' && act !== 'report') return;
+      if (act === 'report') net?.sendReport(fromPlayerId, text);
+      mutedSeats.add(fromPlayerId);
+      // Everything they said that is still on screen goes too.
+      tauntFeedEl.querySelectorAll(`.typed-bubble[data-from="${fromPlayerId}"]`).forEach((b) => b.remove());
+      showTypedNotice(act === 'report' ? `Reported and muted ${name}. Thanks for flagging it.` : `${name} muted for this room.`);
+    });
+    bubble.appendChild(actions);
+    timer = setTimeout(() => bubble.remove(), 6000);
+  });
+}
+
+function showTypedNotice(text: string) {
+  const note = document.createElement('div');
+  note.className = 'taunt-bubble chat-bubble';
+  note.innerHTML = `<span class="cp">${escapeHtml(text)}</span>`;
+  tauntFeedEl.appendChild(note);
+  setTimeout(() => note.remove(), 3200);
+}
+
+onSegmentPick(typedChatGroup, (el) => setTypedChat(el.dataset.typed === '1'));
+markSegment(typedChatGroup, 'typed', chatPrefs.typed ? '1' : '0');
 
 function setTauntPaletteOpen(open: boolean) {
   tauntPaletteEl.classList.toggle('hidden', !open);
@@ -1535,7 +1968,7 @@ function stopTurnClock() {
 function startTurnClock() {
   const seconds = GAME_MODES[modeKey].turnSeconds;
   stopTurnClock();
-  if (!seconds || onlineMode || !engine || engine.gameOver) return;
+  if (!seconds || onlineMode || lessonMode || !engine || engine.gameOver) return;
   runTurnClock(seconds * 1000, true);
 }
 
@@ -1622,6 +2055,7 @@ function maybeRunAiTurn() {
 
   const generation = soundGeneration;
   animating = true;
+  commentator.beforeAiMove();
   setTimeout(() => {
     if (generation !== soundGeneration || !engine || engine.gameOver) {
       animating = false;
@@ -1676,6 +2110,7 @@ async function startLocalGame() {
   renderer!.setHoverTest(localHoverTest);
   renderMatchBanner();
   startTurnClock();
+  if (GAME_MODES[modeKey].solo) startNovaCommentary(-1);
   maybeRunAiTurn();
 }
 
@@ -1684,9 +2119,18 @@ async function startLocalGame() {
  *  any time the player leaves the game screen without starting a new game
  *  (starting one already tears down the old game via mountGame below). */
 function leaveGameScreen() {
+  commentator.stop();
+  nova.stop();
+  const wasLesson = lessonMode;
+  lessonMode = false;
+  lessonToken++;
+  lessonBarEl.classList.add('hidden');
+  lessonActionsEl.classList.add('hidden');
+  novaDockEl.classList.remove('lesson');
+  screenGame.classList.remove('lesson-on');
   // A match left part-way is exactly what "match completion" in §14 measures
   // against, so it has to be reported as loudly as a finished one.
-  if (matchStartedAt && engine && !engine.gameOver) {
+  if (matchStartedAt && engine && !engine.gameOver && !wasLesson) {
     telemetry.event('match_abandoned', {
       mode: modeKey,
       online: onlineMode,
@@ -1720,9 +2164,18 @@ function leaveGameScreen() {
 async function mountGame(
   newEngine: GameEngine,
   style: OrbStyle,
-  opts: { fromSnapshot?: boolean; daily?: boolean } = {}
+  opts: { fromSnapshot?: boolean; daily?: boolean; lesson?: boolean } = {}
 ): Promise<boolean> {
   soundGeneration++;
+  commentator.stop();
+  nova.stop();
+  winNovaEl.classList.add('hidden');
+  lessonMode = opts.lesson === true;
+  if (!lessonMode) lessonToken++;
+  lessonBarEl.classList.toggle('hidden', !lessonMode);
+  lessonActionsEl.classList.add('hidden');
+  novaDockEl.classList.toggle('lesson', lessonMode);
+  screenGame.classList.toggle('lesson-on', lessonMode);
   // Only startDailyPuzzle mounts a puzzle; every other way onto a board is a
   // normal match and clears any puzzle left over.
   dailyMode = opts.daily === true;
@@ -1788,7 +2241,26 @@ async function mountGame(
 
 function exposeDebug() {
   if (import.meta.env.DEV) {
-    (window as any).__debug = { engine, renderer, net, sfx, haptics, onCellTapLocal, onCellTapOnline };
+    // Getters, so the console sees the live match rather than whatever was
+    // mounted when this ran (nothing, at boot).
+    (window as any).__debug = {
+      get engine() {
+        return engine;
+      },
+      get renderer() {
+        return renderer;
+      },
+      get net() {
+        return net;
+      },
+      sfx,
+      haptics,
+      nova,
+      commentator,
+      onCellTapLocal,
+      onCellTapOnline,
+      onCellTapLesson,
+    };
   }
 }
 
@@ -1836,7 +2308,15 @@ async function onCellTapOnline(row: number, col: number) {
 
 async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult | null> {
   if (!engine || !renderer) return null;
+  // The board is locked from the first orb to the last wave of the cascade,
+  // whoever made the move. Callers used to take this lock themselves, and the
+  // one that did not — a move arriving from the other player online — left
+  // the board open: the engine already says it is your turn the instant their
+  // move is applied, so you could fire your own reaction into the middle of
+  // theirs. Released below once the cascade has finished playing.
+  animating = true;
   stopTurnClock();
+  commentator.disarmIdle();
   const mover = engine.currentPlayer().id;
   const result = engine.applyMove(row, col);
   const myGeneration = soundGeneration;
@@ -1844,7 +2324,7 @@ async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult
   matchTurns++;
   matchBestChain = Math.max(matchBestChain, result.chain);
   matchBestCapture = Math.max(matchBestCapture, result.captured);
-  if (mover === localSeatId() && !dailyMode) stats.recordChain(result.chain, result.captured);
+  if (mover === localSeatId() && !dailyMode && !lessonMode) stats.recordChain(result.chain, result.captured);
 
   // The engine resolves the whole cascade synchronously, but the board
   // animates it wave by wave — so "who won" and "what the board visibly
@@ -1855,7 +2335,7 @@ async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult
   let winShown = false;
   const showWinIfBoardMatches = () => {
     if (myGeneration !== soundGeneration) return; // player has left this game
-    if (dailyMode) return; // a puzzle try is scored, not won
+    if (dailyMode || lessonMode) return; // a puzzle try is scored, not won; a lesson is neither
     if (winShown || !result.gameOver || result.winner === null || !engine || !renderer) return;
     // In Team Battle the payoff is the losing *side* being gone, so wait for
     // the last orb of the other team rather than of a single player.
@@ -1903,6 +2383,13 @@ async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult
   await playPromise;
   if (myGeneration !== soundGeneration) return null; // player has left this game
   if (dailyMode) return result;
+  if (lessonMode) {
+    // The lesson script decides what happens next; just leave the board ready.
+    renderPills();
+    syncBoardTurnColor();
+    animating = false;
+    return result;
+  }
 
   // Safety net: if the board somehow never reported a matching state
   // mid-cascade (shouldn't happen for a real win), show it once everything
@@ -1922,6 +2409,8 @@ async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult
     }
   }
 
+  if (commentator.active && engine) commentator.afterMove(engine, mover, result);
+
   renderPills();
   // Deliberately here and not when the engine advanced the turn: the engine
   // resolves the whole move up front, so tinting then would hand the board to
@@ -1933,6 +2422,7 @@ async function applyAndAnimateMove(row: number, col: number): Promise<MoveResult
     animating = false;
     startTurnClock();
     maybeRunAiTurn();
+    if (commentator.active && engine && engine.currentPlayer().id !== AI_PLAYER_ID) commentator.armIdle();
   }
   return result;
 }
@@ -1982,6 +2472,24 @@ function resultPresentation(winnerId: number) {
 }
 
 function showWin(winnerId: number) {
+  if (commentator.active) {
+    commentator.end();
+    const won = winnerId !== AI_PLAYER_ID;
+    novaLastResult = won ? 'won' : 'lost';
+    novaGames++;
+    try {
+      localStorage.setItem(NOVA_GAMES_KEY, String(novaGames));
+    } catch {
+      /* storage unavailable */
+    }
+    winNovaEl.classList.remove('hidden');
+    nova.attach(winNovaEl);
+    const textEl = winNovaEl.querySelector<HTMLElement>('.nova-text');
+    if (textEl) textEl.textContent = '';
+    window.setTimeout(() => void nova.say(won ? 'player_win' : 'cpu_win', { priority: 3, persist: true }), 500);
+  } else {
+    winNovaEl.classList.add('hidden');
+  }
   if (!engine) return;
   stopTurnClock();
   hideChain();
@@ -2140,7 +2648,7 @@ function launchTraces(winnerCss: string) {
 
 // ---------- Online: create / join ----------
 function randomName() {
-  return `Player${Math.floor(100 + Math.random() * 900)}`;
+  return randomPlayerName();
 }
 
 
@@ -2227,12 +2735,12 @@ function renderAccountStrip() {
     `<button id="name-edit-btn" class="mini-btn" aria-controls="name-field">Edit</button>` +
     `</div>` +
     `<div class="rank-name" style="color:${rank.css}">${rank.name}</div>` +
-    `<div class="rank-stats"><span class="av">${p.rating}</span> rating · ${p.wins}W / ${p.losses}L</div>` +
+    `<div class="rank-stats"><span class="av">${p.rating}</span> pts · ${p.wins}W / ${p.losses}L</div>` +
     // scaleX rather than width: a transform animates on the compositor,
     // where width re-runs layout on every frame.
     `<div class="rank-bar"><span style="transform:scaleX(${progress / 100});background:${rank.css}"></span></div>` +
     `<div class="rank-next">${
-      toNext === null ? 'Top tier' : `${toNext} rating to ${rankFor(next!).name}`
+      toNext === null ? 'Top tier' : `${toNext} pts to ${rankFor(next!).name}`
     }</div>` +
     `</div>` +
     `<div class="rank-code">friend code<b>${escapeHtml(p.friendCode)}</b></div>`;
@@ -2294,19 +2802,87 @@ async function ensureAccount() {
   }
 }
 
+const rankHeroEl = $('rank-hero');
+const rankLadderEl = $('rank-ladder');
+
+/** The top of the Ranks page: your emblem, how far into the tier you are, and
+ *  the whole ladder with your place on it. */
+function renderRankHero() {
+  const me = account.profile;
+  const rating = me?.rating ?? 0;
+  const rank = rankFor(rating);
+  const next = nextRankAt(rating);
+  const progress = rankProgress(rating);
+  if (me) {
+    rankHeroEl.innerHTML =
+      `<div class="rh-emblem">${rankBadgeSvg(rank, 112)}</div>` +
+      `<div class="rh-meta">` +
+      `<div class="rh-tier" style="color:${rank.css}">${rank.name}</div>` +
+      `<div class="rh-rating"><b>${rating}</b> pts · ${me.wins}W ${me.losses}L</div>` +
+      `<div class="rh-bar"><span style="transform:scaleX(${progress.toFixed(3)});background:${rank.css}"></span></div>` +
+      `<div class="rh-next">${next === null ? 'Top tier — hold it' : `${next - rating} pts to ${rankFor(next).name}`}</div>` +
+      `</div>`;
+  } else {
+    rankHeroEl.innerHTML =
+      `<div class="rh-emblem dim">${rankBadgeSvg(RANKS[0], 112)}</div>` +
+      `<div class="rh-meta"><div class="rh-tier">Unranked</div>` +
+      `<div class="rh-next">Everyone starts Unranked at 0 points. Play ranked matches online to climb: finishing higher earns more. Private rooms and the computer do not count.</div></div>`;
+  }
+  const current = me ? RANKS.indexOf(rank) : -1;
+  rankLadderEl.innerHTML = RANKS.map((r, i) => {
+    const state = i === current ? 'now' : i < current ? 'done' : 'locked';
+    return `<div class="rl-tier ${state}"><span class="rl-emblem">${rankBadgeSvg(r, 40)}</span><span class="rl-name">${r.name}</span><span class="rl-min">${r.min || 0}+</span></div>`;
+  }).join('');
+}
+
+/** Friend code card: big, copyable, shareable. */
+function renderFriendCard() {
+  const me = account.profile;
+  myCodeEl.classList.toggle('hidden', !me);
+  if (!me) return;
+  myCodeEl.innerHTML =
+    `<div class="fc-label">Your friend code</div>` +
+    `<div class="fc-code">${escapeHtml(me.friendCode)}</div>` +
+    `<div class="fc-actions">` +
+    `<button id="fc-copy" class="ghost-btn small-btn">Copy</button>` +
+    `<button id="fc-share" class="primary-btn small-btn">Share</button>` +
+    `</div>`;
+  $('fc-copy').addEventListener('click', async () => {
+    sfx.buttonTap();
+    try {
+      await navigator.clipboard.writeText(me.friendCode);
+      $('fc-copy').textContent = 'Copied';
+    } catch {
+      $('fc-copy').textContent = 'Copy failed';
+    }
+    setTimeout(() => {
+      const btn = document.getElementById('fc-copy');
+      if (btn) btn.textContent = 'Copy';
+    }, 1600);
+  });
+  $('fc-share').addEventListener('click', () => {
+    sfx.buttonTap();
+    void share({
+      title: 'Add me on FISSILE',
+      text: `Add me on FISSILE — my friend code is ${me.friendCode}. Let's see who sets off the bigger chain.`,
+      url: PUBLIC_ORIGIN,
+    });
+  });
+}
+
 async function renderBoards() {
   boardRowsEl.innerHTML = '<div class="board-empty">Loading…</div>';
   friendToolsEl.classList.toggle('hidden', boardTab !== 'friends');
   const me = account.profile;
-  myCodeEl.classList.toggle('hidden', !me);
-  if (me) myCodeEl.innerHTML = `Your friend code<b>${escapeHtml(me.friendCode)}</b>`;
+  renderRankHero();
+  renderFriendCard();
 
   try {
     const rows = boardTab === 'world' ? await account.worldBoard() : await account.friendsBoard();
     if (rows.length === 0) {
       boardRowsEl.innerHTML =
         boardTab === 'world'
-          ? '<div class="board-empty">Nobody has finished a ranked match yet. Quick match games count towards the ladder; private rooms do not.</div>'
+          ? '<div class="board-empty">Nobody has earned ranked points yet. Ranked matches count towards the ladder; private rooms do not.</div>'
           : '<div class="board-empty">No friends yet. Share your code below, or add someone else’s.</div>';
       return;
     }
@@ -2314,11 +2890,13 @@ async function renderBoards() {
       .map((r, i) => {
         const mine = me && r.id === me.id;
         const rank = rankFor(r.rating);
-        return `<div class="board-row${mine ? ' me' : ''}">
-          <span class="bpos">${String(i + 1).padStart(2, '0')}</span>
-          <span class="bbadge">${rankBadgeSvg(rank, 26)}</span>
-          <span class="bname">${escapeHtml(r.name)}</span>
-          <span class="bstat"><span class="brank" style="color:${rank.css}">${rank.name}</span> · ${r.wins}W · ×${r.bestChain}</span>
+        const podium = i < 3 ? ` podium p${i + 1}` : '';
+        return `<div class="board-row${mine ? ' me' : ''}${podium}">
+          <span class="bpos">${i + 1}</span>
+          <span class="bavatar">${avatarSvg(r.avatar || defaultAvatarFor(r.id), 34)}</span>
+          <span class="bname">${escapeHtml(r.name)}${mine ? ' <i>you</i>' : ''}</span>
+          <span class="bstat"><span class="brank" style="color:${rank.css}">${rank.name}</span> · ${r.wins}W · best ×${r.bestChain}</span>
+          <span class="bbadge">${rankBadgeSvg(rank, 30)}</span>
           <span class="brating">${r.rating}</span>
         </div>`;
       })
@@ -2421,6 +2999,13 @@ $('open-ranked-btn').addEventListener('click', () => {
   void renderPresence();
 });
 
+// The searching counts stay live while the ranked screen is open.
+let presenceTimer = 0;
+setInterval(() => {
+  if (screenRanked.classList.contains('hidden') || document.hidden) return;
+  if (++presenceTimer % 2 === 0) void renderPresence();
+}, 6000);
+
 $('ranked-back-btn').addEventListener('click', () => {
   sfx.buttonTap();
   // Leaving the screen abandons the search rather than leaving it running
@@ -2442,11 +3027,31 @@ nameInput.addEventListener('keydown', (e) => {
 
 // ---------- Quick match ----------
 let quickMode: GameModeKey = DEFAULT_MODE;
-let quickBoardSize: BoardSizeKey = 'medium';
+let quickBoardSize: BoardSizeKey | 'auto' = 'auto';
+let quickPlayers: RankedPlayers = 2;
+const quickPlayersGroup = $('quick-players-group');
+const quickPointsEl = $('quick-points');
+
+/** The points table for the chosen player count, so a player knows what a
+ *  finish is worth before they queue. */
+function renderQuickPoints() {
+  const table = PLACE_POINTS[quickPlayers];
+  quickPointsEl.innerHTML =
+    table
+      .map((pts, i) => `<span class="pt ${pts >= 0 ? 'up' : 'down'}"><b>${ordinal(i + 1)}</b>${pts > 0 ? '+' : ''}${pts}</span>`)
+      .join('') + `<span class="pt down left"><b>Leave</b>${LEAVE_PENALTY}</span>`;
+}
+
+onSegmentPick(quickPlayersGroup, (el) => {
+  const n = Number(el.dataset.players);
+  quickPlayers = (n === 3 || n === 4 ? n : 2) as RankedPlayers;
+  renderQuickPoints();
+});
+renderQuickPoints();
 /** The room code we parked in the matchmaker queue, if we are still waiting. */
 let queuedCode: string | null = null;
 
-function setQuickSearching(searching: boolean, text = 'Searching for an opponent…') {
+function setQuickSearching(searching: boolean, text = quickPlayers === 2 ? 'Searching for an opponent…' : `Searching for ${quickPlayers - 1} opponents…`) {
   quickStatusEl.classList.toggle('hidden', !searching);
   quickStatusText.textContent = text;
   quickMatchBtn.toggleAttribute('disabled', searching);
@@ -2464,22 +3069,22 @@ async function startQuickMatch() {
   wireNetHandlers(client);
   net = client;
   try {
-    const { code, waiting } = await NetClient.quickMatch(
+    const { code, waiting, boardSize } = await NetClient.quickMatch(
       quickMode,
       quickBoardSize,
-      account.credentials?.id
+      account.credentials?.id,
+      quickPlayers
     );
     queuedCode = waiting ? code : null;
-    // Quick-match rooms are listed, so a browser can fill one that is still
-    // waiting on the queue — two routes into the same room.
-    await client.connect(code, nameInput.value.trim() || randomName(), { publicRoom: true });
+    rankedMatch = true;
+    // Ranked rooms are private: the queue is the only way in, so nobody can
+    // walk into one from the public list.
+    await client.connect(code, nameInput.value.trim() || randomName());
     if (waiting) {
-      // We are the room now. Sit in the lobby until someone is matched in.
+      // We are the room now. The relay starts it once it has its players.
       lobbyMode = quickMode;
-      lobbyBoardSize = quickBoardSize;
+      lobbyBoardSize = boardSize === 'small' || boardSize === 'large' ? boardSize : 'medium';
       selectLobbyMode(quickMode);
-      // Publish the settings we queued on, so the listing matches the queue.
-      client.setLobby({ mode: quickMode, boardSize: quickBoardSize, isPublic: true });
       quickMatchPending = true;
       // Deliberately *not* the lobby. A room is created behind the scenes so
       // an opponent has somewhere to be matched into, but showing it would put
@@ -2487,13 +3092,14 @@ async function startQuickMatch() {
       // "set up a game" when what they asked for was to be matched. The honest
       // state is still searching, so that is what stays on screen.
       setQuickSearching(true);
-      startBotFallbackTimer();
+      // A practice bot only makes sense in place of one opponent.
+      if (quickPlayers === 2) startBotFallbackTimer();
     } else {
       // Somebody was already waiting — we joined their room and the host's
       // client starts it as soon as it sees us. Still no lobby: the game is
       // about to begin on its own.
       quickMatchPending = true;
-      setQuickSearching(true, 'Opponent found — starting…');
+      setQuickSearching(true, quickPlayers === 2 ? 'Opponent found — starting…' : 'Joined a group — waiting for the rest…');
     }
     exposeDebug();
   } catch (err) {
@@ -2509,7 +3115,7 @@ async function startQuickMatch() {
 
 /** Turns a matchmaking failure into a choice rather than a full stop. */
 function offerBotInstead(reason: string) {
-  const bot = pickBot(account.profile?.rating ?? null);
+  const bot = pickBot(null);
   quickFallbackMsg.textContent = `${reason} You can still play ${bot.name}, or open a private room and share the code.`;
   quickFallbackBtn.textContent = `Play ${bot.name} (bot)`;
   quickFallbackBtn.onclick = () => {
@@ -2542,7 +3148,7 @@ function startBotFallbackTimer() {
   stopBotFallbackTimer();
   botFallbackTimer = setTimeout(() => {
     if (!quickMatchPending) return;
-    const bot = pickBot(account.profile?.rating ?? null);
+    const bot = pickBot(null);
     // Offered on the search, not in the lobby. A queued player now waits on the
     // online screen, so an offer rendered into the lobby would sit on a screen
     // nobody is looking at — a solo player would simply wait forever.
@@ -2580,7 +3186,7 @@ quickMatchBtn.addEventListener('click', () => void startQuickMatch());
 quickCancelBtn.addEventListener('click', () => void cancelQuickMatch());
 
 onSegmentPick(quickSizeGroup, (el) => {
-  quickBoardSize = el.dataset.size as BoardSizeKey;
+  quickBoardSize = el.dataset.size as BoardSizeKey | 'auto';
   renderQuickPreview();
 });
 
@@ -2601,6 +3207,10 @@ async function renderPresence() {
   try {
     const p = await NetClient.presence();
     live = String(p.queued + p.inRooms);
+    quickPlayersGroup.querySelectorAll<HTMLElement>('.seg-count').forEach((el) => {
+      const n = p.searching?.[el.dataset.count ?? ''] ?? 0;
+      el.textContent = n > 0 ? `${n} searching` : '';
+    });
   } catch {
     // Relay unreachable: say so rather than inventing a number.
     live = '—';
@@ -2629,7 +3239,7 @@ async function startBotMatch(bot: Bot, opts: { size?: BoardSizeKey; mode?: GameM
   resetSeries();
 
   const pickedMode = opts.mode ?? quickMode;
-  const size = opts.size ? boardDims(opts.size) : BOARD_SIZES[quickBoardSize];
+  const size = opts.size ? boardDims(opts.size) : BOARD_SIZES[quickBoardSize === 'auto' ? 'medium' : quickBoardSize];
   const myTheme = themeForSeat(0, pickedMode);
   const botTheme = themeForSeat(1, pickedMode);
   const players: PlayerConfig[] = [
@@ -2658,6 +3268,7 @@ async function startBotMatch(bot: Bot, opts: { size?: BoardSizeKey; mode?: GameM
   renderer!.setHoverTest(localHoverTest);
   renderMatchBanner();
   showScreen(screenGame);
+  if (bot.id.startsWith('cpu-')) startNovaCommentary(Number(bot.id.slice(4)));
   maybeRunAiTurn();
 }
 
@@ -2719,6 +3330,7 @@ createRoomBtn.addEventListener('click', async () => {
   try {
     const code = await client.createRoom();
     net = client;
+    rankedMatch = false;
     await client.connect(code, nameInput.value.trim() || randomName());
     enterLobby();
     exposeDebug();
@@ -2745,6 +3357,7 @@ async function joinRoomByCode(code: string) {
   wireNetHandlers(client);
   net = client;
   try {
+    rankedMatch = false;
     await client.connect(code, nameInput.value.trim() || randomName());
     // A reclaimed seat sends `resume` right behind the handshake and puts the
     // player straight back on the board, so only show the lobby if that
@@ -2774,12 +3387,20 @@ function wireNetHandlers(client: NetClient) {
       renderMatchBanner();
     }
   };
-  client.onError = (message) => showOnlineError(message);
+  // Errors land where the player is looking: in the lobby under its Start
+  // button, otherwise on the Online page.
+  client.onError = (message) => {
+    if (!screenLobby.classList.contains('hidden')) {
+      lobbyStartHint.textContent = message;
+      lobbyStartHint.classList.add('lobby-start-error');
+      lobbyStartHint.classList.remove('hidden');
+      return;
+    }
+    showOnlineError(message);
+  };
   client.onGameStarted = (rows, cols, players, style, mode, seed) =>
     startOnlineGame(rows, cols, players, style, mode, seed);
-  client.onMove = (row, col) => {
-    void applyAndAnimateMove(row, col);
-  };
+  client.onMove = (row, col) => queueRemoteMove(row, col);
   client.onResume = (rows, cols, style, mode, snapshot) => {
     void resumeOnlineGame(rows, cols, style, mode, snapshot);
   };
@@ -2789,6 +3410,9 @@ function wireNetHandlers(client: NetClient) {
   client.onChat = (from, phrase) => {
     if (from !== myPlayerId) showChat(from, phrase);
   };
+  client.onSay = (from, text) => receiveSay(from, text);
+  // Mutes are per room; a new connection starts with a clean slate.
+  mutedSeats.clear();
   client.onRematch = (votes, needed) => renderRematchState(votes, needed);
   client.onRoomScore = (score) => {
     roomScore = score;
@@ -2817,10 +3441,25 @@ function wireNetHandlers(client: NetClient) {
   client.onTurnClock = (_player, ms) => {
     runTurnClock(ms, false);
   };
+  client.onStrike = (player, count, limit) => {
+    const who = engine?.players.find((p) => p.id === player);
+    if (player === myPlayerId) {
+      showBoardToast(
+        count >= limit - 1
+          ? `Out of time! Last chance: miss one more turn and you're out.`
+          : `Out of time: a move was played for you (${count} of ${limit}).`,
+        '#ffb454'
+      );
+      haptics.eliminate();
+    } else if (who) {
+      showBoardToast(`${who.name} ran out of time (${count}/${limit})`, colorOf(player).css);
+    }
+  };
+  client.onForfeit = (player, reason) => queueForfeit(player, reason);
   client.onRated = (results) => {
     const mine = results.find((r) => r.player === myPlayerId);
     if (!mine) return;
-    lastRated = { rating: mine.rating, delta: mine.delta };
+    lastRated = { rating: mine.rating, delta: mine.delta, place: mine.place, left: mine.left };
     renderWinRank();
     // Re-read the profile so the panel behind the card agrees with the number
     // on it — wins and losses moved too, not just the rating. ensure() re-reads
@@ -3035,8 +3674,18 @@ function renderLobby(players: NetPlayer[], hostId: number) {
   const spec = GAME_MODES[lobbyMode];
   const enoughForMode = spec.teams ? connectedCount >= 4 && connectedCount % 2 === 0 : connectedCount >= 2;
   lobbyStartBtn.toggleAttribute('disabled', !enoughForMode);
+  // Said on the button and right under it: a greyed-out Start with the reason
+  // printed half a screen away read as the button being broken.
+  lobbyStartBtn.textContent = enoughForMode ? 'Start reaction' : 'Waiting for players…';
+  lobbyStartHint.classList.toggle('lobby-start-error', false);
+  lobbyStartHint.textContent = !isHost || enoughForMode
+    ? ''
+    : spec.teams
+      ? `Team Battle needs 4 or 6 players — ${connectedCount} here. Tap the code above to invite more.`
+      : 'Waiting for a friend to join. Tap the room code above to send it to them.';
+  lobbyStartHint.classList.toggle('hidden', !lobbyStartHint.textContent);
   lobbyModeBlurbEl.textContent = enoughForMode
-    ? spec.blurb
+    ? onlineBlurb(lobbyMode)
     : spec.teams
       ? 'Team Battle needs an even roster of at least 4.'
       : 'Need at least 2 players to start.';
@@ -3044,18 +3693,21 @@ function renderLobby(players: NetPlayer[], hostId: number) {
   // A quick match should never make anyone hunt for a Start button — the point
   // of it is that you asked to play and then you are playing.
   if (quickMatchPending) {
-    if (!enoughForMode) {
+    if (connectedCount < quickPlayers) {
       // The player is watching the search, not this lobby, so the status they
       // can actually see is the one worth updating.
-      setQuickSearching(true);
-      lobbyHintEl.textContent = 'waiting for an opponent…';
+      setQuickSearching(
+        true,
+        quickPlayers === 2 ? 'Searching for an opponent…' : `Found ${connectedCount} of ${quickPlayers} players — searching…`
+      );
+      lobbyHintEl.textContent = 'waiting for players…';
       return;
     }
+    // Full: the relay starts a ranked room on its own.
     quickMatchPending = false;
     queuedCode = null;
     stopBotFallbackTimer();
-    setQuickSearching(true, 'Opponent found — starting…');
-    if (isHost) net?.startGame(lobbyBoardSize, lobbyOrbStyle, lobbyMode, lobbyLandscape);
+    setQuickSearching(true, 'Match found — starting…');
   }
 }
 
@@ -3100,6 +3752,53 @@ function renderColorPicker(players: NetPlayer[]) {
   });
 }
 
+/**
+ * Moves from the relay play strictly one after another. The relay has no
+ * animation to wait for, so a quick reply — or the Blitz clock playing a
+ * timed-out turn — can arrive while the previous cascade is still on screen.
+ * Played at once, the two animate over each other and the board shows neither
+ * correctly; queued, the second simply waits for the first to finish.
+ */
+let remoteMoves: Promise<unknown> = Promise.resolve();
+function queueRemoteMove(row: number, col: number) {
+  const generation = soundGeneration;
+  remoteMoves = remoteMoves
+    .then(() => (generation === soundGeneration ? applyAndAnimateMove(row, col) : null))
+    .catch((err) => console.error('online move failed to play:', err));
+}
+
+/** A forfeit joins the same queue as moves, so it lands after any cascade the
+ *  board is still animating — never in the middle of one. */
+function queueForfeit(playerId: number, reason: 'timeout' | 'left') {
+  const generation = soundGeneration;
+  remoteMoves = remoteMoves
+    .then(() => (generation === soundGeneration ? applyForfeit(playerId, reason) : null))
+    .catch((err) => console.error('forfeit failed to apply:', err));
+}
+
+function applyForfeit(playerId: number, reason: 'timeout' | 'left') {
+  if (!engine || !renderer) return;
+  const who = engine.players.find((p) => p.id === playerId);
+  const result = engine.forfeit(playerId);
+  if (!result.events.length) return;
+  stopTurnClock();
+  renderer.syncToEngine();
+  sfx.eliminate();
+  const me = playerId === myPlayerId;
+  const name = who?.name ?? 'A player';
+  showBoardToast(
+    me
+      ? reason === 'timeout'
+        ? 'You missed 3 turns and are out of this match'
+        : 'You left the match'
+      : `${name} ${reason === 'timeout' ? 'missed 3 turns and is out' : 'left the match'}`,
+    colorOf(playerId).css
+  );
+  renderPills();
+  syncBoardTurnColor();
+  if (result.gameOver && result.winner !== null) showWin(result.winner);
+}
+
 async function startOnlineGame(
   rows: number,
   cols: number,
@@ -3109,6 +3808,9 @@ async function startOnlineGame(
   seed: number
 ) {
   if (!net) return;
+  // A new match starts with an empty move queue, never behind the previous
+  // match's last animation.
+  remoteMoves = Promise.resolve();
   stopBotFallbackTimer();
   // A real opponent turned up, so nothing here is a bot match any more.
   activeBot = null;
@@ -3158,6 +3860,7 @@ async function resumeOnlineGame(
   snapshot: EngineSnapshot
 ) {
   if (!net) return;
+  remoteMoves = Promise.resolve();
   onlineMode = true;
   myPlayerId = net.myId;
   orbStyle = style;
@@ -3196,7 +3899,7 @@ function checkRoomLinkParam(): boolean {
  *  what today's puzzle and the computer are set to. */
 function renderHome() {
   const s = stats.get();
-  levelChipEl.textContent = `LV ${stats.level(s)}`;
+  levelChipEl.textContent = `Level ${stats.level(s)}`;
   homeXpFill.style.transform = `scaleX(${levelProgress(s)})`;
   const profile = account.profile;
   homeNameEl.textContent = profile?.name || callsign || 'Player';
@@ -3206,21 +3909,20 @@ function renderHome() {
   const today = dayNumber();
   const rec = dailyState.day(today);
   const streak = dailyState.liveStreak(today);
-  // Captions have ~18 characters on a 360px phone; every string here fits.
-  const streakNote = streak > 1 ? ` · ${streak}d streak` : '';
+  const streakNote = streak > 1 ? ` · ${streak}-day streak` : '';
   if (rec?.done) {
     const top = Math.max(0, ...rec.tries);
-    dailySubEl.textContent = `${top >= rec.best ? 'solved' : `×${top} of ×${rec.best}`}${streakNote}`;
+    dailySubEl.textContent = `${top >= rec.best ? 'Solved' : `Best ×${top} of ×${rec.best}`}${streakNote}`;
   } else if (rec && rec.tries.length) {
     const left = 3 - rec.tries.length;
-    dailySubEl.textContent = `${left} ${left === 1 ? 'try' : 'tries'} left`;
+    dailySubEl.textContent = `${left} ${left === 1 ? 'try' : 'tries'} left today`;
   } else {
-    dailySubEl.textContent = streak > 1 ? `${streak}d streak · go` : 'find the max chain';
+    dailySubEl.textContent = `Find today's biggest chain${streakNote}`;
   }
   dailyStreakEl.textContent = `#${today}`;
   dailyBtn.classList.toggle('is-done', !!rec?.done);
   $('tab-dot-daily').classList.toggle('hidden', !!rec?.done);
-  cpuSubEl.textContent = CPU_LEVELS[cpuLevel].name.toLowerCase();
+  cpuSubEl.textContent = `${CPU_LEVELS[cpuLevel].name} difficulty`;
 }
 
 
@@ -3237,6 +3939,8 @@ document.addEventListener(
 // ---------- vs Computer ----------
 interface CpuLevel {
   name: string;
+  /** Nova's mood at this level — what the picker shows under the name. */
+  mood: string;
   blurb: string;
   skill: number;
   deep: boolean;
@@ -3245,10 +3949,10 @@ interface CpuLevel {
 }
 
 const CPU_LEVELS: CpuLevel[] = [
-  { name: 'Easy', blurb: 'Plays sensible moves and misses plenty. Good for learning the ropes.', skill: 0.15, deep: false, bot: 'Sparky', rating: 800 },
-  { name: 'Normal', blurb: 'Spots the obvious captures. A fair fight.', skill: 0.6, deep: false, bot: 'Ion', rating: 1050 },
-  { name: 'Hard', blurb: 'Always plays its best move. You will need a plan.', skill: 1, deep: false, bot: 'Neutron', rating: 1300 },
-  { name: 'Insane', blurb: 'Plays out your reply before it moves. Good luck.', skill: 1, deep: true, bot: 'Fusion', rating: 1550 },
+  { name: 'Easy', mood: 'Chill', blurb: 'Nova plays sensible moves and misses plenty. Good for learning the ropes.', skill: 0.15, deep: false, bot: 'Nova', rating: 800 },
+  { name: 'Normal', mood: 'Focused', blurb: 'Nova spots the obvious captures. A fair fight.', skill: 0.6, deep: false, bot: 'Nova', rating: 1050 },
+  { name: 'Hard', mood: 'Ruthless', blurb: 'Nova always plays her best move. You will need a plan.', skill: 1, deep: false, bot: 'Nova', rating: 1300 },
+  { name: 'Insane', mood: 'Unhinged', blurb: 'Nova plays out your reply before she moves. Good luck.', skill: 1, deep: true, bot: 'Nova', rating: 1550 },
 ];
 
 const CPU_KEY = 'fissile.cpu.v1';
@@ -3279,7 +3983,7 @@ function renderCpuSheet() {
     btn.dataset.level = String(i);
     btn.innerHTML =
       `<span class="cpu-pips">${'<i></i>'.repeat(i + 1)}</span>` +
-      `<span class="cpu-name">${lv.name}</span><span class="cpu-bot">${lv.bot}</span>`;
+      `<span class="cpu-name">${lv.name}</span><span class="cpu-bot">${lv.mood}</span>`;
     cpuLevelGroup.appendChild(btn);
   });
   cpuBlurbEl.textContent = CPU_LEVELS[cpuLevel].blurb;
@@ -3316,6 +4020,10 @@ $('cpu-close-btn').addEventListener('click', () => {
 
 $('cpu-start-btn').addEventListener('click', () => {
   hideOverlay(screenCpu);
+  startCpuMatch();
+});
+
+function startCpuMatch() {
   const lv = CPU_LEVELS[cpuLevel];
   const bot: Bot = {
     id: `cpu-${cpuLevel}`,
@@ -3326,6 +4034,276 @@ $('cpu-start-btn').addEventListener('click', () => {
     thinkMs: lv.deep ? [500, 900] : [380 + lv.skill * 240, 760 + lv.skill * 480],
   };
   void startBotMatch(bot, { size: cpuSize, mode: DEFAULT_MODE });
+}
+
+// ---------- Nova: welcome and lesson ----------
+const WELCOMED_KEY = 'fissile.nova.welcomed';
+const screenNovaWelcome = $('screen-nova-welcome');
+const novaWelcomeStage = $('nova-welcome-stage');
+const LESSON_ROWS = 4;
+const LESSON_COLS = 4;
+const LESSON_STEPS = 5;
+/** The one cell the current lesson step accepts, or null between steps. */
+let lessonTarget: { row: number; col: number } | null = null;
+let lessonWrongTaps = 0;
+let lessonTapped: (() => void) | null = null;
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** First launch: Nova says hello and offers the lesson. Once per install. */
+function maybeWelcome() {
+  if (readFlag(WELCOMED_KEY) || screenMenu.classList.contains('hidden')) return;
+  writeFlag(WELCOMED_KEY);
+  showOverlay(screenNovaWelcome);
+  nova.attach(novaWelcomeStage);
+  void nova.say('welcome', { index: 0, priority: 3, persist: true });
+}
+
+$('nova-lesson-btn').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  nova.stop();
+  hideOverlay(screenNovaWelcome);
+  void startLesson();
+});
+
+$('nova-later-btn').addEventListener('click', async () => {
+  sfx.unlock();
+  sfx.buttonTap();
+  const buttons = screenNovaWelcome.querySelectorAll<HTMLButtonElement>('button');
+  buttons.forEach((b) => (b.disabled = true));
+  nova.stop();
+  // Her goodbye, capped so "later" never feels like being held hostage.
+  await Promise.race([nova.say('tut', { index: 14, priority: 3, persist: true }), wait(2600)]);
+  nova.stop();
+  hideOverlay(screenNovaWelcome);
+  buttons.forEach((b) => (b.disabled = false));
+});
+
+function lessonPlayers(): PlayerConfig[] {
+  return [0, 1].map((i) => {
+    const theme = themeForSeat(i, DEFAULT_MODE);
+    return { id: i, name: i === 0 ? 'You' : 'Nova', color: theme.base, colorLight: theme.light, isAlive: true };
+  });
+}
+
+/** A lesson position: [row, col, owner, orbs] for every occupied cell. */
+function lessonSnapshot(cells: [number, number, number, number][]): EngineSnapshot {
+  const grid = Array.from({ length: LESSON_ROWS }, (_, row) =>
+    Array.from({ length: LESSON_COLS }, (_, col) => ({ row, col, owner: null as number | null, orbs: 0 }))
+  );
+  for (const [row, col, owner, orbs] of cells) grid[row][col] = { row, col, owner, orbs };
+  return {
+    grid,
+    currentPlayerIndex: 0,
+    gameOver: false,
+    winner: null,
+    players: lessonPlayers(),
+    // Both have "moved", so taking all of Nova's orbs counts as knocking her out.
+    hasMoved: [0, 1],
+    kinds: grid.map((row) => row.map(() => 'normal' as const)),
+  };
+}
+
+const lessonLive = (token: number) => lessonMode && token === lessonToken;
+
+async function lessonSay(token: number, index: number) {
+  if (!lessonLive(token)) return;
+  nova.stop();
+  await nova.say('tut', { index, priority: 3, persist: true });
+}
+
+function lessonButtons(buttons: { label: string; primary?: boolean; onClick: () => void }[]) {
+  lessonActionsEl.innerHTML = '';
+  for (const b of buttons) {
+    const el = document.createElement('button');
+    el.className = `${b.primary ? 'primary-btn' : 'ghost-btn'} small-btn`;
+    el.textContent = b.label;
+    el.addEventListener('click', () => {
+      sfx.buttonTap();
+      b.onClick();
+    });
+    lessonActionsEl.appendChild(el);
+  }
+  lessonActionsEl.classList.remove('hidden');
+}
+
+function lessonNext(token: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (!lessonLive(token)) return resolve();
+    lessonButtons([
+      {
+        label: 'Next',
+        primary: true,
+        onClick: () => {
+          lessonActionsEl.classList.add('hidden');
+          resolve();
+        },
+      },
+    ]);
+  });
+}
+
+/** Lights one cell and waits for the player to tap it. */
+function lessonTap(token: number, row: number, col: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (!lessonLive(token) || !renderer) return resolve();
+    lessonTarget = { row, col };
+    lessonWrongTaps = 0;
+    renderer.setHint(lessonTarget, colorOf(0).base);
+    lessonTapped = resolve;
+  });
+}
+
+async function onCellTapLesson(row: number, col: number) {
+  if (!engine || !renderer || animating || !lessonMode || !lessonTarget) return;
+  if (row !== lessonTarget.row || col !== lessonTarget.col) {
+    haptics.tap();
+    nova.stop();
+    void nova.say('tut', { index: 15 + (lessonWrongTaps++ % 3), priority: 3, persist: true });
+    return;
+  }
+  lessonTarget = null;
+  renderer.setHint(null);
+  const done = lessonTapped;
+  lessonTapped = null;
+  await applyAndAnimateMove(row, col);
+  done?.();
+}
+
+async function lessonMove(token: number, row: number, col: number) {
+  if (!lessonLive(token) || !engine) return;
+  await applyAndAnimateMove(row, col);
+}
+
+function lessonLoad(token: number, cells: [number, number, number, number][]) {
+  if (!lessonLive(token) || !engine || !renderer) return;
+  engine.loadSnapshot(lessonSnapshot(cells));
+  renderer.syncToEngine();
+  renderPills();
+  syncBoardTurnColor(true);
+}
+
+function endLessonToMenu() {
+  leaveGameScreen();
+  showScreen(screenMenu);
+}
+
+async function startLesson() {
+  sfx.unlock();
+  sfx.buttonTap();
+  if (net) disconnectNet();
+  onlineMode = false;
+  activeBot = null;
+  resetSeries();
+  const token = ++lessonToken;
+  const lessonEngine = new GameEngine({ rows: LESSON_ROWS, cols: LESSON_COLS, players: lessonPlayers() });
+  if (!(await mountGame(lessonEngine, orbStyle, { lesson: true }))) return;
+  if (token !== lessonToken) return;
+  renderer!.setCellTapHandler(onCellTapLesson);
+  renderer!.setHoverTest((r, c) => lessonTarget !== null && r === lessonTarget.row && c === lessonTarget.col);
+  matchBannerEl.classList.add('hidden');
+  nova.attach(novaDockEl);
+  showScreen(screenGame);
+  await runLesson(token);
+}
+
+async function runLesson(token: number) {
+  const step = (n: number) => {
+    if (lessonLive(token)) lessonStepEl.textContent = `Lesson · ${n} of ${LESSON_STEPS}`;
+  };
+
+  // 1. Placing an orb, and Nova's reply.
+  step(1);
+  await wait(700);
+  await lessonSay(token, 0);
+  await lessonNext(token);
+  void lessonSay(token, 1);
+  await lessonTap(token, 1, 1);
+  await lessonSay(token, 2);
+  void lessonSay(token, 3);
+  await wait(1500);
+  await lessonMove(token, 2, 2);
+  await lessonSay(token, 4);
+  await lessonNext(token);
+
+  // 2. A full cell bursts.
+  step(2);
+  lessonLoad(token, [
+    [0, 0, 0, 1],
+    [3, 3, 1, 1],
+  ]);
+  void lessonSay(token, 5);
+  await lessonTap(token, 0, 0);
+  await lessonSay(token, 6);
+  await lessonSay(token, 7);
+  await lessonNext(token);
+
+  // 3. A burst captures what it lands on.
+  step(3);
+  lessonLoad(token, [
+    [0, 1, 0, 2],
+    [0, 2, 1, 1],
+    [1, 1, 1, 1],
+    [3, 0, 0, 1],
+    [3, 3, 1, 1],
+  ]);
+  void lessonSay(token, 8);
+  await lessonTap(token, 0, 1);
+  await lessonSay(token, 9);
+  await lessonNext(token);
+
+  // 4. A chain that takes every one of her orbs.
+  step(4);
+  lessonLoad(token, [
+    [0, 0, 0, 1],
+    [0, 1, 0, 2],
+    [1, 0, 0, 2],
+    [0, 2, 1, 1],
+    [1, 1, 1, 2],
+    [2, 0, 1, 1],
+  ]);
+  void lessonSay(token, 10);
+  await lessonTap(token, 0, 0);
+  await lessonSay(token, 11);
+  await lessonSay(token, 12);
+
+  // 5. Done — straight into a real game, or back to the menu.
+  step(5);
+  if (!lessonLive(token)) return;
+  void lessonSay(token, 13);
+  lessonButtons([
+    {
+      label: 'Play Nova',
+      primary: true,
+      onClick: () => {
+        cpuLevel = 0;
+        saveCpuPrefs();
+        renderHome();
+        startCpuMatch();
+      },
+    },
+    { label: 'Done', onClick: endLessonToMenu },
+  ]);
+}
+
+$('lesson-skip').addEventListener('click', () => {
+  sfx.buttonTap();
+  endLessonToMenu();
 });
 
 // ---------- Daily Blast ----------
@@ -3424,7 +4402,7 @@ function showDailyResult(day: number) {
   const best = rec?.best ?? 0;
   const tries = rec?.tries ?? [];
   const top = tries.length ? Math.max(...tries) : 0;
-  $('daily-eyebrow').textContent = `daily blast #${day}`;
+  $('daily-eyebrow').textContent = `Daily Blast #${day}`;
   $('daily-title').textContent = top >= best && best > 0 ? 'Perfect blast!' : top >= best - 1 ? 'So close!' : 'Nice try';
   $('daily-score-value').textContent = `×${top}`;
   $('daily-score-of').textContent = `best ×${best}`;
@@ -3476,8 +4454,7 @@ $('daily-share-btn').addEventListener('click', async () => {
   const rec = dailyState.day(day);
   if (!rec) return;
   const text = shareText(day, rec.tries, rec.best, dailyState.liveStreak(day), PUBLIC_ORIGIN);
-  const outcome = await share({ title: `FISSILE Daily Blast #${day}`, text });
-  if (outcome === 'copied') flashButton($('daily-share-btn'), 'Copied!');
+  await openSharePreview(dailyShareData(), `FISSILE Daily Blast #${day}`, text);
 });
 
 /** Swaps a button's label for a moment — "Copied!" and the like. */
@@ -3490,6 +4467,145 @@ function flashButton(btn: HTMLElement, label: string) {
 }
 
 // ---------- Sharing a match ----------
+const screenShare = $('screen-share');
+const shareImgEl = $<HTMLImageElement>('share-img');
+const shareLoadingEl = $('share-loading');
+const shareGoBtn = $<HTMLButtonElement>('share-go-btn');
+let pendingShare: { blob: Blob; title: string; text: string; url: string } | null = null;
+
+/** The player block every card ends with: name, face, rank. */
+function sharePlayer(nameOverride?: string) {
+  const p = account.profile;
+  const rank = p ? rankFor(p.rating) : null;
+  return {
+    playerName: nameOverride ?? (p?.name || callsign || 'Player'),
+    avatarKey: crewFor(p?.avatar || (p ? defaultAvatarFor(p.id) : DEFAULT_AVATAR)),
+    rankKey: rank?.key ?? '',
+    rankLine: rank && p ? `${rank.name} · ${p.rating.toLocaleString()} pts` : 'Unranked',
+  };
+}
+
+const SHARE_HOST = PUBLIC_ORIGIN.replace(/^https?:\/\//, '');
+
+function boardCells(grid: { owner: number | null; orbs: number }[][], ids: number[]): ShareCell[][] {
+  return grid.map((row) => row.map((c) => ({ owner: c.owner === null ? -1 : ids.indexOf(c.owner), count: c.orbs })));
+}
+
+/** The finished match as a story card. */
+function matchShareData(): ShareCardData | null {
+  if (!engine) return null;
+  const winner = engine.winner;
+  const me = localSeatId();
+  const local = !onlineMode && !activeBot && !GAME_MODES[modeKey].solo;
+  const iWon = winner !== null && winner === me;
+  const cpu = activeBot?.id.startsWith('cpu-') ? CPU_LEVELS[Number(activeBot.id.slice(4))] : null;
+  const solo = !onlineMode && GAME_MODES[modeKey].solo;
+  const chain = matchBestChain;
+  const winnerName = engine.players.find((p) => p.id === winner)?.name ?? 'Someone';
+  const ids = engine.players.map((p) => p.id);
+  const subject = local ? winner ?? me : me;
+  const cells = engine.grid.flat().filter((c) => c.owner === subject).length;
+
+  let tag = 'LOCAL MATCH';
+  let headline = `${winnerName} won our match.`;
+  if (cpu) {
+    tag = `VS NOVA · ${cpu.name.toUpperCase()}`;
+    headline = iWon ? `I beat Nova on ${cpu.name}.` : `Nova got me on ${cpu.name}.`;
+  } else if (solo) {
+    tag = `SURVIVAL · ROUND ${Math.max(1, survivalRound - (iWon ? 1 : 0))}`;
+    headline = iWon ? 'I outlasted the system.' : 'The system got me. This time.';
+  } else if (onlineMode) {
+    tag = activeBot ? 'QUICK MATCH' : 'ONLINE MATCH';
+    headline = iWon ? 'Won an online match.' : 'Lost a close one online.';
+  }
+  return {
+    tag,
+    heroLabel: chain >= 2 ? 'LONGEST CHAIN' : 'RESULT',
+    hero: chain >= 2 ? `×${chain}` : iWon || local ? 'WIN' : 'GG',
+    headline,
+    sub: iWon || local ? 'Think you can top it?' : 'Think you can do better?',
+    board: boardCells(engine.grid, ids),
+    colors: engine.players.map((p) => colorOf(p.id).css),
+    stats: [
+      { label: 'RESULT', value: local ? 'Win' : iWon ? 'Win' : 'Loss' },
+      { label: 'CELLS', value: String(cells) },
+      { label: 'MOVES', value: String(matchTurns) },
+    ],
+    ...sharePlayer(local ? winnerName : undefined),
+    ...(local ? { rankKey: '', rankLine: 'Pass and play' } : {}),
+    cta: 'Beat my chain',
+    url: SHARE_HOST,
+  };
+}
+
+/** Today's Daily Blast as a story card. */
+function dailyShareData(): ShareCardData | null {
+  const day = dayNumber();
+  const rec = dailyState.day(day);
+  if (!rec) return null;
+  const puzzle = dailyPuzzle && dailyPuzzle.day === day ? dailyPuzzle : buildDailyPuzzle(day, dailyPlayers());
+  const found = rec.best >= puzzle.best;
+  return {
+    tag: `DAILY BLAST #${day}`,
+    heroLabel: 'BEST CHAIN',
+    hero: `×${rec.best}`,
+    headline: found ? 'I found the perfect chain.' : `×${rec.best} of a possible ×${puzzle.best}.`,
+    sub: "Same puzzle for everyone today. Beat me.",
+    board: boardCells(puzzle.snapshot.grid, puzzle.players.map((p) => p.id)),
+    colors: puzzle.players.map((p) => colorOf(p.id).css),
+    stats: [
+      { label: 'TRIES', value: `${rec.tries.length}/${DAILY_TRIES}` },
+      { label: 'POSSIBLE', value: `×${puzzle.best}` },
+      { label: 'STREAK', value: String(dailyState.liveStreak(day)) },
+    ],
+    ...sharePlayer(),
+    cta: 'Beat my chain',
+    url: SHARE_HOST,
+  };
+}
+
+/** Builds the card, shows it, and waits for the player to send it. Falls back
+ *  to a plain text share if the picture cannot be made on this device. */
+async function openSharePreview(data: ShareCardData | null, title: string, text: string) {
+  if (!data) return;
+  pendingShare = null;
+  shareImgEl.removeAttribute('src');
+  shareLoadingEl.classList.remove('hidden');
+  shareGoBtn.disabled = true;
+  showOverlay(screenShare);
+  try {
+    const blob = await renderShareCard(data);
+    pendingShare = { blob, title, text, url: PUBLIC_ORIGIN };
+    shareImgEl.src = URL.createObjectURL(blob);
+    shareLoadingEl.classList.add('hidden');
+    shareGoBtn.disabled = false;
+  } catch (err) {
+    console.warn('Share card failed, sharing text instead:', err);
+    hideOverlay(screenShare);
+    await share({ title, text, url: PUBLIC_ORIGIN });
+  }
+}
+
+shareGoBtn.addEventListener('click', async () => {
+  sfx.buttonTap();
+  if (!pendingShare) return;
+  const outcome = await shareImage(pendingShare.blob, {
+    title: pendingShare.title,
+    text: pendingShare.text,
+    url: pendingShare.url,
+    filename: 'fissile-result.png',
+  });
+  if (outcome === 'saved') flashButton(shareGoBtn, 'Saved!');
+});
+
+$('share-close-btn').addEventListener('click', () => {
+  sfx.buttonTap();
+  hideOverlay(screenShare);
+  if (shareImgEl.src) URL.revokeObjectURL(shareImgEl.src);
+  shareImgEl.removeAttribute('src');
+  pendingShare = null;
+});
+
 $('win-share-btn').addEventListener('click', async () => {
   sfx.buttonTap();
   if (!engine) return;
@@ -3500,8 +4616,8 @@ $('win-share-btn').addEventListener('click', async () => {
   if (activeBot && activeBot.id.startsWith('cpu-')) {
     const level = CPU_LEVELS[Number(activeBot.id.slice(4))]?.name.toLowerCase() ?? 'tough';
     text = iWon
-      ? `I just beat the ${level} computer in FISSILE${chain >= 2 ? ` with a ×${chain} chain reaction` : ''} 💥 Think you can?`
-      : `The ${level} computer got me in FISSILE 😤 Can you beat it?`;
+      ? `I just beat Nova on ${level} in FISSILE${chain >= 2 ? ` with a ×${chain} chain reaction` : ''} 💥 Think you can?`
+      : `Nova got me on ${level} in FISSILE 😤 Can you beat her?`;
   } else if (onlineMode) {
     text = iWon
       ? `Won an online FISSILE match${chain >= 2 ? ` with a ×${chain} chain` : ''} 💥 Come play me.`
@@ -3510,15 +4626,19 @@ $('win-share-btn').addEventListener('click', async () => {
     const name = engine.players.find((p) => p.id === winner)?.name ?? 'Someone';
     text = `${name} won our FISSILE match${chain >= 2 ? ` — biggest chain ×${chain}` : ''} 💥 Chain reaction strategy, free on Android.`;
   }
-  const outcome = await share({ title: 'FISSILE', text, url: PUBLIC_ORIGIN });
-  if (outcome === 'copied') flashButton($('win-share-btn'), 'Copied!');
+  await openSharePreview(matchShareData(), 'FISSILE', text);
 });
 
 // ---------- Android back button ----------
-let lastBackAt = 0;
 onBackButton(() => {
+  if (!screenConfirm.classList.contains('hidden')) {
+    closeConfirm(false);
+    return true;
+  }
   // Topmost first: sheets, then the result card, then the screen under it.
   const sheets: [HTMLElement, string][] = [
+    [screenShare, 'share-close-btn'],
+    [screenNovaWelcome, 'nova-later-btn'],
     [screenDaily, 'daily-close-btn'],
     [screenCpu, 'cpu-close-btn'],
     [screenHowto, 'howto-close-btn'],
@@ -3542,15 +4662,8 @@ onBackButton(() => {
   }
   if (!screenGame.classList.contains('hidden')) {
     // A match is the one place a stray back press costs something, so it
-    // takes two.
-    const now = Date.now();
-    if (now - lastBackAt < 2000) {
-      lastBackAt = 0;
-      $('back-btn').click();
-    } else {
-      lastBackAt = now;
-      showBoardToast('Press back again to leave');
-    }
+    // asks first.
+    $('back-btn').click();
     return true;
   }
   if (!screenLobby.classList.contains('hidden')) {
@@ -3568,7 +4681,16 @@ onBackButton(() => {
     goTab('play');
     return true;
   }
-  return false;
+  // On the home screen, back would close the game: ask first.
+  void confirmDialog({
+    title: 'Exit FISSILE?',
+    body: 'Do you want to close the game?',
+    ok: 'Exit',
+    cancel: 'Stay',
+  }).then((ok) => {
+    if (ok) exitApp();
+  });
+  return true;
 });
 
 /** A room code arrived as a link — from a chat app, a QR code, anywhere. */
@@ -3729,14 +4851,56 @@ function transitionFor(from: HTMLElement | null, to: HTMLElement): string {
 
 function syncTabbar(el: HTMLElement) {
   const tab = tabOf(el);
+  const wasShowing = document.body.classList.contains('with-tabbar');
   document.body.classList.toggle('with-tabbar', tab !== null);
   tabbarEl.querySelectorAll<HTMLElement>('.tab').forEach((b) => {
     const on = b.dataset.tab === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-current', on ? 'page' : 'false');
   });
-  if (tab) tabbarEl.style.setProperty('--tab-i', String(TAB_ORDER.indexOf(tab)));
+  if (!tab) return;
+  const index = TAB_ORDER.indexOf(tab);
+  tabbarEl.style.setProperty('--tab-i', String(index));
+  // Glide between tabs; snap when the bar is only now appearing, so the
+  // highlight never sweeps in from wherever it was left on another screen.
+  placeTabIndicator(wasShowing && indicatorIndex >= 0, index);
 }
+
+/**
+ * The highlight behind the active tab, flowing to the next one.
+ *
+ * Its two edges move separately: the edge on the side it is travelling
+ * towards leaves first and fast, the trailing edge follows more slowly, so
+ * for a moment it stretches across both tabs — a drop of liquid flowing over —
+ * before settling with a small spring. Edge positions are measured from the
+ * real tab buttons, so it lands exactly whatever the bar's size or
+ * orientation (a bottom pill on phones, a side pill on wide screens).
+ */
+let indicatorIndex = -1;
+function placeTabIndicator(animate: boolean, index = indicatorIndex) {
+  const active = tabbarEl.querySelectorAll<HTMLElement>('.tab')[index];
+  const bar = tabbarEl.getBoundingClientRect();
+  if (!active || bar.width === 0) return;
+  const r = active.getBoundingClientRect();
+  const inset = 4;
+  tabbarEl.classList.toggle('flow-fwd', index > indicatorIndex);
+  tabbarEl.classList.toggle('flow-back', index < indicatorIndex);
+  tabbarEl.classList.toggle('flow-snap', !animate);
+  const set = (k: string, v: number) => tabbarEl.style.setProperty(k, `${Math.round(v)}px`);
+  set('--ind-l', r.left - bar.left + inset);
+  set('--ind-r', bar.right - r.right + inset);
+  set('--ind-t', r.top - bar.top + inset);
+  set('--ind-b', bar.bottom - r.bottom + inset);
+  if (!animate) {
+    void tabbarEl.offsetWidth; // commit the snapped position before re-enabling motion
+    tabbarEl.classList.remove('flow-snap');
+  }
+  indicatorIndex = index;
+}
+
+// Rotating a phone or resizing a window moves the tabs; the highlight follows
+// without animating.
+new ResizeObserver(() => placeTabIndicator(false)).observe(tabbarEl);
 
 /** Data a page needs fresh each time it is arrived at. */
 function onScreenEnter(el: HTMLElement, from: HTMLElement | null) {
@@ -3846,7 +5010,7 @@ function renderDailyPage() {
   const top = tries.length ? Math.max(...tries) : 0;
   const done = !!rec?.done;
 
-  $('dp-eyebrow').textContent = `puzzle #${today}`;
+  $('dp-eyebrow').textContent = `Puzzle #${today}`;
   const preview = $('dp-preview');
   preview.innerHTML = dailyPreview!.svg;
   preview.classList.toggle('is-done', done);
@@ -3912,11 +5076,77 @@ function openSettings() {
   sfx.unlock();
   sfx.buttonTap();
   renderSettings();
+  setSettingsTab(settingsTab);
   showOverlay(screenSettings);
 }
+
+// Settings is split into sections — Sound, Graphics, Nova, Chat — shown one at
+// a time, so the sheet is a short list of choices rather than one long page.
+// The last section opened is remembered.
+const SETTINGS_TAB_KEY = 'fissile.settingsTab';
+let settingsTab = (() => {
+  try {
+    return localStorage.getItem(SETTINGS_TAB_KEY) || 'sound';
+  } catch {
+    return 'sound';
+  }
+})();
+function setSettingsTab(key: string) {
+  const tabs = screenSettings.querySelectorAll<HTMLElement>('[data-settings-tab]');
+  if (![...tabs].some((t) => t.dataset.settingsTab === key)) key = 'sound';
+  settingsTab = key;
+  tabs.forEach((t) => {
+    const on = t.dataset.settingsTab === key;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+  });
+  screenSettings.querySelectorAll<HTMLElement>('[data-settings-pane]').forEach((p) => {
+    p.classList.toggle('hidden', p.dataset.settingsPane !== key);
+  });
+  if (key === 'graphics') renderGraphicsSettings();
+  if (key === 'sound') {
+    screenSettings.querySelectorAll<HTMLInputElement>('[data-settings-sound]').forEach((el) => {
+      el.checked = el.dataset.settingsSound === 'fx' ? !sfx.fxMuted : !sfx.musicMuted;
+    });
+  }
+  try {
+    localStorage.setItem(SETTINGS_TAB_KEY, key);
+  } catch {
+    // Session only.
+  }
+}
+screenSettings.addEventListener('change', (e) => {
+  const el = e.target as HTMLInputElement;
+  if (!el.dataset.settingsSound) return;
+  if (el.dataset.settingsSound === 'fx') sfx.fxMuted = !el.checked;
+  else sfx.musicMuted = !el.checked;
+  saveSoundPrefs();
+});
+screenSettings.querySelector('.settings-tabs')!.addEventListener('click', (e) => {
+  const tab = (e.target as HTMLElement).closest<HTMLElement>('[data-settings-tab]');
+  if (!tab) return;
+  sfx.buttonTap();
+  setSettingsTab(tab.dataset.settingsTab!);
+  screenSettings.querySelector('.settings-panes')?.scrollTo({ top: 0 });
+});
+screenSettings.querySelector('.settings-tabs')!.addEventListener('keydown', (e) => {
+  const ke = e as KeyboardEvent;
+  if (ke.key !== 'ArrowRight' && ke.key !== 'ArrowLeft' && ke.key !== 'ArrowDown' && ke.key !== 'ArrowUp') return;
+  const keys = [...screenSettings.querySelectorAll<HTMLElement>('[data-settings-tab]')].map((t) => t.dataset.settingsTab!);
+  const step = ke.key === 'ArrowRight' || ke.key === 'ArrowDown' ? 1 : -1;
+  const next = keys[(keys.indexOf(settingsTab) + step + keys.length) % keys.length];
+  setSettingsTab(next);
+  screenSettings.querySelector<HTMLElement>(`[data-settings-tab="${next}"]`)?.focus();
+  ke.preventDefault();
+});
 $('profile-settings-btn').addEventListener('click', openSettings);
+// Mid-match: volume, graphics and Nova can be changed without leaving the
+// board. Graphics changes apply to the live renderer as they are picked.
+$('settings-btn-game').addEventListener('click', openSettings);
 $('profile-settings-row').addEventListener('click', openSettings);
-$('profile-howto-row').addEventListener('click', () => $('howto-btn').click());
+$('profile-lesson-row').addEventListener('click', () => void startLesson());
+$('lesson-btn').addEventListener('click', () => void startLesson());
 $('app-version').textContent = `FISSILE ${__APP_VERSION__}${isNative ? ' · Android' : ''}`;
 
 // ---------- init ----------
@@ -3970,7 +5200,11 @@ renderProfileStrip();
 updateMuteIcon();
 // showScreen does more than reveal a section now — it starts and stops attract
 // mode — so the title screen has to be entered through it like any other.
-if (!checkRoomLinkParam()) showScreen(screenMenu);
+if (!checkRoomLinkParam()) {
+  showScreen(screenMenu);
+  // First launch only: Nova introduces herself and offers the lesson.
+  setTimeout(maybeWelcome, 900);
+}
 hideSplashWhenPainted();
 void initNative({
   onPause: () => sfx.suspend(),

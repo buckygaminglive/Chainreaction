@@ -24,6 +24,25 @@ allprojects {
     }
 }
 
+// Some Capacitor plugins (filesystem) pin a Kotlin JDK toolchain of exactly 21,
+// which fails on a machine whose only JDK is Android Studio's newer one. Build
+// them with whatever JDK runs Gradle, still emitting Java 21 bytecode, so the
+// output is the same as with a JDK 21 install.
+subprojects { p ->
+    p.afterEvaluate {
+        def kt = p.extensions.findByName('kotlin')
+        if (kt == null) return
+        def current = JavaVersion.current().majorVersion.toInteger()
+        if (current < 21) return
+        kt.jvmToolchain(current)
+        p.tasks.matching { it.class.name.contains('KotlinCompile') }.configureEach {
+            // The Kotlin plugin lives on the plugin's classpath, not this file's.
+            def jvmTarget = it.class.classLoader.loadClass('org.jetbrains.kotlin.gradle.dsl.JvmTarget')
+            it.compilerOptions.jvmTarget.set(jvmTarget.fromTarget('21'))
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

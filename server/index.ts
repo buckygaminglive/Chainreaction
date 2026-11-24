@@ -142,13 +142,17 @@ function corsHeaders(): HeadersInit {
 
 /** Quick match settings arrive from a client, so they are narrowed to known
  *  values before they can reach the queue and sit there poisoning matches. */
-function sanitize(body: unknown): { mode: GameModeKey; boardSize: BoardSizeKey } {
-  const raw = (body ?? {}) as { mode?: string; boardSize?: string };
-  const mode = (raw.mode && GAME_MODES[raw.mode as GameModeKey]?.online ? raw.mode : 'classic') as GameModeKey;
-  const boardSize = (BOARD_SIZES.includes(raw.boardSize as BoardSizeKey)
-    ? raw.boardSize
-    : 'medium') as BoardSizeKey;
-  return { mode, boardSize };
+function sanitizeRanked(body: unknown): { mode: GameModeKey; boardSize: BoardSizeKey | 'auto'; players: number } {
+  const raw = (body ?? {}) as { mode?: string; boardSize?: string; players?: unknown };
+  const spec = raw.mode ? GAME_MODES[raw.mode as GameModeKey] : undefined;
+  // Ranked is free-for-all: Team Battle has no single finishing order.
+  const mode = (spec?.online && !spec.teams ? raw.mode : 'classic') as GameModeKey;
+  const boardSize =
+    raw.boardSize === 'auto' || BOARD_SIZES.includes(raw.boardSize as BoardSizeKey)
+      ? (raw.boardSize as BoardSizeKey | 'auto')
+      : 'medium';
+  const n = Number(raw.players);
+  return { mode, boardSize, players: n === 3 || n === 4 ? n : 2 };
 }
 
 export default {
@@ -190,7 +194,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     const wait = await allowFast(env, request, 'quickmatch');
     if (wait) return tooMany(wait);
     const body = (await request.json().catch(() => ({}))) as { accountId?: unknown };
-    const { mode, boardSize } = sanitize(body);
+    const { mode, boardSize, players } = sanitizeRanked(body);
 
     // The rating used for matchmaking is read from the hub, never taken from
     // the request. A client that could name its own rating could pick which
@@ -216,9 +220,9 @@ async function route(request: Request, env: Env): Promise<Response> {
     const stub = env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
     const res = await stub.fetch('https://mm/queue', {
       method: 'POST',
-      body: JSON.stringify({ code: generateRoomCode(), mode, boardSize, rating }),
+      body: JSON.stringify({ code: generateRoomCode(), mode, boardSize, players, rating }),
     });
-    const result = (await res.json()) as { code?: string; waiting?: boolean };
+    const result = (await res.json()) as { code?: string; waiting?: boolean; boardSize?: string; players?: number };
 
     // Mark the room ranked here, where the code provably came from the
     // matchmaker. Doing it from the client — or inferring it from the room's
@@ -226,7 +230,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     // Idempotent: joining an already-queued room marks it a second time.
     if (result.code) {
       const room = env.GAME_ROOM.getByName(result.code);
-      await room.fetch('https://room/rank', { method: 'POST' });
+      await room.fetch('https://room/rank', {
+        method: 'POST',
+        body: JSON.stringify({ players: result.players ?? players, mode, boardSize: result.boardSize }),
+      });
     }
 
     return Response.json(result, { headers: corsHeaders() });

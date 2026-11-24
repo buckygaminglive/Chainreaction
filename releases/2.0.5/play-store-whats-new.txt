@@ -1,0 +1,10 @@
+Ranked, rebuilt!
+• Everyone starts Unranked at 0 points. Finish higher to earn more
+• Ranked 1v1, 3-player and 4-player matches
+• Auto board size for faster matchmaking
+• 20 seconds per turn online; miss 3 turns and you're out
+• Leaving a ranked match costs points
+• Sound menu: switch game sounds, music and Nova's voice separately
+• Cleaner settings, split into sections
+• Runs cooler on phones
+• Asks before you exit or leave a match

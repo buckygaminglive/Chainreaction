@@ -1,4 +1,4 @@
-/** Named competitive tiers over the Elo the relay already keeps (roadmap §9).
+/** Named competitive tiers over ranked points (roadmap §9).
  *
  *  The rating was always there and always invisible: "1043" tells a player
  *  nothing about whether they are doing well. A tier is the same number with a
@@ -20,14 +20,17 @@ export interface Rank {
   css: string;
 }
 
-/** Ordered low to high. */
+/** Ordered low to high, by ranked points. Every account starts at 0 points,
+ *  Unranked, and climbs by finishing well in ranked matches (see
+ *  src/net/rankPoints.ts for what each finish is worth). */
 export const RANKS: Rank[] = [
-  { key: 'bronze', name: 'Bronze', min: 0, css: '#b0784c' },
-  { key: 'silver', name: 'Silver', min: 1050, css: '#9fadbd' },
-  { key: 'gold', name: 'Gold', min: 1150, css: '#d9b64f' },
-  { key: 'platinum', name: 'Platinum', min: 1250, css: '#86c9c2' },
-  { key: 'diamond', name: 'Diamond', min: 1350, css: '#6fc0ff' },
-  { key: 'master', name: 'Master', min: 1475, css: '#e4f4ff' },
+  { key: 'unranked', name: 'Unranked', min: 0, css: '#8a96a6' },
+  { key: 'bronze', name: 'Bronze', min: 100, css: '#b0784c' },
+  { key: 'silver', name: 'Silver', min: 300, css: '#9fadbd' },
+  { key: 'gold', name: 'Gold', min: 600, css: '#d9b64f' },
+  { key: 'platinum', name: 'Platinum', min: 1000, css: '#86d6cb' },
+  { key: 'diamond', name: 'Diamond', min: 1500, css: '#7cc2fa' },
+  { key: 'master', name: 'Master', min: 2200, css: '#c9abff' },
 ];
 
 export function rankFor(rating: number): Rank {

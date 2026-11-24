@@ -52,3 +52,10 @@ local.properties
 
 # Raw store-screenshot captures; the picks are copied up a level by hand.
 store-assets/screenshots/raw/
+
+# Working files for art and voice. The finished assets are in src/art and
+# public/audio/nova; these are inputs, rejected drafts and review renders.
+store-assets/generated/
+store-assets/review/
+store-assets/voice/raw/
+store-assets/voice/samples/

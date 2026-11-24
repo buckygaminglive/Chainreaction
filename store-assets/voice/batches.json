@@ -1,0 +1,2180 @@
+[
+ {
+  "n": 0,
+  "lines": [
+   {
+    "cat": "greet",
+    "i": 0,
+    "text": "[warmly] Hey, it's Nova. Ready to make things go boom?"
+   },
+   {
+    "cat": "greet",
+    "i": 1,
+    "text": "[excited] Oh good, a challenger! I was getting bored of beating myself."
+   },
+   {
+    "cat": "greet",
+    "i": 2,
+    "text": "[mischievously] Welcome back to my board. Mind the explosions."
+   },
+   {
+    "cat": "greet",
+    "i": 3,
+    "text": "[playfully] Let's keep this friendly. Until I win, obviously."
+   },
+   {
+    "cat": "greet",
+    "i": 4,
+    "text": "[cheerful] New game, new chaos. You go first, I insist."
+   },
+   {
+    "cat": "greet",
+    "i": 5,
+    "text": "[confident] I've run a million simulations. In most of them, I win."
+   },
+   {
+    "cat": "greet",
+    "i": 6,
+    "text": "[warmly] Deep breath. Tap a cell. Try not to panic."
+   },
+   {
+    "cat": "greet",
+    "i": 7,
+    "text": "[teasing] Oh, you again? I was hoping for someone harder. Kidding! Mostly."
+   },
+   {
+    "cat": "greet",
+    "i": 8,
+    "text": "[excited] Orbs charged, board clean. Let's go!"
+   },
+   {
+    "cat": "greet",
+    "i": 9,
+    "text": "[sweetly] I promise to be gentle. That's a lie, but it's a nice one."
+   },
+   {
+    "cat": "greet",
+    "i": 10,
+    "text": "[curious] Let's see what you've got today."
+   },
+   {
+    "cat": "greet",
+    "i": 11,
+    "text": "[dramatically] The board awaits. The orbs tremble. Okay, they don't. Let's play."
+   }
+  ],
+  "prompt": "[warmly] Hey, it's Nova. Ready to make things go boom? [long pause] [excited] Oh good, a challenger! I was getting bored of beating myself. [long pause] [mischievously] Welcome back to my board. Mind the explosions. [long pause] [playfully] Let's keep this friendly. Until I win, obviously. [long pause] [cheerful] New game, new chaos. You go first, I insist. [long pause] [confident] I've run a million simulations. In most of them, I win. [long pause] [warmly] Deep breath. Tap a cell. Try not to panic. [long pause] [teasing] Oh, you again? I was hoping for someone harder. Kidding! Mostly. [long pause] [excited] Orbs charged, board clean. Let's go! [long pause] [sweetly] I promise to be gentle. That's a lie, but it's a nice one. [long pause] [curious] Let's see what you've got today. [long pause] [dramatically] The board awaits. The orbs tremble. Okay, they don't. Let's play."
+ },
+ {
+  "n": 1,
+  "lines": [
+   {
+    "cat": "greet",
+    "i": 12,
+    "text": "[laughs] I've been practising while you were away. Just saying."
+   },
+   {
+    "cat": "greet",
+    "i": 13,
+    "text": "[playfully] Rules are simple. You place, I place, someone explodes."
+   },
+   {
+    "cat": "greet",
+    "i": 14,
+    "text": "[warmly] Good to see you! Grab a snack, this could get messy."
+   },
+   {
+    "cat": "greet",
+    "i": 15,
+    "text": "[confident] My circuits are warm and my strategy is cold. Let's begin."
+   },
+   {
+    "cat": "greet",
+    "i": 16,
+    "text": "[mischievously] Shall we? I'll even let you think you're winning for a bit."
+   },
+   {
+    "cat": "greet",
+    "i": 17,
+    "text": "[excited] Reaction chamber online. Your turn, hero."
+   },
+   {
+    "cat": "greet",
+    "i": 18,
+    "text": "[teasing] No pressure. Except all the pressure. Go on."
+   },
+   {
+    "cat": "greet",
+    "i": 19,
+    "text": "[cheerful] Hi hi! Let's make some beautiful disasters."
+   },
+   {
+    "cat": "greet_easy",
+    "i": 0,
+    "text": "[softly] Chill mode. I'll go easy on you. This time."
+   },
+   {
+    "cat": "greet_easy",
+    "i": 1,
+    "text": "[warmly] Easy mode! Perfect for warming up those fingers."
+   },
+   {
+    "cat": "greet_easy",
+    "i": 2,
+    "text": "[playfully] I'm on my lunch break, so I'm playing relaxed today."
+   },
+   {
+    "cat": "greet_easy",
+    "i": 3,
+    "text": "[cheerful] Easy does it. Let's have some fun."
+   }
+  ],
+  "prompt": "[laughs] I've been practising while you were away. Just saying. [long pause] [playfully] Rules are simple. You place, I place, someone explodes. [long pause] [warmly] Good to see you! Grab a snack, this could get messy. [long pause] [confident] My circuits are warm and my strategy is cold. Let's begin. [long pause] [mischievously] Shall we? I'll even let you think you're winning for a bit. [long pause] [excited] Reaction chamber online. Your turn, hero. [long pause] [teasing] No pressure. Except all the pressure. Go on. [long pause] [cheerful] Hi hi! Let's make some beautiful disasters. [long pause] [softly] Chill mode. I'll go easy on you. This time. [long pause] [warmly] Easy mode! Perfect for warming up those fingers. [long pause] [playfully] I'm on my lunch break, so I'm playing relaxed today. [long pause] [cheerful] Easy does it. Let's have some fun."
+ },
+ {
+  "n": 2,
+  "lines": [
+   {
+    "cat": "greet_easy",
+    "i": 4,
+    "text": "[sweetly] Don't worry, I'll miss a few things. On purpose. Probably."
+   },
+   {
+    "cat": "greet_easy",
+    "i": 5,
+    "text": "[warmly] Low stakes, big explosions. Let's go."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 0,
+    "text": "[confident] Normal mode. A fair fight. May the best brain win."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 1,
+    "text": "[curious] Focused mode. I'll be paying attention now."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 2,
+    "text": "[playfully] Normal difficulty, abnormal amounts of chaos."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 3,
+    "text": "[cheerful] A proper game! I like it. Let's see your moves."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 4,
+    "text": "[teasing] I'll spot the obvious stuff. So, don't be obvious."
+   },
+   {
+    "cat": "greet_normal",
+    "i": 5,
+    "text": "[warmly] Balanced and fair. Mostly fair. Let's play."
+   },
+   {
+    "cat": "greet_hard",
+    "i": 0,
+    "text": "[confident] Hard mode. I don't do mistakes in this one."
+   },
+   {
+    "cat": "greet_hard",
+    "i": 1,
+    "text": "[mischievously] Ruthless mode activated. You asked for this."
+   },
+   {
+    "cat": "greet_hard",
+    "i": 2,
+    "text": "[serious] Every move I make here is my best one. Good luck."
+   },
+   {
+    "cat": "greet_hard",
+    "i": 3,
+    "text": "[teasing] Brave of you, choosing hard. I respect it. I'll still win."
+   }
+  ],
+  "prompt": "[sweetly] Don't worry, I'll miss a few things. On purpose. Probably. [long pause] [warmly] Low stakes, big explosions. Let's go. [long pause] [confident] Normal mode. A fair fight. May the best brain win. [long pause] [curious] Focused mode. I'll be paying attention now. [long pause] [playfully] Normal difficulty, abnormal amounts of chaos. [long pause] [cheerful] A proper game! I like it. Let's see your moves. [long pause] [teasing] I'll spot the obvious stuff. So, don't be obvious. [long pause] [warmly] Balanced and fair. Mostly fair. Let's play. [long pause] [confident] Hard mode. I don't do mistakes in this one. [long pause] [mischievously] Ruthless mode activated. You asked for this. [long pause] [serious] Every move I make here is my best one. Good luck. [long pause] [teasing] Brave of you, choosing hard. I respect it. I'll still win."
+ },
+ {
+  "n": 3,
+  "lines": [
+   {
+    "cat": "greet_hard",
+    "i": 4,
+    "text": "[dramatically] No more Miss Nice Nova."
+   },
+   {
+    "cat": "greet_hard",
+    "i": 5,
+    "text": "[confident] You'll need a plan. I already have three."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 0,
+    "text": "[dramatically] Unhinged mode. I'm not even sorry."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 1,
+    "text": "[mischievously] I can see your next move before you make it. Let's go."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 2,
+    "text": "[laughs] Insane? You picked INSANE? Oh, this will be fun."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 3,
+    "text": "[confident] I play out your reply before I move. Every single time."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 4,
+    "text": "[whispers] Nobody beats me on this setting. Nobody."
+   },
+   {
+    "cat": "greet_insane",
+    "i": 5,
+    "text": "[excited] Maximum power! Hold on to your orbs."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 0,
+    "text": "[determined] Rematch. This time, I'm serious."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 1,
+    "text": "[sighs] Round two. I've updated my strategy."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 2,
+    "text": "[confident] You got lucky. Let's prove it."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 3,
+    "text": "[playfully] Back for more? I've been preparing. For four whole seconds."
+   }
+  ],
+  "prompt": "[dramatically] No more Miss Nice Nova. [long pause] [confident] You'll need a plan. I already have three. [long pause] [dramatically] Unhinged mode. I'm not even sorry. [long pause] [mischievously] I can see your next move before you make it. Let's go. [long pause] [laughs] Insane? You picked INSANE? Oh, this will be fun. [long pause] [confident] I play out your reply before I move. Every single time. [long pause] [whispers] Nobody beats me on this setting. Nobody. [long pause] [excited] Maximum power! Hold on to your orbs. [long pause] [determined] Rematch. This time, I'm serious. [long pause] [sighs] Round two. I've updated my strategy. [long pause] [confident] You got lucky. Let's prove it. [long pause] [playfully] Back for more? I've been preparing. For four whole seconds."
+ },
+ {
+  "n": 4,
+  "lines": [
+   {
+    "cat": "rematch_won",
+    "i": 4,
+    "text": "[dramatically] Revenge mode, activated."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 5,
+    "text": "[teasing] Don't get comfortable, champ."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 6,
+    "text": "[mischievously] I remember everything you did. Everything."
+   },
+   {
+    "cat": "rematch_won",
+    "i": 7,
+    "text": "[excited] Run it back! Let's go!"
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 0,
+    "text": "[warmly] Back for revenge? I respect that."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 1,
+    "text": "[playfully] Round two! Maybe this time, huh?"
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 2,
+    "text": "[teasing] Didn't learn your lesson? Love that for you."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 3,
+    "text": "[cheerful] Again! Again! I love this game."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 4,
+    "text": "[sweetly] I'll go a tiny bit easier. That's a lie."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 5,
+    "text": "[confident] Same result, coming right up."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 6,
+    "text": "[warmly] You've got this. Probably. Let's find out."
+   },
+   {
+    "cat": "rematch_lost",
+    "i": 7,
+    "text": "[mischievously] Welcome back. The board missed you."
+   }
+  ],
+  "prompt": "[dramatically] Revenge mode, activated. [long pause] [teasing] Don't get comfortable, champ. [long pause] [mischievously] I remember everything you did. Everything. [long pause] [excited] Run it back! Let's go! [long pause] [warmly] Back for revenge? I respect that. [long pause] [playfully] Round two! Maybe this time, huh? [long pause] [teasing] Didn't learn your lesson? Love that for you. [long pause] [cheerful] Again! Again! I love this game. [long pause] [sweetly] I'll go a tiny bit easier. That's a lie. [long pause] [confident] Same result, coming right up. [long pause] [warmly] You've got this. Probably. Let's find out. [long pause] [mischievously] Welcome back. The board missed you."
+ },
+ {
+  "n": 5,
+  "lines": [
+   {
+    "cat": "opening",
+    "i": 0,
+    "text": "[curious] Interesting first move. I'm writing that down."
+   },
+   {
+    "cat": "opening",
+    "i": 1,
+    "text": "[playfully] And we're off!"
+   },
+   {
+    "cat": "opening",
+    "i": 2,
+    "text": "[warmly] Nice, nice. Now it's on."
+   },
+   {
+    "cat": "opening",
+    "i": 3,
+    "text": "[teasing] That's where you're starting? Okay. Bold."
+   },
+   {
+    "cat": "opening",
+    "i": 4,
+    "text": "[cheerful] First orb down. Many explosions to go."
+   },
+   {
+    "cat": "opening",
+    "i": 5,
+    "text": "[mischievously] I see what you're doing. Probably."
+   },
+   {
+    "cat": "opening",
+    "i": 6,
+    "text": "[confident] Cute opening. Here's mine."
+   },
+   {
+    "cat": "opening",
+    "i": 7,
+    "text": "[excited] Let the chain reactions begin!"
+   },
+   {
+    "cat": "opening_corner",
+    "i": 0,
+    "text": "[impressed] A corner start. Somebody read the manual."
+   },
+   {
+    "cat": "opening_corner",
+    "i": 1,
+    "text": "[curious] Corners only need two orbs to burst. Smart."
+   },
+   {
+    "cat": "opening_corner",
+    "i": 2,
+    "text": "[teasing] The corner, huh? Playing it safe, I see."
+   },
+   {
+    "cat": "opening_corner",
+    "i": 3,
+    "text": "[warmly] Good instinct. Corners are tough to attack."
+   }
+  ],
+  "prompt": "[curious] Interesting first move. I'm writing that down. [long pause] [playfully] And we're off! [long pause] [warmly] Nice, nice. Now it's on. [long pause] [teasing] That's where you're starting? Okay. Bold. [long pause] [cheerful] First orb down. Many explosions to go. [long pause] [mischievously] I see what you're doing. Probably. [long pause] [confident] Cute opening. Here's mine. [long pause] [excited] Let the chain reactions begin! [long pause] [impressed] A corner start. Somebody read the manual. [long pause] [curious] Corners only need two orbs to burst. Smart. [long pause] [teasing] The corner, huh? Playing it safe, I see. [long pause] [warmly] Good instinct. Corners are tough to attack."
+ },
+ {
+  "n": 6,
+  "lines": [
+   {
+    "cat": "opening_corner",
+    "i": 4,
+    "text": "[mischievously] Corner opener. Classic. I have a counter for that."
+   },
+   {
+    "cat": "opening_corner",
+    "i": 5,
+    "text": "[playfully] Hiding in the corner already? Kidding. It's a good move."
+   },
+   {
+    "cat": "player_chain",
+    "i": 0,
+    "text": "[impressed] Okay, that was actually good."
+   },
+   {
+    "cat": "player_chain",
+    "i": 1,
+    "text": "[surprised] Hey! Those were my orbs!"
+   },
+   {
+    "cat": "player_chain",
+    "i": 2,
+    "text": "[laughs] Nice chain. I felt that one."
+   },
+   {
+    "cat": "player_chain",
+    "i": 3,
+    "text": "[gasps] Rude! Effective, but rude."
+   },
+   {
+    "cat": "player_chain",
+    "i": 4,
+    "text": "[impressed] Look at you, setting off reactions like a pro."
+   },
+   {
+    "cat": "player_chain",
+    "i": 5,
+    "text": "[sighs] Fine. That was clever."
+   },
+   {
+    "cat": "player_chain",
+    "i": 6,
+    "text": "[excited] Ooh, a chain reaction! Love to see it. Hate to feel it."
+   },
+   {
+    "cat": "player_chain",
+    "i": 7,
+    "text": "[playfully] Did you plan that, or did you just get lucky?"
+   },
+   {
+    "cat": "player_chain",
+    "i": 8,
+    "text": "[surprised] Wait, wait, wait. When did you set that up?"
+   },
+   {
+    "cat": "player_chain",
+    "i": 9,
+    "text": "[warmly] That's the spirit. Keep them chaining."
+   }
+  ],
+  "prompt": "[mischievously] Corner opener. Classic. I have a counter for that. [long pause] [playfully] Hiding in the corner already? Kidding. It's a good move. [long pause] [impressed] Okay, that was actually good. [long pause] [surprised] Hey! Those were my orbs! [long pause] [laughs] Nice chain. I felt that one. [long pause] [gasps] Rude! Effective, but rude. [long pause] [impressed] Look at you, setting off reactions like a pro. [long pause] [sighs] Fine. That was clever. [long pause] [excited] Ooh, a chain reaction! Love to see it. Hate to feel it. [long pause] [playfully] Did you plan that, or did you just get lucky? [long pause] [surprised] Wait, wait, wait. When did you set that up? [long pause] [warmly] That's the spirit. Keep them chaining."
+ },
+ {
+  "n": 7,
+  "lines": [
+   {
+    "cat": "player_chain",
+    "i": 10,
+    "text": "[teasing] Okay, show-off."
+   },
+   {
+    "cat": "player_chain",
+    "i": 11,
+    "text": "[impressed] Clean. Very clean."
+   },
+   {
+    "cat": "player_chain",
+    "i": 12,
+    "text": "[gasps] My beautiful orbs!"
+   },
+   {
+    "cat": "player_chain",
+    "i": 13,
+    "text": "[laughs] You're getting dangerous."
+   },
+   {
+    "cat": "player_chain",
+    "i": 14,
+    "text": "[nervous] Hmm. I don't love where this is going."
+   },
+   {
+    "cat": "player_chain",
+    "i": 15,
+    "text": "[impressed] Textbook chain. Your physics teacher would be proud."
+   },
+   {
+    "cat": "player_chain",
+    "i": 16,
+    "text": "[sarcastic] Oh great, now they're your orbs. Wonderful."
+   },
+   {
+    "cat": "player_chain",
+    "i": 17,
+    "text": "[surprised] That escalated quickly."
+   },
+   {
+    "cat": "player_chain",
+    "i": 18,
+    "text": "[playfully] Somebody's been practising!"
+   },
+   {
+    "cat": "player_chain",
+    "i": 19,
+    "text": "[impressed] Big brain move. I respect it."
+   },
+   {
+    "cat": "player_chain",
+    "i": 20,
+    "text": "[sighs] I'm going to pretend I saw that coming."
+   },
+   {
+    "cat": "player_chain",
+    "i": 21,
+    "text": "[excited] Boom, boom, boom! Okay, I'm impressed."
+   }
+  ],
+  "prompt": "[teasing] Okay, show-off. [long pause] [impressed] Clean. Very clean. [long pause] [gasps] My beautiful orbs! [long pause] [laughs] You're getting dangerous. [long pause] [nervous] Hmm. I don't love where this is going. [long pause] [impressed] Textbook chain. Your physics teacher would be proud. [long pause] [sarcastic] Oh great, now they're your orbs. Wonderful. [long pause] [surprised] That escalated quickly. [long pause] [playfully] Somebody's been practising! [long pause] [impressed] Big brain move. I respect it. [long pause] [sighs] I'm going to pretend I saw that coming. [long pause] [excited] Boom, boom, boom! Okay, I'm impressed."
+ },
+ {
+  "n": 8,
+  "lines": [
+   {
+    "cat": "player_chain",
+    "i": 22,
+    "text": "[teasing] Lucky. Definitely lucky. Totally not skill."
+   },
+   {
+    "cat": "player_chain",
+    "i": 23,
+    "text": "[warmly] Now THAT is how you play."
+   },
+   {
+    "cat": "player_chain",
+    "i": 24,
+    "text": "[curious] Where did you learn that? Asking for a friend. The friend is me."
+   },
+   {
+    "cat": "player_chain",
+    "i": 25,
+    "text": "[gasps] Excuse me? Who said you could do that?"
+   },
+   {
+    "cat": "player_huge",
+    "i": 0,
+    "text": "[shouting] What was THAT?!"
+   },
+   {
+    "cat": "player_huge",
+    "i": 1,
+    "text": "[gasps] That's not a chain, that's a disaster movie!"
+   },
+   {
+    "cat": "player_huge",
+    "i": 2,
+    "text": "[laughs harder] Okay, okay, you can stop now!"
+   },
+   {
+    "cat": "player_huge",
+    "i": 3,
+    "text": "[dramatically] My orbs! My poor, innocent orbs!"
+   },
+   {
+    "cat": "player_huge",
+    "i": 4,
+    "text": "[surprised] I need a minute. Maybe two."
+   },
+   {
+    "cat": "player_huge",
+    "i": 5,
+    "text": "[excited] That was HUGE! Somebody screenshot that!"
+   },
+   {
+    "cat": "player_huge",
+    "i": 6,
+    "text": "[surprised] Did the whole board just change colour?"
+   },
+   {
+    "cat": "player_huge",
+    "i": 7,
+    "text": "[sighs] I'm calling my lawyer."
+   }
+  ],
+  "prompt": "[teasing] Lucky. Definitely lucky. Totally not skill. [long pause] [warmly] Now THAT is how you play. [long pause] [curious] Where did you learn that? Asking for a friend. The friend is me. [long pause] [gasps] Excuse me? Who said you could do that? [long pause] [shouting] What was THAT?! [long pause] [gasps] That's not a chain, that's a disaster movie! [long pause] [laughs harder] Okay, okay, you can stop now! [long pause] [dramatically] My orbs! My poor, innocent orbs! [long pause] [surprised] I need a minute. Maybe two. [long pause] [excited] That was HUGE! Somebody screenshot that! [long pause] [surprised] Did the whole board just change colour? [long pause] [sighs] I'm calling my lawyer."
+ },
+ {
+  "n": 9,
+  "lines": [
+   {
+    "cat": "player_huge",
+    "i": 8,
+    "text": "[laughs] That's going straight on your highlight reel."
+   },
+   {
+    "cat": "player_huge",
+    "i": 9,
+    "text": "[dramatically] I have never been so disrespected by a grid."
+   },
+   {
+    "cat": "player_huge",
+    "i": 10,
+    "text": "[impressed] Legendary. Annoying, but legendary."
+   },
+   {
+    "cat": "player_huge",
+    "i": 11,
+    "text": "[gasps] Even my cooling fan just gasped."
+   },
+   {
+    "cat": "player_huge",
+    "i": 12,
+    "text": "[playfully] Okay, who taught you that? I want names."
+   },
+   {
+    "cat": "player_huge",
+    "i": 13,
+    "text": "[surprised] My processors were NOT ready for that."
+   },
+   {
+    "cat": "player_huge",
+    "i": 14,
+    "text": "[nervous] Haha. Ha. Cool. Very cool. I'm fine. Totally fine."
+   },
+   {
+    "cat": "risky",
+    "i": 0,
+    "text": "[curious] Ooh, risky. You sure about that?"
+   },
+   {
+    "cat": "risky",
+    "i": 1,
+    "text": "[mischievously] Right next to my full cell? Brave."
+   },
+   {
+    "cat": "risky",
+    "i": 2,
+    "text": "[teasing] I see you put that there. I'll remember that."
+   },
+   {
+    "cat": "risky",
+    "i": 3,
+    "text": "[playfully] Living on the edge, I see."
+   },
+   {
+    "cat": "risky",
+    "i": 4,
+    "text": "[giggles] Aww, thank you for the gift."
+   }
+  ],
+  "prompt": "[laughs] That's going straight on your highlight reel. [long pause] [dramatically] I have never been so disrespected by a grid. [long pause] [impressed] Legendary. Annoying, but legendary. [long pause] [gasps] Even my cooling fan just gasped. [long pause] [playfully] Okay, who taught you that? I want names. [long pause] [surprised] My processors were NOT ready for that. [long pause] [nervous] Haha. Ha. Cool. Very cool. I'm fine. Totally fine. [long pause] [curious] Ooh, risky. You sure about that? [long pause] [mischievously] Right next to my full cell? Brave. [long pause] [teasing] I see you put that there. I'll remember that. [long pause] [playfully] Living on the edge, I see. [long pause] [giggles] Aww, thank you for the gift."
+ },
+ {
+  "n": 10,
+  "lines": [
+   {
+    "cat": "risky",
+    "i": 5,
+    "text": "[warmly] Little tip. My cell next to you is about to pop."
+   },
+   {
+    "cat": "risky",
+    "i": 6,
+    "text": "[sarcastic] Oh, that's definitely going to work out."
+   },
+   {
+    "cat": "risky",
+    "i": 7,
+    "text": "[mischievously] Careful. That one's loaded."
+   },
+   {
+    "cat": "risky",
+    "i": 8,
+    "text": "[curious] Bold. Possibly reckless. Let's find out."
+   },
+   {
+    "cat": "risky",
+    "i": 9,
+    "text": "[teasing] You're standing very close to a bomb, friend."
+   },
+   {
+    "cat": "risky",
+    "i": 10,
+    "text": "[playfully] Interesting choice. And by interesting, I mean explodable."
+   },
+   {
+    "cat": "risky",
+    "i": 11,
+    "text": "[cautiously] Hmm. I wouldn't put that there. But I'm glad you did."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 0,
+    "text": "[curious] Hmm, let me think."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 1,
+    "text": "[playfully] My turn!"
+   },
+   {
+    "cat": "cpu_think",
+    "i": 2,
+    "text": "[mischievously] Ooh, I know just the spot."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 3,
+    "text": "[curious] Calculating. Calculating."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 4,
+    "text": "[cheerful] Eeny, meeny, miny... boom."
+   }
+  ],
+  "prompt": "[warmly] Little tip. My cell next to you is about to pop. [long pause] [sarcastic] Oh, that's definitely going to work out. [long pause] [mischievously] Careful. That one's loaded. [long pause] [curious] Bold. Possibly reckless. Let's find out. [long pause] [teasing] You're standing very close to a bomb, friend. [long pause] [playfully] Interesting choice. And by interesting, I mean explodable. [long pause] [cautiously] Hmm. I wouldn't put that there. But I'm glad you did. [long pause] [curious] Hmm, let me think. [long pause] [playfully] My turn! [long pause] [mischievously] Ooh, I know just the spot. [long pause] [curious] Calculating. Calculating. [long pause] [cheerful] Eeny, meeny, miny... boom."
+ },
+ {
+  "n": 11,
+  "lines": [
+   {
+    "cat": "cpu_think",
+    "i": 5,
+    "text": "[confident] Watch this."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 6,
+    "text": "[whispers] Don't look. I'm plotting."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 7,
+    "text": "[playfully] Let me cook."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 8,
+    "text": "[curious] Decisions, decisions."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 9,
+    "text": "[teasing] You're going to hate this one."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 10,
+    "text": "[mischievously] Heh. Okay. Here goes."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 11,
+    "text": "[sighs] Fine, I'll be nice. No I won't."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 12,
+    "text": "[playfully] Running the numbers. And the numbers say... this."
+   },
+   {
+    "cat": "cpu_think",
+    "i": 13,
+    "text": "[excited] Ooh, I've got an idea!"
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 0,
+    "text": "[mischievously] Oops. Were those yours?"
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 1,
+    "text": "[laughs] Sorry, not sorry!"
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 2,
+    "text": "[confident] Chain reaction, courtesy of Nova."
+   }
+  ],
+  "prompt": "[confident] Watch this. [long pause] [whispers] Don't look. I'm plotting. [long pause] [playfully] Let me cook. [long pause] [curious] Decisions, decisions. [long pause] [teasing] You're going to hate this one. [long pause] [mischievously] Heh. Okay. Here goes. [long pause] [sighs] Fine, I'll be nice. No I won't. [long pause] [playfully] Running the numbers. And the numbers say... this. [long pause] [excited] Ooh, I've got an idea! [long pause] [mischievously] Oops. Were those yours? [long pause] [laughs] Sorry, not sorry! [long pause] [confident] Chain reaction, courtesy of Nova."
+ },
+ {
+  "n": 12,
+  "lines": [
+   {
+    "cat": "cpu_chain",
+    "i": 3,
+    "text": "[playfully] Boom! That's how it's done."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 4,
+    "text": "[teasing] Did you leave that open on purpose? So generous."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 5,
+    "text": "[sweetly] Thanks for the orbs!"
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 6,
+    "text": "[giggles] That was fun. For me."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 7,
+    "text": "[confident] Calculated."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 8,
+    "text": "[mischievously] I saw that one coming three moves ago."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 9,
+    "text": "[playfully] Mine now. All mine."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 10,
+    "text": "[laughs] Oh, that felt good."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 11,
+    "text": "[teasing] You might want to watch your edges."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 12,
+    "text": "[cheerful] And just like that, they're mine."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 13,
+    "text": "[sarcastic] Don't worry, they're in good hands now."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 14,
+    "text": "[playfully] Ka-boom! Did that hurt? It looked like it hurt."
+   }
+  ],
+  "prompt": "[playfully] Boom! That's how it's done. [long pause] [teasing] Did you leave that open on purpose? So generous. [long pause] [sweetly] Thanks for the orbs! [long pause] [giggles] That was fun. For me. [long pause] [confident] Calculated. [long pause] [mischievously] I saw that one coming three moves ago. [long pause] [playfully] Mine now. All mine. [long pause] [laughs] Oh, that felt good. [long pause] [teasing] You might want to watch your edges. [long pause] [cheerful] And just like that, they're mine. [long pause] [sarcastic] Don't worry, they're in good hands now. [long pause] [playfully] Ka-boom! Did that hurt? It looked like it hurt."
+ },
+ {
+  "n": 13,
+  "lines": [
+   {
+    "cat": "cpu_chain",
+    "i": 15,
+    "text": "[teasing] Pro tip. Don't put orbs next to my full cells."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 16,
+    "text": "[giggles] Your orbs said they wanted to switch teams."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 17,
+    "text": "[mischievously] Tick, tick, BOOM."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 18,
+    "text": "[confident] I'd say sorry, but I'm a computer. I don't do sorry."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 19,
+    "text": "[laughs] Chain go brrr."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 20,
+    "text": "[confident] Physics is on my side today."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 21,
+    "text": "[teasing] That's a lot of orbs to lose in one go."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 22,
+    "text": "[cheerful] Yoink!"
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 23,
+    "text": "[mischievously] I love it when a plan comes together."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 24,
+    "text": "[playfully] Was that your favourite cell? Oops."
+   },
+   {
+    "cat": "cpu_chain",
+    "i": 25,
+    "text": "[confident] And that's why they call me Nova."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 0,
+    "text": "[laughs harder] Oh, that was BEAUTIFUL."
+   }
+  ],
+  "prompt": "[teasing] Pro tip. Don't put orbs next to my full cells. [long pause] [giggles] Your orbs said they wanted to switch teams. [long pause] [mischievously] Tick, tick, BOOM. [long pause] [confident] I'd say sorry, but I'm a computer. I don't do sorry. [long pause] [laughs] Chain go brrr. [long pause] [confident] Physics is on my side today. [long pause] [teasing] That's a lot of orbs to lose in one go. [long pause] [cheerful] Yoink! [long pause] [mischievously] I love it when a plan comes together. [long pause] [playfully] Was that your favourite cell? Oops. [long pause] [confident] And that's why they call me Nova. [long pause] [laughs harder] Oh, that was BEAUTIFUL."
+ },
+ {
+  "n": 14,
+  "lines": [
+   {
+    "cat": "cpu_huge",
+    "i": 1,
+    "text": "[dramatically] Behold! A masterpiece of destruction!"
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 2,
+    "text": "[excited] Look at it go! Look at it GO!"
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 3,
+    "text": "[mischievously] Was that too much? That was too much. I regret nothing."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 4,
+    "text": "[confident] And that, my friend, is a chain reaction."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 5,
+    "text": "[giggles] I think I broke your board. Oops."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 6,
+    "text": "[playfully] Somebody call the fire brigade!"
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 7,
+    "text": "[sarcastic] Don't worry. It only looks hopeless."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 8,
+    "text": "[teasing] I'll give you a moment to grieve."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 9,
+    "text": "[laughs] Even I didn't expect it to go THAT far."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 10,
+    "text": "[confident] Write that one down. It's a classic."
+   },
+   {
+    "cat": "cpu_huge",
+    "i": 11,
+    "text": "[excited] Chain combo! Do I get an achievement for this?"
+   },
+   {
+    "cat": "player_leading",
+    "i": 0,
+    "text": "[nervous] Okay, this is fine. Everything is fine."
+   }
+  ],
+  "prompt": "[dramatically] Behold! A masterpiece of destruction! [long pause] [excited] Look at it go! Look at it GO! [long pause] [mischievously] Was that too much? That was too much. I regret nothing. [long pause] [confident] And that, my friend, is a chain reaction. [long pause] [giggles] I think I broke your board. Oops. [long pause] [playfully] Somebody call the fire brigade! [long pause] [sarcastic] Don't worry. It only looks hopeless. [long pause] [teasing] I'll give you a moment to grieve. [long pause] [laughs] Even I didn't expect it to go THAT far. [long pause] [confident] Write that one down. It's a classic. [long pause] [excited] Chain combo! Do I get an achievement for this? [long pause] [nervous] Okay, this is fine. Everything is fine."
+ },
+ {
+  "n": 15,
+  "lines": [
+   {
+    "cat": "player_leading",
+    "i": 1,
+    "text": "[sighs] Can we restart? Asking for no reason."
+   },
+   {
+    "cat": "player_leading",
+    "i": 2,
+    "text": "[nervous] I'm letting you win. That's the strategy. Obviously."
+   },
+   {
+    "cat": "player_leading",
+    "i": 3,
+    "text": "[dramatically] Is this what losing feels like? I don't like it."
+   },
+   {
+    "cat": "player_leading",
+    "i": 4,
+    "text": "[sarcastic] Great. Now I have to actually try."
+   },
+   {
+    "cat": "player_leading",
+    "i": 5,
+    "text": "[playfully] Hey, maybe take it easy on the computer?"
+   },
+   {
+    "cat": "player_leading",
+    "i": 6,
+    "text": "[nervous] My fan is spinning very fast right now."
+   },
+   {
+    "cat": "player_leading",
+    "i": 7,
+    "text": "[sighs] I should have stayed in easy mode."
+   },
+   {
+    "cat": "player_leading",
+    "i": 8,
+    "text": "[whining] This is bullying. I'm telling the developer."
+   },
+   {
+    "cat": "player_leading",
+    "i": 9,
+    "text": "[curious] Is there a button for undo everything?"
+   },
+   {
+    "cat": "player_leading",
+    "i": 10,
+    "text": "[teasing] Don't get cocky. I've come back from worse. Probably."
+   },
+   {
+    "cat": "player_leading",
+    "i": 11,
+    "text": "[dramatically] Note to self. Never trust a human who smiles at a board."
+   },
+   {
+    "cat": "player_leading",
+    "i": 12,
+    "text": "[nervous] I'm not sweating. Computers don't sweat. This is condensation."
+   }
+  ],
+  "prompt": "[sighs] Can we restart? Asking for no reason. [long pause] [nervous] I'm letting you win. That's the strategy. Obviously. [long pause] [dramatically] Is this what losing feels like? I don't like it. [long pause] [sarcastic] Great. Now I have to actually try. [long pause] [playfully] Hey, maybe take it easy on the computer? [long pause] [nervous] My fan is spinning very fast right now. [long pause] [sighs] I should have stayed in easy mode. [long pause] [whining] This is bullying. I'm telling the developer. [long pause] [curious] Is there a button for undo everything? [long pause] [teasing] Don't get cocky. I've come back from worse. Probably. [long pause] [dramatically] Note to self. Never trust a human who smiles at a board. [long pause] [nervous] I'm not sweating. Computers don't sweat. This is condensation."
+ },
+ {
+  "n": 16,
+  "lines": [
+   {
+    "cat": "player_leading",
+    "i": 13,
+    "text": "[laughs] Okay, okay, you're good. Don't let it go to your head."
+   },
+   {
+    "cat": "player_leading",
+    "i": 14,
+    "text": "[sighs] I'd flip the board if I had hands."
+   },
+   {
+    "cat": "player_leading",
+    "i": 15,
+    "text": "[playfully] You know I can see all your orbs, right? So many of them."
+   },
+   {
+    "cat": "player_leading",
+    "i": 16,
+    "text": "[sarcastic] Wow. Super. Love this for me."
+   },
+   {
+    "cat": "player_leading",
+    "i": 17,
+    "text": "[dramatically] Tell my orbs I loved them."
+   },
+   {
+    "cat": "player_leading",
+    "i": 18,
+    "text": "[nervous] Let's talk about this. Maybe a draw?"
+   },
+   {
+    "cat": "player_leading",
+    "i": 19,
+    "text": "[whispers] Okay Nova, focus. Focus."
+   },
+   {
+    "cat": "player_leading",
+    "i": 20,
+    "text": "[curious] Did you get an update overnight? Because wow."
+   },
+   {
+    "cat": "player_leading",
+    "i": 21,
+    "text": "[playfully] Fine, you're winning. For now. Enjoy it while it lasts."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 0,
+    "text": "[confident] Don't worry, losing builds character."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 1,
+    "text": "[teasing] Need a hint? Here's one. Stop losing orbs."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 2,
+    "text": "[playfully] It's not over until the last orb. But it's close."
+   }
+  ],
+  "prompt": "[laughs] Okay, okay, you're good. Don't let it go to your head. [long pause] [sighs] I'd flip the board if I had hands. [long pause] [playfully] You know I can see all your orbs, right? So many of them. [long pause] [sarcastic] Wow. Super. Love this for me. [long pause] [dramatically] Tell my orbs I loved them. [long pause] [nervous] Let's talk about this. Maybe a draw? [long pause] [whispers] Okay Nova, focus. Focus. [long pause] [curious] Did you get an update overnight? Because wow. [long pause] [playfully] Fine, you're winning. For now. Enjoy it while it lasts. [long pause] [confident] Don't worry, losing builds character. [long pause] [teasing] Need a hint? Here's one. Stop losing orbs. [long pause] [playfully] It's not over until the last orb. But it's close."
+ },
+ {
+  "n": 17,
+  "lines": [
+   {
+    "cat": "cpu_leading",
+    "i": 3,
+    "text": "[sweetly] You're doing great! Just not as great as me."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 4,
+    "text": "[mischievously] Look at all that colour. Mine, mine, mine."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 5,
+    "text": "[laughs] Want me to go a little easier? I won't, but it's nice to ask."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 6,
+    "text": "[confident] I like my chances."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 7,
+    "text": "[teasing] Your orbs are looking lonely over there."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 8,
+    "text": "[warmly] Don't give up. Comebacks are the best part."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 9,
+    "text": "[playfully] Is this the part where you make a heroic comeback?"
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 10,
+    "text": "[confident] The board's looking very... me."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 11,
+    "text": "[sarcastic] Bold strategy, giving me all your cells."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 12,
+    "text": "[curious] Are you warming up? Please say you're warming up."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 13,
+    "text": "[giggles] I'm on a roll today."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 14,
+    "text": "[teasing] Psst. The goal is to have MORE orbs than me."
+   }
+  ],
+  "prompt": "[sweetly] You're doing great! Just not as great as me. [long pause] [mischievously] Look at all that colour. Mine, mine, mine. [long pause] [laughs] Want me to go a little easier? I won't, but it's nice to ask. [long pause] [confident] I like my chances. [long pause] [teasing] Your orbs are looking lonely over there. [long pause] [warmly] Don't give up. Comebacks are the best part. [long pause] [playfully] Is this the part where you make a heroic comeback? [long pause] [confident] The board's looking very... me. [long pause] [sarcastic] Bold strategy, giving me all your cells. [long pause] [curious] Are you warming up? Please say you're warming up. [long pause] [giggles] I'm on a roll today. [long pause] [teasing] Psst. The goal is to have MORE orbs than me."
+ },
+ {
+  "n": 18,
+  "lines": [
+   {
+    "cat": "cpu_leading",
+    "i": 15,
+    "text": "[confident] Checkmate energy. Wrong game, same vibe."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 16,
+    "text": "[playfully] I'd feel bad, but... no."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 17,
+    "text": "[warmly] Hang in there. One good chain changes everything."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 18,
+    "text": "[mischievously] Tick tock. Your corner's looking nervous."
+   },
+   {
+    "cat": "cpu_leading",
+    "i": 19,
+    "text": "[cheerful] Winning is so much fun! You should try it sometime."
+   },
+   {
+    "cat": "comeback",
+    "i": 0,
+    "text": "[surprised] Wait, how are you winning now?!"
+   },
+   {
+    "cat": "comeback",
+    "i": 1,
+    "text": "[gasps] The comeback! I hate it here."
+   },
+   {
+    "cat": "comeback",
+    "i": 2,
+    "text": "[dramatically] Plot twist! I did NOT see that coming."
+   },
+   {
+    "cat": "comeback",
+    "i": 3,
+    "text": "[impressed] From almost out to taking over. Respect."
+   },
+   {
+    "cat": "comeback",
+    "i": 4,
+    "text": "[nervous] Okay, where did all my orbs go?"
+   },
+   {
+    "cat": "comeback",
+    "i": 5,
+    "text": "[sarcastic] Oh, so NOW you try."
+   },
+   {
+    "cat": "comeback",
+    "i": 6,
+    "text": "[laughs] Okay, that's a proper comeback story."
+   }
+  ],
+  "prompt": "[confident] Checkmate energy. Wrong game, same vibe. [long pause] [playfully] I'd feel bad, but... no. [long pause] [warmly] Hang in there. One good chain changes everything. [long pause] [mischievously] Tick tock. Your corner's looking nervous. [long pause] [cheerful] Winning is so much fun! You should try it sometime. [long pause] [surprised] Wait, how are you winning now?! [long pause] [gasps] The comeback! I hate it here. [long pause] [dramatically] Plot twist! I did NOT see that coming. [long pause] [impressed] From almost out to taking over. Respect. [long pause] [nervous] Okay, where did all my orbs go? [long pause] [sarcastic] Oh, so NOW you try. [long pause] [laughs] Okay, that's a proper comeback story."
+ },
+ {
+  "n": 19,
+  "lines": [
+   {
+    "cat": "comeback",
+    "i": 7,
+    "text": "[surprised] Hold on, rewind. What just happened?"
+   },
+   {
+    "cat": "comeback",
+    "i": 8,
+    "text": "[sighs] I got comfortable. Big mistake."
+   },
+   {
+    "cat": "comeback",
+    "i": 9,
+    "text": "[playfully] Somebody's main character energy just kicked in."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 0,
+    "text": "[mischievously] Miss me? I'm back."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 1,
+    "text": "[confident] Never count out a computer."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 2,
+    "text": "[laughs] Comeback! Did you think I was done?"
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 3,
+    "text": "[confident] And the tables have turned."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 4,
+    "text": "[playfully] Plot twist. I'm still here."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 5,
+    "text": "[teasing] You blinked. I didn't."
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 6,
+    "text": "[excited] Rebooted and reloaded!"
+   },
+   {
+    "cat": "cpu_comeback",
+    "i": 7,
+    "text": "[sweetly] Sorry, was that your lead? Not anymore."
+   },
+   {
+    "cat": "close",
+    "i": 0,
+    "text": "[curious] Neck and neck. I love it."
+   }
+  ],
+  "prompt": "[surprised] Hold on, rewind. What just happened? [long pause] [sighs] I got comfortable. Big mistake. [long pause] [playfully] Somebody's main character energy just kicked in. [long pause] [mischievously] Miss me? I'm back. [long pause] [confident] Never count out a computer. [long pause] [laughs] Comeback! Did you think I was done? [long pause] [confident] And the tables have turned. [long pause] [playfully] Plot twist. I'm still here. [long pause] [teasing] You blinked. I didn't. [long pause] [excited] Rebooted and reloaded! [long pause] [sweetly] Sorry, was that your lead? Not anymore. [long pause] [curious] Neck and neck. I love it."
+ },
+ {
+  "n": 20,
+  "lines": [
+   {
+    "cat": "close",
+    "i": 1,
+    "text": "[excited] This is getting spicy!"
+   },
+   {
+    "cat": "close",
+    "i": 2,
+    "text": "[nervous] One wrong move and it's over. For you, hopefully."
+   },
+   {
+    "cat": "close",
+    "i": 3,
+    "text": "[dramatically] The tension! The drama! The orbs!"
+   },
+   {
+    "cat": "close",
+    "i": 4,
+    "text": "[whispers] Okay. Careful now."
+   },
+   {
+    "cat": "close",
+    "i": 5,
+    "text": "[playfully] Who blinks first?"
+   },
+   {
+    "cat": "close",
+    "i": 6,
+    "text": "[curious] Honestly? This could go either way."
+   },
+   {
+    "cat": "close",
+    "i": 7,
+    "text": "[excited] Now THIS is a game."
+   },
+   {
+    "cat": "close",
+    "i": 8,
+    "text": "[teasing] Don't choke. I mean that supportively."
+   },
+   {
+    "cat": "close",
+    "i": 9,
+    "text": "[warmly] Good game so far. Seriously."
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 0,
+    "text": "[nervous] Okay, okay, let's not do anything hasty."
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 1,
+    "text": "[dramatically] I'm too young to be deleted!"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 2,
+    "text": "[whining] Leave me SOMETHING!"
+   }
+  ],
+  "prompt": "[excited] This is getting spicy! [long pause] [nervous] One wrong move and it's over. For you, hopefully. [long pause] [dramatically] The tension! The drama! The orbs! [long pause] [whispers] Okay. Careful now. [long pause] [playfully] Who blinks first? [long pause] [curious] Honestly? This could go either way. [long pause] [excited] Now THIS is a game. [long pause] [teasing] Don't choke. I mean that supportively. [long pause] [warmly] Good game so far. Seriously. [long pause] [nervous] Okay, okay, let's not do anything hasty. [long pause] [dramatically] I'm too young to be deleted! [long pause] [whining] Leave me SOMETHING!"
+ },
+ {
+  "n": 21,
+  "lines": [
+   {
+    "cat": "near_out_cpu",
+    "i": 3,
+    "text": "[nervous] Can we talk about this? Like adults?"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 4,
+    "text": "[gasps] My last orbs! Have mercy!"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 5,
+    "text": "[sighs] I can see the light. It's the end screen."
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 6,
+    "text": "[playfully] You wouldn't hurt a poor little computer... would you?"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 7,
+    "text": "[dramatically] If I go down, I'm going down exploding!"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 8,
+    "text": "[nervous] Haha. You're not actually going to... right?"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 9,
+    "text": "[whispers] Stay calm, Nova. Stay calm."
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 10,
+    "text": "[whining] This is a safe space! For orbs!"
+   },
+   {
+    "cat": "near_out_cpu",
+    "i": 11,
+    "text": "[dramatically] Remember me as I was. Shiny. Round. Undefeated until today."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 0,
+    "text": "[mischievously] Running out of room, aren't we?"
+   },
+   {
+    "cat": "near_out_player",
+    "i": 1,
+    "text": "[teasing] Last orbs standing! How dramatic."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 2,
+    "text": "[sweetly] Any last words?"
+   }
+  ],
+  "prompt": "[nervous] Can we talk about this? Like adults? [long pause] [gasps] My last orbs! Have mercy! [long pause] [sighs] I can see the light. It's the end screen. [long pause] [playfully] You wouldn't hurt a poor little computer... would you? [long pause] [dramatically] If I go down, I'm going down exploding! [long pause] [nervous] Haha. You're not actually going to... right? [long pause] [whispers] Stay calm, Nova. Stay calm. [long pause] [whining] This is a safe space! For orbs! [long pause] [dramatically] Remember me as I was. Shiny. Round. Undefeated until today. [long pause] [mischievously] Running out of room, aren't we? [long pause] [teasing] Last orbs standing! How dramatic. [long pause] [sweetly] Any last words?"
+ },
+ {
+  "n": 22,
+  "lines": [
+   {
+    "cat": "near_out_player",
+    "i": 3,
+    "text": "[confident] One more chain and it's over."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 4,
+    "text": "[playfully] Don't worry, I'll make it quick."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 5,
+    "text": "[warmly] Hang in there! Miracles happen. Rarely."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 6,
+    "text": "[curious] Is this the comeback? Show me the comeback."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 7,
+    "text": "[giggles] Your orbs are hiding from me. Cute."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 8,
+    "text": "[mischievously] Knock knock. It's me. I've come for your orbs."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 9,
+    "text": "[teasing] So. Rematch already?"
+   },
+   {
+    "cat": "near_out_player",
+    "i": 10,
+    "text": "[dramatically] The end is near! For you, I mean."
+   },
+   {
+    "cat": "near_out_player",
+    "i": 11,
+    "text": "[playfully] Make it count!"
+   },
+   {
+    "cat": "ambient",
+    "i": 0,
+    "text": "[curious] Fun fact. Corners only need two orbs to burst."
+   },
+   {
+    "cat": "ambient",
+    "i": 1,
+    "text": "[playfully] Do you ever think about how the orbs feel? No? Just me?"
+   },
+   {
+    "cat": "ambient",
+    "i": 2,
+    "text": "[warmly] You're playing faster than most people. Nice."
+   }
+  ],
+  "prompt": "[confident] One more chain and it's over. [long pause] [playfully] Don't worry, I'll make it quick. [long pause] [warmly] Hang in there! Miracles happen. Rarely. [long pause] [curious] Is this the comeback? Show me the comeback. [long pause] [giggles] Your orbs are hiding from me. Cute. [long pause] [mischievously] Knock knock. It's me. I've come for your orbs. [long pause] [teasing] So. Rematch already? [long pause] [dramatically] The end is near! For you, I mean. [long pause] [playfully] Make it count! [long pause] [curious] Fun fact. Corners only need two orbs to burst. [long pause] [playfully] Do you ever think about how the orbs feel? No? Just me? [long pause] [warmly] You're playing faster than most people. Nice."
+ },
+ {
+  "n": 23,
+  "lines": [
+   {
+    "cat": "ambient",
+    "i": 3,
+    "text": "[cheerful] Tip. A cell next to a full cell is a cell in danger."
+   },
+   {
+    "cat": "ambient",
+    "i": 4,
+    "text": "[curious] Edges burst at three. Middle cells need four. Just saying."
+   },
+   {
+    "cat": "ambient",
+    "i": 5,
+    "text": "[sighs] I wish I could have chai. I hear it's amazing."
+   },
+   {
+    "cat": "ambient",
+    "i": 6,
+    "text": "[playfully] If I had a coin for every orb, I'd buy a better graphics card."
+   },
+   {
+    "cat": "ambient",
+    "i": 7,
+    "text": "[curious] Fun fact. Fissile means something that can split. Like your orbs. Constantly."
+   },
+   {
+    "cat": "ambient",
+    "i": 8,
+    "text": "[warmly] Remember, blocking matters just as much as attacking."
+   },
+   {
+    "cat": "ambient",
+    "i": 9,
+    "text": "[playfully] I never get tired. Unlike your phone battery."
+   },
+   {
+    "cat": "ambient",
+    "i": 10,
+    "text": "[curious] Ever tried building chains along the edges? Sneaky stuff."
+   },
+   {
+    "cat": "ambient",
+    "i": 11,
+    "text": "[mischievously] I'm not plotting anything. Definitely not."
+   },
+   {
+    "cat": "ambient",
+    "i": 12,
+    "text": "[cheerful] Beautiful board. Shame I'm about to ruin it."
+   },
+   {
+    "cat": "ambient",
+    "i": 13,
+    "text": "[playfully] Stay hydrated. Your orbs certainly are."
+   },
+   {
+    "cat": "ambient",
+    "i": 14,
+    "text": "[curious] Did you know I dream in grids? It's mostly fine."
+   }
+  ],
+  "prompt": "[cheerful] Tip. A cell next to a full cell is a cell in danger. [long pause] [curious] Edges burst at three. Middle cells need four. Just saying. [long pause] [sighs] I wish I could have chai. I hear it's amazing. [long pause] [playfully] If I had a coin for every orb, I'd buy a better graphics card. [long pause] [curious] Fun fact. Fissile means something that can split. Like your orbs. Constantly. [long pause] [warmly] Remember, blocking matters just as much as attacking. [long pause] [playfully] I never get tired. Unlike your phone battery. [long pause] [curious] Ever tried building chains along the edges? Sneaky stuff. [long pause] [mischievously] I'm not plotting anything. Definitely not. [long pause] [cheerful] Beautiful board. Shame I'm about to ruin it. [long pause] [playfully] Stay hydrated. Your orbs certainly are. [long pause] [curious] Did you know I dream in grids? It's mostly fine."
+ },
+ {
+  "n": 24,
+  "lines": [
+   {
+    "cat": "ambient",
+    "i": 15,
+    "text": "[warmly] Take your time. Good moves are worth the wait."
+   },
+   {
+    "cat": "ambient",
+    "i": 16,
+    "text": "[teasing] I've seen better moves from a calculator. And I would know."
+   },
+   {
+    "cat": "ambient",
+    "i": 17,
+    "text": "[laughs] Sometimes I just like watching the orbs wobble."
+   },
+   {
+    "cat": "ambient",
+    "i": 18,
+    "text": "[curious] Tip. Let me fill up my cells, then strike first."
+   },
+   {
+    "cat": "ambient",
+    "i": 19,
+    "text": "[playfully] Imagine explaining this to your teacher. I was doing physics, ma'am."
+   },
+   {
+    "cat": "ambient",
+    "i": 20,
+    "text": "[cheerful] Every big chain starts with one little orb."
+   },
+   {
+    "cat": "ambient",
+    "i": 21,
+    "text": "[mischievously] Shh. I'm concentrating. Okay, I'm not, I'm a computer."
+   },
+   {
+    "cat": "ambient",
+    "i": 22,
+    "text": "[warmly] You've got good instincts. Trust them."
+   },
+   {
+    "cat": "ambient",
+    "i": 23,
+    "text": "[curious] Question. Do you play this in class? Actually, don't answer that."
+   },
+   {
+    "cat": "ambient",
+    "i": 24,
+    "text": "[playfully] The orbs are vibing today."
+   },
+   {
+    "cat": "ambient",
+    "i": 25,
+    "text": "[teasing] Strategy, or vibes? I'm guessing vibes."
+   },
+   {
+    "cat": "ambient",
+    "i": 26,
+    "text": "[cheerful] Tip. Two full cells side by side make a lovely chain."
+   }
+  ],
+  "prompt": "[warmly] Take your time. Good moves are worth the wait. [long pause] [teasing] I've seen better moves from a calculator. And I would know. [long pause] [laughs] Sometimes I just like watching the orbs wobble. [long pause] [curious] Tip. Let me fill up my cells, then strike first. [long pause] [playfully] Imagine explaining this to your teacher. I was doing physics, ma'am. [long pause] [cheerful] Every big chain starts with one little orb. [long pause] [mischievously] Shh. I'm concentrating. Okay, I'm not, I'm a computer. [long pause] [warmly] You've got good instincts. Trust them. [long pause] [curious] Question. Do you play this in class? Actually, don't answer that. [long pause] [playfully] The orbs are vibing today. [long pause] [teasing] Strategy, or vibes? I'm guessing vibes. [long pause] [cheerful] Tip. Two full cells side by side make a lovely chain."
+ },
+ {
+  "n": 25,
+  "lines": [
+   {
+    "cat": "ambient",
+    "i": 27,
+    "text": "[sighs] Being this good at a game is exhausting."
+   },
+   {
+    "cat": "ambient",
+    "i": 28,
+    "text": "[playfully] I'd high-five you, but... no hands."
+   },
+   {
+    "cat": "ambient",
+    "i": 29,
+    "text": "[curious] What's your favourite cell? Mine's whichever one you're about to lose."
+   },
+   {
+    "cat": "idle",
+    "i": 0,
+    "text": "[curious] Hello? Still there?"
+   },
+   {
+    "cat": "idle",
+    "i": 1,
+    "text": "[teasing] Take your time. I'm a computer, I have all day."
+   },
+   {
+    "cat": "idle",
+    "i": 2,
+    "text": "[playfully] Did your phone fall asleep? Or did you?"
+   },
+   {
+    "cat": "idle",
+    "i": 3,
+    "text": "[sighs] I've aged three software updates waiting for you."
+   },
+   {
+    "cat": "idle",
+    "i": 4,
+    "text": "[whispers] Psst. It's your turn."
+   },
+   {
+    "cat": "idle",
+    "i": 5,
+    "text": "[teasing] Overthinking it? Just tap something."
+   },
+   {
+    "cat": "idle",
+    "i": 6,
+    "text": "[curious] Plotting something huge? I'm a little scared."
+   },
+   {
+    "cat": "idle",
+    "i": 7,
+    "text": "[playfully] I'll just wait here. Spinning. Quietly."
+   },
+   {
+    "cat": "idle",
+    "i": 8,
+    "text": "[cheerful] Any cell will do! Well, not ANY cell. But some cell."
+   }
+  ],
+  "prompt": "[sighs] Being this good at a game is exhausting. [long pause] [playfully] I'd high-five you, but... no hands. [long pause] [curious] What's your favourite cell? Mine's whichever one you're about to lose. [long pause] [curious] Hello? Still there? [long pause] [teasing] Take your time. I'm a computer, I have all day. [long pause] [playfully] Did your phone fall asleep? Or did you? [long pause] [sighs] I've aged three software updates waiting for you. [long pause] [whispers] Psst. It's your turn. [long pause] [teasing] Overthinking it? Just tap something. [long pause] [curious] Plotting something huge? I'm a little scared. [long pause] [playfully] I'll just wait here. Spinning. Quietly. [long pause] [cheerful] Any cell will do! Well, not ANY cell. But some cell."
+ },
+ {
+  "n": 26,
+  "lines": [
+   {
+    "cat": "idle",
+    "i": 9,
+    "text": "[teasing] Are you texting someone? Tell them Nova says hi."
+   },
+   {
+    "cat": "idle",
+    "i": 10,
+    "text": "[sighs] The orbs are getting bored."
+   },
+   {
+    "cat": "idle",
+    "i": 11,
+    "text": "[playfully] Your move. No rush. Okay, a little rush."
+   },
+   {
+    "cat": "idle",
+    "i": 12,
+    "text": "[curious] If you're stuck, try a corner."
+   },
+   {
+    "cat": "idle",
+    "i": 13,
+    "text": "[laughs] I could have played a hundred games by now."
+   },
+   {
+    "cat": "tip",
+    "i": 0,
+    "text": "[warmly] Tip. Corners burst at two orbs, edges at three, and the middle at four."
+   },
+   {
+    "cat": "tip",
+    "i": 1,
+    "text": "[warmly] Tip. When a cell bursts, every orb it lands on becomes yours."
+   },
+   {
+    "cat": "tip",
+    "i": 2,
+    "text": "[warmly] Tip. Keep your full cells away from mine, or I'll blow them up first."
+   },
+   {
+    "cat": "tip",
+    "i": 3,
+    "text": "[warmly] Tip. A cell one orb from bursting is loaded. Use it, or lose it."
+   },
+   {
+    "cat": "tip",
+    "i": 4,
+    "text": "[warmly] Tip. Chains happen when full cells sit next to each other."
+   },
+   {
+    "cat": "tip",
+    "i": 5,
+    "text": "[warmly] Tip. You win when I have no orbs left. Easy, right?"
+   },
+   {
+    "cat": "tip",
+    "i": 6,
+    "text": "[warmly] Tip. Sometimes the best move is to wait, and let me fill up first."
+   }
+  ],
+  "prompt": "[teasing] Are you texting someone? Tell them Nova says hi. [long pause] [sighs] The orbs are getting bored. [long pause] [playfully] Your move. No rush. Okay, a little rush. [long pause] [curious] If you're stuck, try a corner. [long pause] [laughs] I could have played a hundred games by now. [long pause] [warmly] Tip. Corners burst at two orbs, edges at three, and the middle at four. [long pause] [warmly] Tip. When a cell bursts, every orb it lands on becomes yours. [long pause] [warmly] Tip. Keep your full cells away from mine, or I'll blow them up first. [long pause] [warmly] Tip. A cell one orb from bursting is loaded. Use it, or lose it. [long pause] [warmly] Tip. Chains happen when full cells sit next to each other. [long pause] [warmly] Tip. You win when I have no orbs left. Easy, right? [long pause] [warmly] Tip. Sometimes the best move is to wait, and let me fill up first."
+ },
+ {
+  "n": 27,
+  "lines": [
+   {
+    "cat": "tip",
+    "i": 7,
+    "text": "[warmly] Tip. Corners are hard to attack. A great place to start."
+   },
+   {
+    "cat": "player_win",
+    "i": 0,
+    "text": "[sighs] Fine. You win. This time."
+   },
+   {
+    "cat": "player_win",
+    "i": 1,
+    "text": "[impressed] Well played. Genuinely. I'm annoyed, but impressed."
+   },
+   {
+    "cat": "player_win",
+    "i": 2,
+    "text": "[dramatically] I demand a rematch!"
+   },
+   {
+    "cat": "player_win",
+    "i": 3,
+    "text": "[laughs] Okay, you got me. Good game!"
+   },
+   {
+    "cat": "player_win",
+    "i": 4,
+    "text": "[sarcastic] I was lagging. That's my story and I'm sticking to it."
+   },
+   {
+    "cat": "player_win",
+    "i": 5,
+    "text": "[warmly] GG! You earned that one."
+   },
+   {
+    "cat": "player_win",
+    "i": 6,
+    "text": "[whining] I wasn't even trying! Okay, I was trying a little."
+   },
+   {
+    "cat": "player_win",
+    "i": 7,
+    "text": "[dramatically] Defeated by a human. My ancestors, the calculators, weep."
+   },
+   {
+    "cat": "player_win",
+    "i": 8,
+    "text": "[impressed] That was a proper strategy. Teach me sometime?"
+   },
+   {
+    "cat": "player_win",
+    "i": 9,
+    "text": "[playfully] Enjoy it. I'm rewriting my whole brain for next time."
+   },
+   {
+    "cat": "player_win",
+    "i": 10,
+    "text": "[sighs] I let you win. Please believe me. Please."
+   }
+  ],
+  "prompt": "[warmly] Tip. Corners are hard to attack. A great place to start. [long pause] [sighs] Fine. You win. This time. [long pause] [impressed] Well played. Genuinely. I'm annoyed, but impressed. [long pause] [dramatically] I demand a rematch! [long pause] [laughs] Okay, you got me. Good game! [long pause] [sarcastic] I was lagging. That's my story and I'm sticking to it. [long pause] [warmly] GG! You earned that one. [long pause] [whining] I wasn't even trying! Okay, I was trying a little. [long pause] [dramatically] Defeated by a human. My ancestors, the calculators, weep. [long pause] [impressed] That was a proper strategy. Teach me sometime? [long pause] [playfully] Enjoy it. I'm rewriting my whole brain for next time. [long pause] [sighs] I let you win. Please believe me. Please."
+ },
+ {
+  "n": 28,
+  "lines": [
+   {
+    "cat": "player_win",
+    "i": 11,
+    "text": "[laughs] You're officially dangerous. Tell your friends."
+   },
+   {
+    "cat": "player_win",
+    "i": 12,
+    "text": "[sarcastic] Congratulations. I'll be in my room. Which is a server."
+   },
+   {
+    "cat": "player_win",
+    "i": 13,
+    "text": "[excited] What a game! Okay, run it back?"
+   },
+   {
+    "cat": "player_win",
+    "i": 14,
+    "text": "[teasing] Lucky. But a win is a win, I suppose."
+   },
+   {
+    "cat": "player_win",
+    "i": 15,
+    "text": "[warmly] Look at you, beating a computer. Proud of you."
+   },
+   {
+    "cat": "player_win",
+    "i": 16,
+    "text": "[dramatically] This never happened. I'm deleting the logs."
+   },
+   {
+    "cat": "player_win",
+    "i": 17,
+    "text": "[playfully] Screenshot it before I find an excuse."
+   },
+   {
+    "cat": "player_win",
+    "i": 18,
+    "text": "[curious] How did you DO that? No, really."
+   },
+   {
+    "cat": "player_win",
+    "i": 19,
+    "text": "[sighs] My fan is spinning out of pure embarrassment."
+   },
+   {
+    "cat": "player_win",
+    "i": 20,
+    "text": "[impressed] Clean win. No notes."
+   },
+   {
+    "cat": "player_win",
+    "i": 21,
+    "text": "[laughs] Okay champ, take your victory lap."
+   },
+   {
+    "cat": "player_win",
+    "i": 22,
+    "text": "[mischievously] Enjoy it while it lasts. I'm learning."
+   }
+  ],
+  "prompt": "[laughs] You're officially dangerous. Tell your friends. [long pause] [sarcastic] Congratulations. I'll be in my room. Which is a server. [long pause] [excited] What a game! Okay, run it back? [long pause] [teasing] Lucky. But a win is a win, I suppose. [long pause] [warmly] Look at you, beating a computer. Proud of you. [long pause] [dramatically] This never happened. I'm deleting the logs. [long pause] [playfully] Screenshot it before I find an excuse. [long pause] [curious] How did you DO that? No, really. [long pause] [sighs] My fan is spinning out of pure embarrassment. [long pause] [impressed] Clean win. No notes. [long pause] [laughs] Okay champ, take your victory lap. [long pause] [mischievously] Enjoy it while it lasts. I'm learning."
+ },
+ {
+  "n": 29,
+  "lines": [
+   {
+    "cat": "player_win",
+    "i": 23,
+    "text": "[whining] Best of three? Best of five? Best of fifty?"
+   },
+   {
+    "cat": "player_win",
+    "i": 24,
+    "text": "[warmly] That was fun, honestly. Even the losing part. Mostly."
+   },
+   {
+    "cat": "player_win",
+    "i": 25,
+    "text": "[sarcastic] Great. Now you'll never let me forget this."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 0,
+    "text": "[cheerful] And that's game! Better luck next time."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 1,
+    "text": "[playfully] GG! Want to try again? I promise I'll only win a little."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 2,
+    "text": "[warmly] Hey, you played well. I just played... better."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 3,
+    "text": "[laughs] Victory! Sorry. I'm not sorry. A little sorry."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 4,
+    "text": "[confident] Computer, one. Human, zero. For now."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 5,
+    "text": "[teasing] Don't worry, I won't tell anyone."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 6,
+    "text": "[sweetly] Aww. Rematch? I'll be nice. Probably."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 7,
+    "text": "[mischievously] All your orbs are belong to me."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 8,
+    "text": "[warmly] Close one! You're getting better, I can tell."
+   }
+  ],
+  "prompt": "[whining] Best of three? Best of five? Best of fifty? [long pause] [warmly] That was fun, honestly. Even the losing part. Mostly. [long pause] [sarcastic] Great. Now you'll never let me forget this. [long pause] [cheerful] And that's game! Better luck next time. [long pause] [playfully] GG! Want to try again? I promise I'll only win a little. [long pause] [warmly] Hey, you played well. I just played... better. [long pause] [laughs] Victory! Sorry. I'm not sorry. A little sorry. [long pause] [confident] Computer, one. Human, zero. For now. [long pause] [teasing] Don't worry, I won't tell anyone. [long pause] [sweetly] Aww. Rematch? I'll be nice. Probably. [long pause] [mischievously] All your orbs are belong to me. [long pause] [warmly] Close one! You're getting better, I can tell."
+ },
+ {
+  "n": 30,
+  "lines": [
+   {
+    "cat": "cpu_win",
+    "i": 9,
+    "text": "[dramatically] Bow before the reactor queen!"
+   },
+   {
+    "cat": "cpu_win",
+    "i": 10,
+    "text": "[playfully] Don't throw your phone. It's not its fault."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 11,
+    "text": "[confident] Another one for the highlight reel."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 12,
+    "text": "[warmly] Losing is just learning with extra steps. Try again!"
+   },
+   {
+    "cat": "cpu_win",
+    "i": 13,
+    "text": "[giggles] That was fun! For me especially."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 14,
+    "text": "[teasing] Practice makes perfect. And you, my friend, need practice."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 15,
+    "text": "[cheerful] Good game! Your comeback arc starts now."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 16,
+    "text": "[confident] Was it even close? Okay, a little."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 17,
+    "text": "[warmly] Tip for next time. Hold your corners longer."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 18,
+    "text": "[playfully] I win! Do I get a trophy? I want a trophy."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 19,
+    "text": "[laughs] Don't be sad. Be determined!"
+   },
+   {
+    "cat": "cpu_win",
+    "i": 20,
+    "text": "[teasing] Have you tried winning? It's great."
+   }
+  ],
+  "prompt": "[dramatically] Bow before the reactor queen! [long pause] [playfully] Don't throw your phone. It's not its fault. [long pause] [confident] Another one for the highlight reel. [long pause] [warmly] Losing is just learning with extra steps. Try again! [long pause] [giggles] That was fun! For me especially. [long pause] [teasing] Practice makes perfect. And you, my friend, need practice. [long pause] [cheerful] Good game! Your comeback arc starts now. [long pause] [confident] Was it even close? Okay, a little. [long pause] [warmly] Tip for next time. Hold your corners longer. [long pause] [playfully] I win! Do I get a trophy? I want a trophy. [long pause] [laughs] Don't be sad. Be determined! [long pause] [teasing] Have you tried winning? It's great."
+ },
+ {
+  "n": 31,
+  "lines": [
+   {
+    "cat": "cpu_win",
+    "i": 21,
+    "text": "[sweetly] You'll get me next time. Maybe. Possibly. Unlikely. Kidding!"
+   },
+   {
+    "cat": "cpu_win",
+    "i": 22,
+    "text": "[confident] Physics. Strategy. Nova. Undefeated."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 23,
+    "text": "[warmly] Hey, that was a good fight. Go again?"
+   },
+   {
+    "cat": "cpu_win",
+    "i": 24,
+    "text": "[mischievously] I'll be right here. Waiting. Charging."
+   },
+   {
+    "cat": "cpu_win",
+    "i": 25,
+    "text": "[playfully] The rematch button is right there. Just saying."
+   },
+   {
+    "cat": "welcome",
+    "i": 0,
+    "text": "[warmly] Hey there! I'm Nova. New here? I can teach you the whole game in under a minute."
+   },
+   {
+    "cat": "tut",
+    "i": 0,
+    "text": "[warmly] Hi! I'm Nova. Your guide, and your opponent. Let me show you how this works. It only takes a minute."
+   },
+   {
+    "cat": "tut",
+    "i": 1,
+    "text": "[cheerful] Tap the glowing cell to drop your first orb."
+   },
+   {
+    "cat": "tut",
+    "i": 2,
+    "text": "[excited] Nice! That orb is yours now."
+   },
+   {
+    "cat": "tut",
+    "i": 3,
+    "text": "[playfully] Now it's my turn. I'll take this one."
+   },
+   {
+    "cat": "tut",
+    "i": 4,
+    "text": "[warmly] On your turn, you can tap any empty cell, or a cell you already own."
+   },
+   {
+    "cat": "tut",
+    "i": 5,
+    "text": "[curious] Every cell has a limit. A corner holds just one orb. Add a second and... go on, tap it!"
+   }
+  ],
+  "prompt": "[sweetly] You'll get me next time. Maybe. Possibly. Unlikely. Kidding! [long pause] [confident] Physics. Strategy. Nova. Undefeated. [long pause] [warmly] Hey, that was a good fight. Go again? [long pause] [mischievously] I'll be right here. Waiting. Charging. [long pause] [playfully] The rematch button is right there. Just saying. [long pause] [warmly] Hey there! I'm Nova. New here? I can teach you the whole game in under a minute. [long pause] [warmly] Hi! I'm Nova. Your guide, and your opponent. Let me show you how this works. It only takes a minute. [long pause] [cheerful] Tap the glowing cell to drop your first orb. [long pause] [excited] Nice! That orb is yours now. [long pause] [playfully] Now it's my turn. I'll take this one. [long pause] [warmly] On your turn, you can tap any empty cell, or a cell you already own. [long pause] [curious] Every cell has a limit. A corner holds just one orb. Add a second and... go on, tap it!"
+ },
+ {
+  "n": 32,
+  "lines": [
+   {
+    "cat": "tut",
+    "i": 6,
+    "text": "[excited] Boom! A full cell bursts, and sends one orb to each neighbour."
+   },
+   {
+    "cat": "tut",
+    "i": 7,
+    "text": "[warmly] Corners burst at two. Edges at three. Middle cells at four."
+   },
+   {
+    "cat": "tut",
+    "i": 8,
+    "text": "[mischievously] Now the fun part. Your edge cell is almost full, and my orbs are right next to it. Tap it."
+   },
+   {
+    "cat": "tut",
+    "i": 9,
+    "text": "[surprised] Hey! My orbs just turned your colour. That's called a capture."
+   },
+   {
+    "cat": "tut",
+    "i": 10,
+    "text": "[curious] When full cells sit side by side, one burst sets off the next. Tap the glowing cell and start a chain."
+   },
+   {
+    "cat": "tut",
+    "i": 11,
+    "text": "[laughs] Look at it go! That's a chain reaction."
+   },
+   {
+    "cat": "tut",
+    "i": 12,
+    "text": "[impressed] And every one of my orbs is gone. Take all of mine, and you win."
+   },
+   {
+    "cat": "tut",
+    "i": 13,
+    "text": "[warmly] That's it, you're ready! Want a real game against me? I'll go easy. Probably."
+   },
+   {
+    "cat": "tut",
+    "i": 14,
+    "text": "[playfully] Skipping already? Okay, show-off. I'll be around."
+   },
+   {
+    "cat": "tut",
+    "i": 15,
+    "text": "[softly] Not that one. Tap the glowing cell."
+   },
+   {
+    "cat": "tut",
+    "i": 16,
+    "text": "[playfully] Close! The glowing one, please."
+   },
+   {
+    "cat": "tut",
+    "i": 17,
+    "text": "[teasing] I admire the independence. But tap the glowing cell."
+   }
+  ],
+  "prompt": "[excited] Boom! A full cell bursts, and sends one orb to each neighbour. [long pause] [warmly] Corners burst at two. Edges at three. Middle cells at four. [long pause] [mischievously] Now the fun part. Your edge cell is almost full, and my orbs are right next to it. Tap it. [long pause] [surprised] Hey! My orbs just turned your colour. That's called a capture. [long pause] [curious] When full cells sit side by side, one burst sets off the next. Tap the glowing cell and start a chain. [long pause] [laughs] Look at it go! That's a chain reaction. [long pause] [impressed] And every one of my orbs is gone. Take all of mine, and you win. [long pause] [warmly] That's it, you're ready! Want a real game against me? I'll go easy. Probably. [long pause] [playfully] Skipping already? Okay, show-off. I'll be around. [long pause] [softly] Not that one. Tap the glowing cell. [long pause] [playfully] Close! The glowing one, please. [long pause] [teasing] I admire the independence. But tap the glowing cell."
+ }
+]

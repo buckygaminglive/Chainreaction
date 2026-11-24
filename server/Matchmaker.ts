@@ -18,7 +18,9 @@ import { DEFAULT_RATING, ratingBand } from '../src/net/matchmaking';
 
 /** A queued room is only worth offering to someone else for as long as its
  *  owner is plausibly still sitting in it. */
-const QUEUE_TTL_MS = 90_000;
+const QUEUE_TTL_MS = 180_000;
+/** 'auto' in the queue means any board size will do. */
+type QueueSize = BoardSizeKey | 'auto';
 /** Public listings are refreshed by the room itself on every roster change, so
  *  anything this stale means the room died without telling us. */
 const LISTING_TTL_MS = 120_000;
@@ -27,8 +29,13 @@ const LISTING_TTL_MS = 120_000;
 interface QueueEntry {
   code: string;
   mode: GameModeKey;
-  boardSize: BoardSizeKey;
+  boardSize: QueueSize;
+  /** How many the match is for (2 = 1v1), and how many are in so far. */
+  players: number;
+  filled: number;
   at: number;
+  /** Last sign of life from the room, for the TTL. */
+  seen?: number;
   /** Verified by the worker before it gets here — never a number a client
    *  sent. Absent on entries queued by an older client. */
   rating?: number;
@@ -58,7 +65,7 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
 
   private prune() {
     const now = Date.now();
-    this.queue = this.queue.filter((q) => now - q.at < QUEUE_TTL_MS);
+    this.queue = this.queue.filter((q) => now - (q.seen ?? q.at) < QUEUE_TTL_MS);
     for (const [code, listing] of this.listings) {
       if (now - listing.at >= LISTING_TTL_MS) this.listings.delete(code);
     }
@@ -78,18 +85,40 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
       const body = (await request.json()) as {
         code: string;
         mode: GameModeKey;
-        boardSize: BoardSizeKey;
+        boardSize: QueueSize;
+        players?: number;
         // Already verified against the hub by the worker; this object never
         // sees a rating a client chose.
         rating?: number;
       };
       return Response.json(
-        await this.takeOrQueue({ ...body, rating: Number(body.rating) || DEFAULT_RATING })
+        await this.takeOrQueue({
+          ...body,
+          players: Number(body.players) || 2,
+          rating: Number(body.rating) || DEFAULT_RATING,
+        })
       );
     }
     if (url.pathname.endsWith('/dequeue')) {
       const { code } = (await request.json()) as { code: string };
       this.queue = this.queue.filter((q) => q.code !== code);
+      await this.persist();
+      return Response.json({ ok: true });
+    }
+    if (url.pathname.endsWith('/refill')) {
+      // A ranked room reporting how many players it has while it fills.
+      const b = (await request.json()) as { code: string; mode: GameModeKey; boardSize: BoardSizeKey; players: number; filled: number };
+      const entry = this.queue.find((q) => q.code === b.code);
+      if (b.filled <= 0 || b.filled >= b.players) {
+        this.queue = this.queue.filter((q) => q.code !== b.code);
+      } else if (entry) {
+        entry.filled = b.filled;
+        entry.seen = Date.now();
+      } else {
+        // Someone dropped out of a room the queue had already closed: open it
+        // again so the empty place can be filled.
+        this.queue.push({ code: b.code, mode: b.mode, boardSize: b.boardSize, players: b.players, filled: b.filled, at: Date.now() });
+      }
       await this.persist();
       return Response.json({ ok: true });
     }
@@ -110,8 +139,12 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
       // Genuinely counted, not estimated: people sitting in the queue plus
       // people sitting in listed rooms. It is allowed to be a small number.
       const inRooms = Array.from(this.listings.values()).reduce((n, r) => n + r.players, 0);
+      // Players searching, per match size — what the ranked screen shows next
+      // to each option.
+      const searching: Record<string, number> = { 2: 0, 3: 0, 4: 0 };
+      for (const q of this.queue) searching[q.players ?? 2] = (searching[q.players ?? 2] ?? 0) + (q.filled ?? 1);
       await this.persist();
-      return Response.json({ queued: this.queue.length, inRooms });
+      return Response.json({ queued: this.queue.length, inRooms, searching });
     }
     if (url.pathname.endsWith('/rooms')) {
       const rooms = Array.from(this.listings.values())
@@ -137,13 +170,21 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
   private async takeOrQueue(req: {
     code: string;
     mode: GameModeKey;
-    boardSize: BoardSizeKey;
+    boardSize: QueueSize;
+    players: number;
     rating: number;
   }) {
     const now = Date.now();
+    const sizeFits = (a: QueueSize, b: QueueSize) => a === 'auto' || b === 'auto' || a === b;
     const best = this.queue
       .map((q, i) => ({ q, i }))
-      .filter(({ q }) => q.mode === req.mode && q.boardSize === req.boardSize && q.code !== req.code)
+      .filter(
+        ({ q }) =>
+          q.mode === req.mode &&
+          (q.players ?? 2) === req.players &&
+          sizeFits(q.boardSize, req.boardSize) &&
+          q.code !== req.code
+      )
       .map(({ q, i }) => ({
         q,
         i,
@@ -154,14 +195,19 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
         band: ratingBand(now - q.at),
       }))
       .filter((c) => c.gap <= c.band)
-      // Closest rating first; a longer wait breaks ties, so nobody is
-      // repeatedly passed over by later arrivals.
-      .sort((a, b) => a.gap - b.gap || a.q.at - b.q.at)[0];
+      // Fullest room first, so groups complete instead of splitting; then the
+      // closest rating; then the longest wait.
+      .sort((a, b) => (b.q.filled ?? 1) - (a.q.filled ?? 1) || a.gap - b.gap || a.q.at - b.q.at)[0];
 
     if (best) {
-      this.queue.splice(best.i, 1);
+      const q = best.q;
+      // Somebody who picked a size settles it for an Auto room.
+      if (q.boardSize === 'auto' && req.boardSize !== 'auto') q.boardSize = req.boardSize;
+      q.filled = (q.filled ?? 1) + 1;
+      q.seen = now;
+      if (q.filled >= (q.players ?? 2)) this.queue.splice(best.i, 1);
       await this.persist();
-      return { code: best.q.code, waiting: false };
+      return { code: q.code, waiting: false, boardSize: q.boardSize, players: q.players ?? 2 };
     }
 
     this.queue = this.queue.filter((q) => q.code !== req.code);
@@ -169,10 +215,12 @@ export class Matchmaker extends DurableObject<MatchmakerEnv> {
       code: req.code,
       mode: req.mode,
       boardSize: req.boardSize,
+      players: req.players,
+      filled: 1,
       at: now,
       rating: req.rating,
     });
     await this.persist();
-    return { code: req.code, waiting: true };
+    return { code: req.code, waiting: true, boardSize: req.boardSize, players: req.players };
   }
 }

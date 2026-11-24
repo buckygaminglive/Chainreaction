@@ -230,6 +230,11 @@ export class Fx {
     this.liveRings.push(r);
   }
 
+  /** True while any spark or ring is still on screen. */
+  get busy(): boolean {
+    return this.live.length > 0 || this.liveRings.length > 0;
+  }
+
   update(dt: number) {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const p = this.live[i];

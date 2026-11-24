@@ -51,6 +51,9 @@ export interface MatchRecord {
   rating: number;
   /** Longest chain this player set off in the match. */
   bestChain: number;
+  /** Finishing place and how many were in the match; absent on old records. */
+  place?: number;
+  players?: number;
 }
 
 /**
@@ -121,6 +124,11 @@ export type ClientMsg =
   // An index into CHAT_PHRASES, never a string. The wire format is what makes
   // free text impossible by construction rather than by policy.
   | { type: 'chat'; phrase: number }
+  /** Typed chat. Free text, so the relay cleans it (src/net/chatFilter.ts)
+   *  before anyone sees it, and receivers only show it if they opted in. */
+  | { type: 'say'; text: string }
+  /** Flags another seat's typed message for review. */
+  | { type: 'report'; target: number; text: string }
   /** Host-only lobby settings. The relay needs these before the game starts,
    *  not just at kick-off, or a public listing advertises whatever the room
    *  defaulted to rather than what the host actually picked. */
@@ -139,6 +147,10 @@ export type ClientMsg =
    *  this credential is permanent — losing it means losing the account. The
    *  message body is inside the TLS session and is never logged by default. */
   | { type: 'auth'; id: string; secret: string }
+  /** Leaving a match in progress on purpose. The relay takes the seat out of
+   *  the game straight away (and, in ranked, records it as a leave) instead
+   *  of waiting out the turn clock on someone who is not coming back. */
+  | { type: 'leave' }
   | { type: 'ping' };
 
 export type ServerMsg =
@@ -190,16 +202,25 @@ export type ServerMsg =
       type: 'turnClock';
       player: number;
       ms: number;
+      /** Turns this player has already missed this match. */
+      strikes?: number;
     }
+  /** A player ran out of time; the relay played a move for them. */
+  | { type: 'strike'; player: number; count: number; limit: number }
+  /** A player is out: they left, or missed too many turns. Every client
+   *  applies GameEngine.forfeit for this seat, in order with the moves. */
+  | { type: 'forfeit'; player: number; reason: 'timeout' | 'left' }
   | {
       /** How a finished ranked match moved each seat. Only ever sent for
        *  public rooms — a private game between friends never touches the
        *  ladder, so there is nothing to report. */
       type: 'rated';
-      results: { player: number; rating: number; delta: number }[];
+      /** `rating` is ranked points (starts at 0). `place` is 1-based. */
+      results: { player: number; rating: number; delta: number; place?: number; left?: boolean }[];
     }
   | { type: 'taunt'; from: number; emoji: number }
   | { type: 'chat'; from: number; phrase: number }
+  | { type: 'say'; from: number; text: string }
   /** Who has asked for a rematch, and how many are needed. */
   | { type: 'rematch'; votes: number[]; needed: number }
   /** Running head-to-head across rematches in this room. Lives only as long as

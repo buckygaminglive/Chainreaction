@@ -277,6 +277,47 @@ export class GameEngine {
     }
   }
 
+  /**
+   * Takes a player out of the match: they left, or ran out of turns on the
+   * clock. Their orbs are cleared rather than handed to anyone, so nobody is
+   * gifted a board, and the match ends if only one side is left standing.
+   * Deterministic, so the relay and every client can apply it and stay in sync.
+   */
+  forfeit(playerId: number): MoveResult {
+    const events: MoveEvent[] = [];
+    const player = this.players.find((p) => p.id === playerId);
+    if (!player || !player.isAlive || this.gameOver) {
+      return { events, gameOver: this.gameOver, winner: this.winner, chain: 0, captured: 0 };
+    }
+    const wasCurrent = this.currentPlayer().id === playerId;
+    for (const row of this.grid) {
+      for (const cell of row) {
+        if (cell.owner === playerId) {
+          cell.owner = null;
+          cell.orbs = 0;
+        }
+      }
+    }
+    player.isAlive = false;
+    this.hasMoved.add(playerId);
+    events.push({ type: 'eliminate', player: playerId });
+
+    const decided = this.isTeamGame ? this.aliveTeams().length <= 1 : this.aliveCount() <= 1;
+    if (decided) {
+      const survivor = this.players.find((p) => p.isAlive);
+      if (survivor) {
+        this.gameOver = true;
+        this.winner = survivor.id;
+        this.winningTeam = this.isTeamGame ? this.teamOf(survivor.id) ?? null : null;
+        events.push({ type: 'win', player: survivor.id });
+      }
+    } else if (wasCurrent) {
+      this.advanceTurn();
+      events.push({ type: 'turnChange', player: this.currentPlayer().id });
+    }
+    return { events, gameOver: this.gameOver, winner: this.winner, chain: 0, captured: 0 };
+  }
+
   /** Serializes full engine state — used by the online relay to persist/restore a room across Durable Object hibernation. */
   getSnapshot(): EngineSnapshot {
     return {

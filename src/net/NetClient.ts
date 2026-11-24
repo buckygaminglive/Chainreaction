@@ -99,9 +99,13 @@ export class NetClient {
   /** A timed mode's clock, kept by the relay. `ms` is time remaining from the
    *  moment the message arrives, so the countdown starts on receipt rather
    *  than being read against a clock this device may have set wrong. */
-  onTurnClock: (player: number, ms: number) => void = () => {};
+  onTurnClock: (player: number, ms: number, strikes: number) => void = () => {};
+  /** A player ran out of time and the relay played for them. */
+  onStrike: (player: number, count: number, limit: number) => void = () => {};
+  /** A player is out of the match: they left or missed too many turns. */
+  onForfeit: (player: number, reason: 'timeout' | 'left') => void = () => {};
   /** Ranked result: how the finished match moved each seat's rating. */
-  onRated: (results: { player: number; rating: number; delta: number }[]) => void = () => {};
+  onRated: (results: { player: number; rating: number; delta: number; place?: number; left?: boolean }[]) => void = () => {};
   /** Fired when the relay hands back a match already in progress, after this
    *  client reconnected into it. */
   onResume: (
@@ -113,6 +117,7 @@ export class NetClient {
   ) => void = () => {};
   onTaunt: (from: number, emoji: number) => void = () => {};
   onChat: (from: number, phrase: number) => void = () => {};
+  onSay: (from: number, text: string) => void = () => {};
   onRematch: (votes: number[], needed: number) => void = () => {};
   onRoomScore: (score: Map<number, number>) => void = () => {};
   onError: (message: string) => void = () => {};
@@ -144,20 +149,21 @@ export class NetClient {
    *  credential across another endpoint. */
   static async quickMatch(
     mode: GameModeKey,
-    boardSize: BoardSizeKey,
-    accountId?: string
-  ): Promise<{ code: string; waiting: boolean }> {
+    boardSize: BoardSizeKey | 'auto',
+    accountId?: string,
+    players = 2
+  ): Promise<{ code: string; waiting: boolean; boardSize?: string; players?: number }> {
     const res = await fetch(`${RELAY_BASE}/api/quickmatch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, boardSize, accountId }),
+      body: JSON.stringify({ mode, boardSize, accountId, players }),
     });
     // 404 specifically means the relay predates matchmaking — worth telling
     // apart from an outage, because the fix is a deploy, not a retry.
     if (res.status === 404) throw new Error('This server does not have matchmaking yet.');
     if (res.status === 429) throw new Error(await throttleMessage(res, 'Searching too often.'));
     if (!res.ok) throw new Error('Matchmaking is unavailable right now.');
-    return (await res.json()) as { code: string; waiting: boolean };
+    return (await res.json()) as { code: string; waiting: boolean; boardSize?: string; players?: number };
   }
 
   static async cancelQuickMatch(code: string): Promise<void> {
@@ -172,10 +178,10 @@ export class NetClient {
 
   /** Real people currently queued or sitting in listed rooms. Allowed to be
    *  zero — the bot roster is what keeps the screen from being a dead end. */
-  static async presence(): Promise<{ queued: number; inRooms: number }> {
+  static async presence(): Promise<{ queued: number; inRooms: number; searching?: Record<string, number> }> {
     const res = await fetch(`${RELAY_BASE}/api/presence`);
     if (!res.ok) throw new Error('presence unavailable');
-    return (await res.json()) as { queued: number; inRooms: number };
+    return (await res.json()) as { queued: number; inRooms: number; searching?: Record<string, number> };
   }
 
   static async listRooms(): Promise<PublicRoom[]> {
@@ -392,6 +398,9 @@ export class NetClient {
       case 'chat':
         this.onChat(msg.from, msg.phrase);
         break;
+      case 'say':
+        this.onSay(msg.from, msg.text);
+        break;
       case 'rematch':
         this.onRematch(msg.votes, msg.needed);
         break;
@@ -402,7 +411,13 @@ export class NetClient {
         this.onMove(msg.row, msg.col);
         break;
       case 'turnClock':
-        this.onTurnClock(msg.player, msg.ms);
+        this.onTurnClock(msg.player, msg.ms, msg.strikes ?? 0);
+        break;
+      case 'strike':
+        this.onStrike(msg.player, msg.count, msg.limit);
+        break;
+      case 'forfeit':
+        this.onForfeit(msg.player, msg.reason);
         break;
       case 'rated':
         this.onRated(msg.results);
@@ -468,6 +483,19 @@ export class NetClient {
 
   sendChat(phrase: number): boolean {
     return this.send({ type: 'chat', phrase });
+  }
+
+  /** Leaving a live match on purpose (see the `leave` message). */
+  sendLeave(): boolean {
+    return this.send({ type: 'leave' });
+  }
+
+  sendSay(text: string): boolean {
+    return this.send({ type: 'say', text });
+  }
+
+  sendReport(target: number, text: string): boolean {
+    return this.send({ type: 'report', target, text });
   }
 
   disconnect() {

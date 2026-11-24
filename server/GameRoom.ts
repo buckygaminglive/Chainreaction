@@ -3,6 +3,7 @@ import { GameEngine } from '../src/game/GameEngine';
 import { layoutForMode, randomSeed } from '../src/game/cells';
 import { GAME_MODES, type GameModeKey } from '../src/game/modes';
 import { TAUNT_COOLDOWN_MS, isValidTaunt, CHAT_COOLDOWN_MS, isValidChat } from '../src/net/taunts';
+import { TYPED_COOLDOWN_MS, TYPED_MAX, cleanTyped } from '../src/net/chatFilter';
 import type { Matchmaker } from './Matchmaker';
 import type { PlayerHub } from './PlayerHub';
 import type { RateLimiter } from './RateLimiter';
@@ -87,6 +88,10 @@ interface Meta {
   turnDeadline?: number;
   absentDeadline?: number;
   lastActivity?: number;
+  strikes?: [number, number][];
+  eliminationOrder?: number[];
+  leavers?: number[];
+  rankedPlayers?: number;
 }
 
 const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
@@ -96,6 +101,15 @@ const BOARD_SIZES: Record<BoardSizeKey, { rows: number; cols: number }> = {
 };
 
 const MAX_PLAYERS = 6;
+
+/** Every online match has a turn clock. Modes with their own (Blitz) keep it;
+ *  everything else gets this. Without one, a player who walks away holds the
+ *  whole room hostage. */
+const DEFAULT_TURN_SECONDS = 20;
+/** Missed turns before a player is taken out of the match. The first misses
+ *  are played for them, so a slow moment costs a turn, not the game. */
+const STRIKE_LIMIT = 3;
+const RANKED_SIZES: BoardSizeKey[] = ['small', 'medium', 'large'];
 
 /** Rows and columns swapped when the board is played on its side. Kept as a
  *  function rather than a second size table so there is still exactly one
@@ -176,6 +190,15 @@ export class GameRoom extends DurableObject<Env> {
   private absentDeadline = 0;
   /** Last time anything happened here, for the idle TTL. */
   private lastActivity = Date.now();
+  /** Missed turns per seat this match. */
+  private strikes = new Map<number, number>();
+  /** Seats in the order they went out, for ranked placings. */
+  private eliminationOrder: number[] = [];
+  /** Seats that left or were removed this match — they place last in ranked. */
+  private leavers: number[] = [];
+  /** For a ranked room: how many players the match is for. The relay starts
+   *  it itself once that many are in. 0 for everything else. */
+  private rankedPlayers = 0;
   private ready: Promise<void>;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -199,6 +222,10 @@ export class GameRoom extends DurableObject<Env> {
         this.turnDeadline = meta.turnDeadline ?? 0;
         this.absentDeadline = meta.absentDeadline ?? 0;
         this.lastActivity = meta.lastActivity ?? Date.now();
+        this.strikes = new Map(meta.strikes ?? []);
+        this.eliminationOrder = meta.eliminationOrder ?? [];
+        this.leavers = meta.leavers ?? [];
+        this.rankedPlayers = meta.rankedPlayers ?? 0;
       }
       const snap = await ctx.storage.get<EngineSnapshot>('engineSnapshot');
       if (snap && meta?.rows && meta?.cols) {
@@ -219,6 +246,19 @@ export class GameRoom extends DurableObject<Env> {
     const internal = new URL(request.url);
     if (internal.pathname === '/rank') {
       this.ranked = true;
+      // Ranked rooms are found through the queue only, never the public list.
+      this.isPublic = false;
+      const body = (await request.json().catch(() => ({}))) as {
+        players?: number;
+        mode?: GameModeKey;
+        boardSize?: string;
+      };
+      if (!this.started) {
+        const n = Number(body.players);
+        this.rankedPlayers = n >= 2 && n <= 4 ? n : this.rankedPlayers || 2;
+        if (body.mode && GAME_MODES[body.mode]?.online && !GAME_MODES[body.mode].teams) this.mode = body.mode;
+        if (RANKED_SIZES.includes(body.boardSize as BoardSizeKey)) this.boardSize = body.boardSize as BoardSizeKey;
+      }
       await this.persistMeta();
       return Response.json({ ok: true });
     }
@@ -235,7 +275,7 @@ export class GameRoom extends DurableObject<Env> {
     // Quick match parks a room in the queue before anyone is in it, so the
     // first arrival can be told to advertise it. This controls listing only —
     // whether the match is *rated* is decided by the relay, never here.
-    if (url.searchParams.get('public') === '1') this.isPublic = true;
+    if (url.searchParams.get('public') === '1' && !this.ranked) this.isPublic = true;
     const name = (url.searchParams.get('name') || 'Player').slice(0, 20);
     const token = url.searchParams.get('token');
     const returning = token ? this.findSeatByToken(token) : null;
@@ -244,7 +284,8 @@ export class GameRoom extends DurableObject<Env> {
       // Only genuinely new players are gated. A returning player already holds
       // a seat, so they neither fill the room further nor need the game to be
       // un-started — refusing them here is exactly the bug this fixes.
-      if (this.ctx.getWebSockets().length >= MAX_PLAYERS) {
+      const cap = this.ranked && this.rankedPlayers ? this.rankedPlayers : MAX_PLAYERS;
+      if (this.ctx.getWebSockets().length >= cap) {
         return new Response('Room is full', { status: 403 });
       }
       if (this.started) {
@@ -316,6 +357,8 @@ export class GameRoom extends DurableObject<Env> {
     // that just came back is cleared.
     this.lastActivity = Date.now();
     await this.syncAbsentTimer();
+    await this.syncRankedQueue();
+    await this.maybeStartRanked();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -366,8 +409,14 @@ export class GameRoom extends DurableObject<Env> {
       this.handleTaunt(att, msg.emoji);
     } else if (msg.type === 'chat') {
       this.handleChat(att, msg.phrase);
+    } else if (msg.type === 'leave') {
+      if (this.started && this.engine && !this.engine.gameOver) await this.removeFromMatch(att.id, 'left');
+    } else if (msg.type === 'say') {
+      this.handleSay(att, msg.text);
+    } else if (msg.type === 'report') {
+      this.handleReport(att, msg.target, msg.text);
     } else if (msg.type === 'setLobby') {
-      if (att.id !== this.hostId || this.started) return;
+      if (att.id !== this.hostId || this.started || this.ranked) return;
       if (msg.isPublic !== undefined) this.isPublic = !!msg.isPublic;
       // Narrowed against the mode table, since this arrives from a client.
       if (msg.mode && GAME_MODES[msg.mode]?.online) this.mode = msg.mode;
@@ -436,6 +485,7 @@ export class GameRoom extends DurableObject<Env> {
     this.broadcastPlayers();
     // The player who just dropped may be the one the board is waiting on.
     await this.syncAbsentTimer();
+    await this.syncRankedQueue();
 
     // Someone leaving the result screen means the rematch everyone else is
     // waiting on is never coming. Reopen the lobby so the room stays usable
@@ -458,6 +508,14 @@ export class GameRoom extends DurableObject<Env> {
     landscape: boolean
   ) {
     if (att.id !== this.hostId || this.started) return;
+    // A ranked room starts itself when it is full (maybeStartRanked); an
+    // older client's host pressing start early must not cut it short.
+    if (this.ranked && this.rankedPlayers && this.ctx.getWebSockets().length < this.rankedPlayers) return;
+    if (this.ranked) {
+      boardSize = this.boardSize;
+      mode = this.mode;
+      landscape = false;
+    }
 
     // The mode arrives from a client, so it is untrusted input: reject anything
     // that isn't a real mode, and anything the relay can't actually referee.
@@ -510,6 +568,41 @@ export class GameRoom extends DurableObject<Env> {
     await this.beginGame(size.rows, size.cols, players);
   }
 
+  /** A ranked room is started by the relay the moment it has its players, so
+   *  nobody waits on a host to press anything. */
+  private async maybeStartRanked() {
+    if (!this.ranked || this.started || !this.rankedPlayers) return;
+    const sockets = this.ctx.getWebSockets();
+    if (sockets.length < this.rankedPlayers) return;
+    const host = sockets
+      .map((s) => ({ s, att: s.deserializeAttachment() as Attachment }))
+      .sort((a, b) => a.att.id - b.att.id)[0];
+    if (!host) return;
+    this.hostId = host.att.id;
+    await this.handleStart(host.s, host.att, this.boardSize, 'dots', this.mode, false);
+  }
+
+  /** Keeps the matchmaker's count for this room right while it fills: a
+   *  player who drops out before the start frees their place in the queue. */
+  private async syncRankedQueue() {
+    if (!this.ranked || this.started || !this.rankedPlayers || !this.roomCode) return;
+    try {
+      const stub = this.env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
+      await stub.fetch('https://mm/refill', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: this.roomCode,
+          mode: this.mode,
+          boardSize: this.boardSize,
+          players: this.rankedPlayers,
+          filled: this.ctx.getWebSockets().length,
+        }),
+      });
+    } catch (err) {
+      console.error('queue refill failed:', String(err));
+    }
+  }
+
   /** Builds and broadcasts a fresh board on the room's current settings. Shared
    *  by the first game and every rematch, so a rematch cannot drift from the
    *  configuration the players agreed to. */
@@ -526,6 +619,9 @@ export class GameRoom extends DurableObject<Env> {
     });
     this.started = true;
     this.rematchVotes.clear();
+    this.strikes.clear();
+    this.eliminationOrder = [];
+    this.leavers = [];
     // Per-match statistic, so it resets with the match rather than accumulating
     // across a whole rematch series.
     for (const entry of this.roster.values()) entry.bestChain = 0;
@@ -588,8 +684,42 @@ export class GameRoom extends DurableObject<Env> {
     const entry = this.roster.get(playerId);
     if (entry && result.chain > (entry.bestChain ?? 0)) entry.bestChain = result.chain;
     this.lastActivity = Date.now();
+    this.noteEliminations(result.events);
     await this.persistEngine();
     this.broadcastAll({ type: 'move', row, col });
+    await this.afterResolution();
+  }
+
+  private noteEliminations(events: { type: string; player?: number }[]) {
+    for (const e of events) {
+      if (e.type === 'eliminate' && e.player !== undefined && !this.eliminationOrder.includes(e.player)) {
+        this.eliminationOrder.push(e.player);
+      }
+    }
+  }
+
+  /**
+   * Takes a seat out of a live match — they left, or ran out of turns. The
+   * same forfeit is broadcast so every client applies it in order with the
+   * moves, and in ranked the seat is recorded as a leaver.
+   */
+  private async removeFromMatch(playerId: number, reason: 'timeout' | 'left') {
+    if (!this.engine || this.engine.gameOver) return;
+    const player = this.engine.players.find((p) => p.id === playerId);
+    if (!player?.isAlive) return;
+    const result = this.engine.forfeit(playerId);
+    if (!this.leavers.includes(playerId)) this.leavers.push(playerId);
+    this.noteEliminations(result.events);
+    this.lastActivity = Date.now();
+    await this.persistEngine();
+    this.broadcastAll({ type: 'forfeit', player: playerId, reason });
+    await this.afterResolution();
+  }
+
+  /** What happens after the board changes: score and report a finished match,
+   *  or hand the turn on. */
+  private async afterResolution() {
+    if (!this.engine) return;
 
     // The relay is the only party that knows the real result, so it is the
     // only place a score can be kept honestly.
@@ -674,7 +804,7 @@ export class GameRoom extends DurableObject<Env> {
     this.turnDeadline = 0;
     this.absentDeadline = 0;
     if (this.engine && this.started && !this.engine.gameOver) {
-      const seconds = GAME_MODES[this.mode].turnSeconds;
+      const seconds = GAME_MODES[this.mode].turnSeconds ?? DEFAULT_TURN_SECONDS;
       if (seconds) {
         // The enforced deadline runs a little longer than the one players see,
         // to cover the cascade still animating on their screens when this
@@ -685,6 +815,7 @@ export class GameRoom extends DurableObject<Env> {
           type: 'turnClock',
           player: this.engine.currentPlayer().id,
           ms: seconds * 1000,
+          strikes: this.strikes.get(this.engine.currentPlayer().id) ?? 0,
         });
       }
     }
@@ -726,13 +857,21 @@ export class GameRoom extends DurableObject<Env> {
       await this.armAlarm();
       return;
     }
+    const id = this.engine.currentPlayer().id;
+    const count = (this.strikes.get(id) ?? 0) + 1;
+    this.strikes.set(id, count);
+    if (count >= STRIKE_LIMIT) {
+      await this.removeFromMatch(id, 'timeout');
+      return;
+    }
+    this.broadcastAll({ type: 'strike', player: id, count, limit: STRIKE_LIMIT });
     const moves = this.engine.legalMoves();
     if (!moves.length) {
       await this.armAlarm();
       return;
     }
     const pick = moves[Math.floor(Math.random() * moves.length)];
-    await this.applyMove(this.engine.currentPlayer().id, pick.row, pick.col);
+    await this.applyMove(id, pick.row, pick.col);
   }
 
   /** Nothing here is worth keeping: the room is empty and stale. The listing
@@ -773,6 +912,13 @@ export class GameRoom extends DurableObject<Env> {
    */
   private async reportResult(winnerId: number) {
     if (!this.ranked || !this.engine) return;
+    // Winner first, then everyone else in reverse order of going out; anyone
+    // who left or was removed comes after all of them.
+    const stayed = this.engine.players.map((p) => p.id).filter((id) => !this.leavers.includes(id));
+    const out = [...this.eliminationOrder].reverse().filter((id) => stayed.includes(id) && id !== winnerId);
+    const rest = stayed.filter((id) => id !== winnerId && !out.includes(id));
+    const order = [winnerId, ...rest, ...out, ...[...this.leavers].reverse()];
+    const placeOf = (id: number) => order.indexOf(id) + 1;
     const players = this.engine.players
       .map((p) => {
         const entry = this.roster.get(p.id);
@@ -781,6 +927,8 @@ export class GameRoom extends DurableObject<Env> {
           id: entry.accountId,
           secret: entry.accountSecret,
           won: p.id === winnerId,
+          place: placeOf(p.id),
+          left: this.leavers.includes(p.id),
           bestChain: entry.bestChain ?? 0,
         };
       })
@@ -794,7 +942,7 @@ export class GameRoom extends DurableObject<Env> {
       const stub = this.env.PLAYER_HUB.getByName(PLAYER_HUB_SINGLETON);
       const res = await stub.fetch('https://hub/result', {
         method: 'POST',
-        body: JSON.stringify({ players }),
+        body: JSON.stringify({ players, count: this.engine.players.length }),
       });
       const body = (await res.json()) as {
         ok?: boolean;
@@ -809,9 +957,11 @@ export class GameRoom extends DurableObject<Env> {
           const seat = this.engine?.players.find(
             (p) => this.roster.get(p.id)?.accountId === row.id
           );
-          return seat ? { player: seat.id, rating: row.rating, delta: row.delta } : null;
+          return seat
+            ? { player: seat.id, rating: row.rating, delta: row.delta, place: placeOf(seat.id), left: this.leavers.includes(seat.id) }
+            : null;
         })
-        .filter((row): row is { player: number; rating: number; delta: number } => row !== null);
+        .filter((row): row is NonNullable<typeof row> => row !== null);
 
       if (bySeat.length > 0) this.broadcastAll({ type: 'rated', results: bySeat });
     } catch (err) {
@@ -862,6 +1012,46 @@ export class GameRoom extends DurableObject<Env> {
     if (now - last < CHAT_COOLDOWN_MS) return;
     this.lastChat.set(att.id, now);
     this.broadcastAll({ type: 'chat', from: att.id, phrase });
+  }
+
+  /**
+   * Typed chat. Cleaned here, before the broadcast, so what reaches other
+   * screens has always been through the filter whatever the sender's client
+   * did. Shares the quick-chat clock: typing is not a way round its cooldown.
+   * Whether a receiver actually shows it is their own setting, client-side.
+   */
+  private handleSay(att: Attachment, raw: unknown) {
+    const text = cleanTyped(raw);
+    if (!text) return;
+    const now = Date.now();
+    const last = this.lastChat.get(att.id) ?? 0;
+    if (now - last < TYPED_COOLDOWN_MS) return;
+    this.lastChat.set(att.id, now);
+    this.broadcastAll({ type: 'say', from: att.id, text });
+  }
+
+  /** Reports go to the Worker log, where they can be searched by room and
+   *  account. Capped per seat so the log cannot be flooded from one socket. */
+  private reportsBySeat = new Map<number, number>();
+  private handleReport(att: Attachment, target: unknown, text: unknown) {
+    if (!Number.isInteger(target) || target === att.id) return;
+    const n = (this.reportsBySeat.get(att.id) ?? 0) + 1;
+    this.reportsBySeat.set(att.id, n);
+    if (n > 5) return;
+    const of = (id: number) => {
+      const p = this.engine?.players.find((x) => x.id === id);
+      return { seat: id, name: p?.name ?? null, account: this.roster.get(id)?.accountId ?? null };
+    };
+    console.warn(
+      JSON.stringify({
+        event: 'chat_report',
+        room: this.ctx.id.toString(),
+        reporter: of(att.id),
+        reported: of(target as number),
+        text: typeof text === 'string' ? text.slice(0, TYPED_MAX) : '',
+        at: new Date().toISOString(),
+      })
+    );
   }
 
   /**
@@ -961,6 +1151,7 @@ export class GameRoom extends DurableObject<Env> {
    *  this call to land — and a room that dies outright still expires on the
    *  matchmaker's own TTL. */
   private async syncListing() {
+    if (this.ranked) return;
     const connected = this.rosterList().filter((p) => p.connected);
     const shouldList = this.isPublic && !this.started && connected.length > 0 && connected.length < MAX_PLAYERS;
     const stub = this.env.MATCHMAKER.getByName(MATCHMAKER_SINGLETON);
@@ -1024,6 +1215,10 @@ export class GameRoom extends DurableObject<Env> {
       turnDeadline: this.turnDeadline,
       absentDeadline: this.absentDeadline,
       lastActivity: this.lastActivity,
+      strikes: Array.from(this.strikes.entries()),
+      eliminationOrder: this.eliminationOrder,
+      leavers: this.leavers,
+      rankedPlayers: this.rankedPlayers,
     };
     await this.ctx.storage.put('meta', meta);
   }

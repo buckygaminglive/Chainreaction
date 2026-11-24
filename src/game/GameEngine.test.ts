@@ -390,3 +390,20 @@ test('the AI returns null when the board offers nothing', () => {
   g.gameOver = true;
   assert.equal(chooseMove(g, 0, 1), null);
 });
+
+test('forfeit clears the player, passes the turn, and ends a two-player game', () => {
+  const g = newGame(5, 5, 3);
+  g.applyMove(0, 0); // P1
+  g.applyMove(4, 4); // P2
+  assert.equal(g.currentPlayer().id, 2);
+  const r = g.forfeit(2);
+  assert.ok(!g.players[2].isAlive);
+  assert.equal(g.currentPlayer().id, 0, 'turn moves on from the forfeiting player');
+  assert.equal(r.gameOver, false);
+  const end = g.forfeit(1);
+  assert.equal(g.getCell(4, 4).owner, null, 'their orbs are cleared');
+  assert.equal(end.gameOver, true);
+  assert.equal(g.winner, 0);
+  // Idempotent once out.
+  assert.equal(g.forfeit(1).events.length, 0);
+});

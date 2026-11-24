@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { applyPoints, ordinal, pointsFor } from '../src/net/rankPoints';
 import type { LeaderboardRow, MatchRecord, PlayerProfile, RoomInvite } from '../src/net/protocol';
 import { defaultAvatarFor, isAvatarKey } from '../src/render/avatar';
 
@@ -20,7 +21,14 @@ import { defaultAvatarFor, isAvatarKey } from '../src/render/avatar';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no look-alikes, same as room codes
 const FRIEND_CODE_LEN = 6;
 const LEADERBOARD_SIZE = 200;
-const STARTING_RATING = 1000;
+/** Hidden matchmaking rating (Elo). Players never see it; it only decides who
+ *  is matched with whom. */
+const STARTING_MMR = 1000;
+/** Visible ranked points. Everyone starts Unranked at zero. */
+const STARTING_POINTS = 0;
+/** The leaderboard was keyed on Elo before points existed. A new key starts
+ *  the points ladder clean rather than mixing the two scales. */
+const LEADERBOARD_KEY = 'leaderboard.v2';
 /** Elo K-factor. Deliberately brisk: this is a party game, and a ladder that
  *  takes fifty matches to place someone reads as broken rather than rigorous. */
 const K_FACTOR = 24;
@@ -39,6 +47,8 @@ const MAX_INVITES = 10;
 
 interface StoredPlayer extends PlayerProfile {
   secret: string;
+  /** Hidden matchmaking rating. `rating` on the profile is ranked points. */
+  mmr?: number;
 }
 
 export interface PlayerHubEnv {
@@ -93,7 +103,14 @@ function expectedScore(a: number, b: number): number {
 
 export class PlayerHub extends DurableObject<PlayerHubEnv> {
   private async getPlayer(id: string): Promise<StoredPlayer | undefined> {
-    return this.ctx.storage.get<StoredPlayer>(`player:${id}`);
+    const p = await this.ctx.storage.get<StoredPlayer>(`player:${id}`);
+    // Accounts from before ranked points: their Elo becomes the hidden
+    // matchmaking rating and their visible points start at zero, Unranked.
+    if (p && p.mmr === undefined) {
+      p.mmr = Number(p.rating) || STARTING_MMR;
+      p.rating = STARTING_POINTS;
+    }
+    return p;
   }
 
   /** Verifies a caller actually owns the account it claims. Every mutating
@@ -115,7 +132,7 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
 
   /** Keeps a bounded top-N rather than sorting every player on read. */
   private async updateLeaderboard(player: StoredPlayer) {
-    const board = (await this.ctx.storage.get<LeaderboardRow[]>('leaderboard')) ?? [];
+    const board = (await this.ctx.storage.get<LeaderboardRow[]>(LEADERBOARD_KEY)) ?? [];
     const row: LeaderboardRow = {
       id: player.id,
       name: player.name,
@@ -129,11 +146,11 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
     if (idx !== -1) board[idx] = row;
     else board.push(row);
     board.sort((a, b) => b.rating - a.rating || b.wins - a.wins);
-    await this.ctx.storage.put('leaderboard', board.slice(0, LEADERBOARD_SIZE));
+    await this.ctx.storage.put(LEADERBOARD_KEY, board.slice(0, LEADERBOARD_SIZE));
   }
 
   private publicOf(player: StoredPlayer): PlayerProfile {
-    const { secret: _secret, ...rest } = player;
+    const { secret: _secret, mmr: _mmr, ...rest } = player;
     // Records written before avatars existed have no key at all; filling it on
     // read means no migration pass and no player ever seeing a blank square.
     return { ...rest, avatar: rest.avatar ?? defaultAvatarFor(rest.id) };
@@ -257,7 +274,7 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
         return Response.json(await this.friendsBoard(body as Record<string, unknown>));
       case 'leaderboard':
         return Response.json({
-          rows: ((await this.ctx.storage.get<LeaderboardRow[]>('leaderboard')) ?? []).slice(0, 100),
+          rows: ((await this.ctx.storage.get<LeaderboardRow[]>(LEADERBOARD_KEY)) ?? []).slice(0, 100),
         });
       // Internal only — deliberately absent from HUB_ROUTES, so it is not
       // reachable from the public surface. Returns a rating for matchmaking.
@@ -265,7 +282,7 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
       // asking for one here grants nothing else.
       case 'rating': {
         const player = await this.getPlayer(String((body as { id?: unknown }).id ?? ''));
-        return Response.json({ rating: player?.rating ?? STARTING_RATING });
+        return Response.json({ rating: player?.mmr ?? STARTING_MMR });
       }
       case 'invite':
         return Response.json(await this.invite(body as Record<string, unknown>));
@@ -298,7 +315,8 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
       secret: crypto.randomUUID(),
       name: cleanName(name, `Player${Math.floor(100 + Math.random() * 900)}`),
       friendCode: code,
-      rating: STARTING_RATING,
+      rating: STARTING_POINTS,
+      mmr: STARTING_MMR,
       wins: 0,
       losses: 0,
       matches: 0,
@@ -402,73 +420,75 @@ export class PlayerHub extends DurableObject<PlayerHubEnv> {
    * matches but leave the ladder alone rather than inventing a number.
    */
   private async recordResult(body: Record<string, unknown>) {
-    const entries = (body.players ?? []) as { id: string; secret: string; won: boolean; bestChain?: number }[];
+    const entries = (body.players ?? []) as {
+      id: string;
+      secret: string;
+      won: boolean;
+      place?: number;
+      left?: boolean;
+      bestChain?: number;
+    }[];
     if (!Array.isArray(entries) || entries.length < 2) return { ok: false };
+    const count = Number(body.count) || entries.length;
 
     // Two seats on one account is someone playing themselves on two devices,
-    // which would let them hand their own rating a win. Nothing to rate here.
+    // which would let them hand their own points a win. Nothing to rate here.
     const ids = new Set(entries.map((e) => e?.id));
     if (ids.size !== entries.length) return { ok: false, error: 'duplicate account in result' };
 
     const loaded: StoredPlayer[] = [];
-    const won: boolean[] = [];
     for (const e of entries) {
       const p = await this.authed(e.id, e.secret);
       // An unverified entry disqualifies the whole result rather than being
       // dropped: a partial result would rate the honest half of the match.
       if (!p) return { ok: false, error: 'unverified player in result' };
       loaded.push(p);
-      won.push(!!e.won);
     }
+
+    const before = loaded.map((p) => p.rating);
+    const places = entries.map((e, i) => Number(e.place) || (e.won ? 1 : i + 2));
 
     for (let i = 0; i < loaded.length; i++) {
       const p = loaded[i];
+      const e = entries[i];
       p.matches += 1;
-      if (won[i]) p.wins += 1;
+      if (e.won) p.wins += 1;
       else p.losses += 1;
-      const chain = Number(entries[i].bestChain) || 0;
+      const chain = Number(e.bestChain) || 0;
       if (chain > p.bestChain) p.bestChain = chain;
+      p.rating = applyPoints(p.rating, pointsFor(count, places[i], !!e.left));
     }
 
-    // Captured before any rating moves, so the delta reported back is the one
-    // this match actually caused.
-    const before = loaded.map((p) => p.rating);
-
+    // The hidden matchmaking rating still moves on head-to-head results, so a
+    // strong player keeps being matched with strong players.
     if (loaded.length === 2) {
       const [a, b] = loaded;
-      const scoreA = won[0] ? 1 : 0;
-      const ratingA = a.rating;
-      const ratingB = b.rating;
-      a.rating = Math.round(ratingA + K_FACTOR * (scoreA - expectedScore(ratingA, ratingB)));
-      b.rating = Math.round(ratingB + K_FACTOR * (1 - scoreA - expectedScore(ratingB, ratingA)));
+      const scoreA = places[0] < places[1] ? 1 : 0;
+      const ma = a.mmr ?? STARTING_MMR;
+      const mb = b.mmr ?? STARTING_MMR;
+      a.mmr = Math.round(ma + K_FACTOR * (scoreA - expectedScore(ma, mb)));
+      b.mmr = Math.round(mb + K_FACTOR * (1 - scoreA - expectedScore(mb, ma)));
     }
 
     for (const p of loaded) await this.savePlayer(p);
 
-    // History is written only for head-to-head matches, because "opponent" is
-    // the field that makes an entry worth reading and it has no single answer
-    // in a four-player game. Written after the ratings settle so the stored
-    // delta is the real one, and from `loaded` rather than from the request so
-    // a client cannot write its own history.
-    if (loaded.length === 2) {
-      const at = Date.now();
-      for (let i = 0; i < 2; i++) {
-        const self = loaded[i];
-        const other = loaded[1 - i];
-        await this.pushHistory(self.id, {
-          at,
-          won: won[i],
-          opponent: other.name,
-          opponentAvatar: other.avatar ?? defaultAvatarFor(other.id),
-          delta: self.rating - before[i],
-          rating: self.rating,
-          bestChain: Number(entries[i].bestChain) || 0,
-        });
-      }
+    const at = Date.now();
+    for (let i = 0; i < loaded.length; i++) {
+      const self = loaded[i];
+      const others = loaded.filter((_, j) => j !== i);
+      const headToHead = loaded.length === 2;
+      await this.pushHistory(self.id, {
+        at,
+        won: places[i] === 1,
+        opponent: headToHead ? others[0].name : `${count}-player · ${ordinal(places[i])}${entries[i].left ? ' (left)' : ''}`,
+        opponentAvatar: headToHead ? others[0].avatar ?? defaultAvatarFor(others[0].id) : self.avatar ?? defaultAvatarFor(self.id),
+        delta: self.rating - before[i],
+        rating: self.rating,
+        bestChain: Number(entries[i].bestChain) || 0,
+        place: places[i],
+        players: count,
+      });
     }
-    // The delta, not just the new number: "1043" tells a player nothing about
-    // the match they just played, and recomputing it client-side would mean
-    // trusting a client to remember what its rating was before.
     return {
       ok: true,
       ratings: loaded.map((p, i) => ({ id: p.id, rating: p.rating, delta: p.rating - before[i] })),

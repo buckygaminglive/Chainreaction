@@ -33,11 +33,44 @@ export class Sfx {
   /** True while the app is backgrounded — nothing sounds until resume(). */
   private suspended = false;
 
+  /** Nova's lines: decoded clips played through their own bus, metered so her
+   *  portrait can move its mouth to the actual loudness of the voice. */
+  private speechBus: GainNode | null = null;
+  private speechMeter: AnalyserNode | null = null;
+  private speechSource: AudioBufferSourceNode | null = null;
+  private speechClips = new Map<string, Promise<AudioBuffer | null>>();
+  private meterBuf: Float32Array<ArrayBuffer> | null = null;
+  /** Music dips under speech the way it dips under a match. */
+  private speechDuck = 1;
+
   get muted() {
     return this._muted;
   }
   set muted(value: boolean) {
     this._muted = value;
+    if (value) this.stopSpeech();
+    this.applyGains();
+  }
+
+  /** Game sound effects on their own (orbs, blasts, buttons), separate from
+   *  the music and Nova's voice. */
+  private _fxMuted = false;
+  get fxMuted() {
+    return this._fxMuted;
+  }
+  set fxMuted(value: boolean) {
+    this._fxMuted = value;
+    this.applyGains();
+  }
+
+  /** The music bed on its own. Muting keeps it loaded, so turning it back on
+   *  is instant. */
+  private _musicMuted = false;
+  get musicMuted() {
+    return this._musicMuted;
+  }
+  set musicMuted(value: boolean) {
+    this._musicMuted = value;
     this.applyGains();
   }
 
@@ -104,9 +137,95 @@ export class Sfx {
     if (!this.ctx || !this.master || !this.musicBus || !this.fxBus) return;
     const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(this._muted ? 0 : 0.5 * this._volume, t, 0.02);
-    this.fxBus.gain.setTargetAtTime(0.8, t, 0.02);
+    this.fxBus.gain.setTargetAtTime(this._fxMuted ? 0 : 0.8, t, 0.02);
     // Slow ramp: a bed that jumps level is more noticeable than the bed itself.
-    this.musicBus.gain.setTargetAtTime(this._musicVolume * this.duck, t, 0.4);
+    this.musicBus.gain.setTargetAtTime(this._musicMuted ? 0 : this._musicVolume * this.duck * this.speechDuck, t, this._musicMuted ? 0.05 : 0.4);
+  }
+
+  // ---------- Speech ----------
+  private ensureSpeechGraph(ctx: AudioContext) {
+    if (this.speechBus || !this.master) return;
+    this.speechBus = ctx.createGain();
+    this.speechBus.gain.value = 1.15;
+    this.speechMeter = ctx.createAnalyser();
+    this.speechMeter.fftSize = 512;
+    this.speechMeter.smoothingTimeConstant = 0.2;
+    this.speechMeter.connect(this.speechBus);
+    this.speechBus.connect(this.master);
+  }
+
+  /** Fetched and decoded once per clip; a repeat play comes from memory. A
+   *  missing or undecodable file resolves to null, never throws. */
+  private speechClip(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
+    let clip = this.speechClips.get(url);
+    if (!clip) {
+      clip = fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then((data) => ctx.decodeAudioData(data))
+        .catch(() => null);
+      this.speechClips.set(url, clip);
+      // Bounded: a long session would otherwise end up holding every line.
+      if (this.speechClips.size > 48) {
+        const oldest = this.speechClips.keys().next().value;
+        if (oldest !== undefined) this.speechClips.delete(oldest);
+      }
+    }
+    return clip;
+  }
+
+  /** Plays one spoken line. Resolves with its length in seconds, or null when
+   *  it cannot be heard — muted, backgrounded, audio still locked, or no clip
+   *  for this line — so the caller can fall back to timing the text. */
+  async speak(url: string): Promise<number | null> {
+    if (this._muted || this.suspended) return null;
+    const ctx = this.ensure();
+    this.ensureSpeechGraph(ctx);
+    const buf = await this.speechClip(ctx, url);
+    if (!buf || this._muted || this.suspended || ctx.state !== 'running' || !this.speechMeter) return null;
+    this.stopSpeech();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.speechMeter);
+    src.onended = () => {
+      if (this.speechSource !== src) return;
+      this.speechSource = null;
+      this.setSpeechDuck(false);
+    };
+    this.speechSource = src;
+    this.setSpeechDuck(true);
+    src.start();
+    return buf.duration;
+  }
+
+  stopSpeech() {
+    const src = this.speechSource;
+    if (!src) return;
+    this.speechSource = null;
+    src.onended = null;
+    try {
+      src.stop();
+    } catch {
+      /* already stopped */
+    }
+    this.setSpeechDuck(false);
+  }
+
+  /** Loudness of the line playing now, 0–1. Zero when nothing is speaking. */
+  speechLevel(): number {
+    if (!this.speechSource || !this.speechMeter) return 0;
+    if (!this.meterBuf) this.meterBuf = new Float32Array(new ArrayBuffer(this.speechMeter.fftSize * 4));
+    this.speechMeter.getFloatTimeDomainData(this.meterBuf);
+    let sum = 0;
+    for (const v of this.meterBuf) sum += v * v;
+    const rms = Math.sqrt(sum / this.meterBuf.length);
+    // Clips are levelled to about -16 LUFS; this maps a quiet syllable to a
+    // small opening and a stressed one to full, with a gate for breaths.
+    return Math.min(1, Math.max(0, rms * 3.4 - 0.06));
+  }
+
+  private setSpeechDuck(on: boolean) {
+    this.speechDuck = on ? 0.4 : 1;
+    this.applyGains();
   }
 
   // ---------- Background music ----------
@@ -187,6 +306,7 @@ export class Sfx {
    *  locked phone gets uninstalled. */
   suspend() {
     this.suspended = true;
+    this.stopSpeech();
     if (this.musicEl && !this.musicEl.paused) this.musicEl.pause();
     if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend().catch(() => {});
   }

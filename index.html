@@ -56,37 +56,34 @@
            nowhere else: a match, the lobby and the ranked queue each take the
            whole screen, and say how to get back in their own header. -->
       <nav id="tabbar" class="tabbar" aria-label="Main">
-        <button class="tab" data-tab="play" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/><circle class="fill" cx="17" cy="17" r="2.1"/></svg><span class="tab-label">Play</span></button>
-        <button class="tab" data-tab="daily" aria-label="Daily"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="fill" cx="12" cy="12" r="3.2"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M5.3 18.7l2.5-2.5M16.2 7.8l2.5-2.5"/></svg><span class="tab-label">Daily</span><i id="tab-dot-daily" class="tab-dot hidden"></i></button>
-        <button class="tab" data-tab="online" aria-label="Online"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5M12 3.5C9.4 5.9 8.1 8.7 8.1 12s1.3 6.1 3.9 8.5"/></svg><span class="tab-label">Online</span><i id="tab-dot-online" class="tab-dot hidden"></i></button>
-        <button class="tab" data-tab="ranks" aria-label="Ranks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5V13h4.5v7.5M9.75 20.5V8.5h4.5v12M15.5 20.5V11H20v9.5M2.5 20.5h19"/></svg><span class="tab-label">Ranks</span></button>
-        <button class="tab" data-tab="profile" aria-label="Profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c.9-4 3.8-6.3 7.5-6.3s6.6 2.3 7.5 6.3"/></svg><span class="tab-label">Profile</span></button>
-        <span class="tab-orb" aria-hidden="true"></span>
+        <span class="tab-indicator" aria-hidden="true"></span>
+        <button class="tab" data-tab="play" aria-label="Play"><span class="tab-pill"><i data-icon="house"></i></span><span class="tab-label">Play</span></button>
+        <button class="tab" data-tab="daily" aria-label="Daily"><span class="tab-pill"><i data-icon="zap"></i><i id="tab-dot-daily" class="tab-dot hidden"></i></span><span class="tab-label">Daily</span></button>
+        <button class="tab" data-tab="online" aria-label="Online"><span class="tab-pill"><i data-icon="globe"></i><i id="tab-dot-online" class="tab-dot hidden"></i></span><span class="tab-label">Online</span></button>
+        <button class="tab" data-tab="ranks" aria-label="Ranks"><span class="tab-pill"><i data-icon="trophy"></i></span><span class="tab-label">Ranks</span></button>
+        <button class="tab" data-tab="profile" aria-label="Profile"><span class="tab-pill"><i data-icon="user"></i></span><span class="tab-label">Profile</span></button>
       </nav>
 
 
-      <!-- HOME — the menu is a small board. Each way to play is a cell, with
-           real orbs in it saying what it is: one against one for the
-           computer, a crowd of colours for online, a primed cluster for
-           today's puzzle. Same tiles, same orbs, same frame as the game, so
-           the first screen already looks like the thing you are about to play. -->
+      <!-- HOME — one primary action and a short list. Online play is the big
+           button; everything else is a row with an icon, a line saying what
+           it is, and a chevron. The brand mark and wordmark stay; the live
+           match plays behind them. -->
       <section id="screen-menu" class="screen home">
         <header class="home-top">
           <button id="profile-btn" class="home-profile" aria-label="Open profile">
             <span id="home-avatar" class="home-avatar"></span>
             <span class="home-id">
               <span id="home-name" class="home-name">Player</span>
-              <span class="home-level">
-                <span id="level-chip" class="home-lv">LV 1</span>
+              <span class="home-meta">
+                <span id="level-chip">Level 1</span>
                 <span class="home-xp" aria-hidden="true"><span id="home-xp-fill"></span></span>
               </span>
             </span>
           </button>
           <div class="home-top-actions">
-            <button id="mute-btn-menu" class="icon-btn" aria-label="Toggle sound">🔊</button>
-            <button id="settings-btn" class="icon-btn" aria-label="Settings">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.6 7.6 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.6 7.6 0 0 0 2.6-1.5l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-            </button>
+            <button id="mute-btn-menu" class="icon-btn" aria-label="Toggle sound"><i data-icon="volume-2"></i></button>
+            <button id="settings-btn" class="icon-btn" aria-label="Settings"><i data-icon="settings"></i></button>
           </div>
         </header>
 
@@ -105,50 +102,49 @@
             <circle class="mark-core" cx="32" cy="32" r="10" />
           </svg>
           <h1 class="logo">FISSILE</h1>
-          <p class="tagline">critical mass · chain reaction</p>
+          <p class="tagline">Chain reaction strategy</p>
         </div>
 
-        <div class="home-board" role="group" aria-label="Play">
-          <button id="daily-btn" class="cell-btn cell-daily">
-            <span id="daily-streak" class="cell-tag">#1</span>
-            <span class="cell-orbs n3" aria-hidden="true">
-              <i style="--o:#ffb020"></i><i style="--o:#ffb020"></i><i style="--o:#ffb020"></i>
-              <b class="cell-ring"></b>
+        <div class="home-actions">
+          <button id="play-online-btn" class="cta-btn">
+            <span class="cta-icon"><i data-icon="globe"></i></span>
+            <span class="cta-text">
+              <span class="cta-title">Play online</span>
+              <span class="cta-sub">Ranked, friends and private rooms</span>
             </span>
-            <span class="cell-label">Daily Blast</span>
-            <span id="daily-sub" class="cell-cap">find the max chain</span>
+            <i data-icon="chevron-right" class="cta-go"></i>
           </button>
 
-          <button id="play-online-btn" class="cell-btn cell-online">
-            <span class="cell-tag">live</span>
-            <span class="cell-orbs n4" aria-hidden="true">
-              <i style="--o:#3ad9ff"></i><i style="--o:#ff3355"></i><i style="--o:#5df08a"></i><i style="--o:#a878ff"></i>
-            </span>
-            <span class="cell-label">Online</span>
-            <span class="cell-cap">ranked · rooms</span>
-          </button>
-
-          <button id="cpu-btn" class="cell-btn cell-cpu">
-            <span class="cell-tag">1P</span>
-            <span class="cell-orbs n2" aria-hidden="true">
-              <i style="--o:#3ad9ff"></i><i style="--o:#ff3355"></i>
-            </span>
-            <span class="cell-label">vs Computer</span>
-            <span id="cpu-sub" class="cell-cap">normal</span>
-          </button>
-
-          <button id="play-btn" class="cell-btn cell-local" aria-haspopup="dialog">
-            <span class="cell-tag">2–6P</span>
-            <span class="cell-orbs n3" aria-hidden="true">
-              <i style="--o:#5df08a"></i><i style="--o:#ff5cc0"></i><i style="--o:#ffb020"></i>
-            </span>
-            <span class="cell-label">Pass &amp; Play</span>
-            <span class="cell-cap">one phone</span>
-          </button>
+          <div class="list-group">
+            <button id="cpu-btn" class="list-row">
+              <span class="row-icon"><i data-icon="bot"></i></span>
+              <span class="row-text">
+                <span class="row-title">Play vs computer</span>
+                <span id="cpu-sub" class="row-sub">Normal</span>
+              </span>
+              <i data-icon="chevron-right" class="row-go"></i>
+            </button>
+            <button id="play-btn" class="list-row" aria-haspopup="dialog">
+              <span class="row-icon"><i data-icon="users"></i></span>
+              <span class="row-text">
+                <span class="row-title">Pass and play</span>
+                <span class="row-sub">2–6 players on one phone</span>
+              </span>
+              <i data-icon="chevron-right" class="row-go"></i>
+            </button>
+            <button id="daily-btn" class="list-row">
+              <span class="row-icon row-icon-warm"><i data-icon="zap"></i></span>
+              <span class="row-text">
+                <span class="row-title">Daily Blast <span id="daily-streak" class="row-badge">#1</span></span>
+                <span id="daily-sub" class="row-sub">Find today's biggest chain</span>
+              </span>
+              <i data-icon="chevron-right" class="row-go"></i>
+            </button>
+          </div>
         </div>
 
         <nav class="home-links" aria-label="More">
-          <button id="howto-btn" class="text-link">How to play</button>
+          <button id="lesson-btn" class="text-link"><i data-icon="graduation-cap"></i>Learn with Nova</button>
         </nav>
       </section>
 
@@ -157,14 +153,14 @@
       <section id="screen-daily-page" class="screen page tab-page hidden">
         <header class="page-head">
           <div class="page-titles">
-            <span id="dp-eyebrow" class="page-eyebrow">puzzle #1</span>
             <h1 class="page-title">Daily Blast</h1>
+            <span id="dp-eyebrow" class="page-sub">Puzzle #1</span>
           </div>
           <div class="page-actions">
             <span class="page-pill"><span class="pill-k">next in</span> <span id="dp-countdown">--:--</span></span>
           </div>
         </header>
-        <div class="page-body">
+        <div class="page-body cols-2">
           <div class="panel dp-hero">
             <div id="dp-preview" class="dp-preview" aria-label="Today's board"></div>
             <div class="dp-side">
@@ -201,12 +197,11 @@
       <section id="screen-profile" class="screen page tab-page hidden">
         <header class="page-head">
           <div class="page-titles">
-            <span class="page-eyebrow">operator file</span>
             <h1 class="page-title">Profile</h1>
           </div>
           <div class="page-actions">
             <button id="profile-settings-btn" class="icon-btn" aria-label="Settings">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.6 7.6 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.6 7.6 0 0 0 2.6-1.5l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+              <i data-icon="settings"></i>
             </button>
           </div>
         </header>
@@ -232,7 +227,7 @@
             <div id="profile-badge" class="profile-badge"></div>
             <div class="profile-rank-body">
               <div class="profile-rank-name" id="profile-rank-name">Bronze</div>
-              <div class="profile-rating"><span id="profile-rating">1000</span> <span class="field-unit">rating</span></div>
+              <div class="profile-rating"><span id="profile-rating">0</span> <span class="field-unit">pts</span></div>
               <div class="rank-track" role="progressbar" aria-label="Progress to next rank" aria-valuemin="0" aria-valuemax="100">
                 <div id="profile-rank-fill" class="rank-fill"></div>
               </div>
@@ -261,11 +256,12 @@
           <div class="field">
             <div class="field-label">More</div>
             <div class="list-group">
-              <button id="profile-settings-row" class="list-row"><span>Settings</span><span class="list-go">›</span></button>
-              <button id="profile-howto-row" class="list-row"><span>How to play</span><span class="list-go">›</span></button>
-              <a class="list-row" href="https://chainreaction-sooty.vercel.app/feedback.html" target="_blank" rel="noopener"><span>Send feedback</span><span class="list-go">↗</span></a>
-              <a class="list-row" href="https://chainreaction-sooty.vercel.app/privacy.html" target="_blank" rel="noopener"><span>Privacy policy</span><span class="list-go">↗</span></a>
-              <a class="list-row" href="https://chainreaction-sooty.vercel.app/terms.html" target="_blank" rel="noopener"><span>Terms</span><span class="list-go">↗</span></a>
+              <button id="profile-settings-row" class="list-row"><span class="row-icon"><i data-icon="settings"></i></span><span class="row-text"><span class="row-title">Settings</span></span><i data-icon="chevron-right" class="row-go"></i></button>
+              <button id="profile-lesson-row" class="list-row"><span class="row-icon"><i data-icon="graduation-cap"></i></span><span class="row-text"><span class="row-title">Lesson with Nova</span></span><i data-icon="chevron-right" class="row-go"></i></button>
+              <button id="howto-btn" class="list-row"><span class="row-icon"><i data-icon="circle-help"></i></span><span class="row-text"><span class="row-title">How to play</span></span><i data-icon="chevron-right" class="row-go"></i></button>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/feedback.html" target="_blank" rel="noopener"><span class="row-icon"><i data-icon="message-square"></i></span><span class="row-text"><span class="row-title">Send feedback</span></span><i data-icon="external-link" class="row-go"></i></a>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/privacy.html" target="_blank" rel="noopener"><span class="row-icon"><i data-icon="shield"></i></span><span class="row-text"><span class="row-title">Privacy policy</span></span><i data-icon="external-link" class="row-go"></i></a>
+              <a class="list-row" href="https://chainreaction-sooty.vercel.app/terms.html" target="_blank" rel="noopener"><span class="row-icon"><i data-icon="file-text"></i></span><span class="row-text"><span class="row-title">Terms</span></span><i data-icon="external-link" class="row-go"></i></a>
             </div>
             <p id="app-version" class="app-version">FISSILE</p>
           </div>
@@ -277,8 +273,11 @@
            game: open, Start. -->
       <section id="screen-cpu" class="screen hidden overlay">
         <div class="howto-card setup-card cpu-card" role="dialog" aria-label="Play against the computer">
-          <div class="win-eyebrow">solo</div>
-          <h2>vs Computer</h2>
+                    <h2>vs Computer</h2>
+          <div class="nova-stage cpu-nova">
+            <div class="nova-pfp"></div>
+            <div class="nova-bubble"><span class="nova-name">Nova</span><p class="nova-text">Pick how hard I should try. Fair warning, I talk the whole game.</p></div>
+          </div>
 
           <div class="panel">
             <div class="field">
@@ -308,7 +307,7 @@
            chat. -->
       <section id="screen-daily" class="screen hidden overlay">
         <div class="howto-card daily-card" role="dialog" aria-label="Daily Blast result">
-          <div class="win-eyebrow" id="daily-eyebrow">daily blast</div>
+          <div class="win-eyebrow" id="daily-eyebrow">Daily Blast</div>
           <h2 id="daily-title">Daily Blast</h2>
           <div class="daily-score">
             <span id="daily-score-value" class="daily-score-value">×0</span>
@@ -332,9 +331,38 @@
       <!-- SETTINGS -->
       <section id="screen-settings" class="screen hidden overlay">
         <div class="howto-card settings-card" role="dialog" aria-label="Settings">
-          <div class="win-eyebrow">calibration</div>
           <h2>Settings</h2>
+          <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button class="settings-tab" role="tab" data-settings-tab="sound" aria-controls="settings-pane-sound"><span class="st-ico" aria-hidden="true">🔊</span><span>Sound</span></button>
+            <button class="settings-tab" role="tab" data-settings-tab="graphics" aria-controls="settings-pane-graphics"><span class="st-ico" aria-hidden="true">✨</span><span>Graphics</span></button>
+            <button class="settings-tab" role="tab" data-settings-tab="nova" aria-controls="settings-pane-nova"><span class="st-ico" aria-hidden="true">🎙️</span><span>Nova</span></button>
+            <button class="settings-tab" role="tab" data-settings-tab="chat" aria-controls="settings-pane-chat"><span class="st-ico" aria-hidden="true">💬</span><span>Chat</span></button>
+            <button class="settings-tab" role="tab" data-settings-tab="general" aria-controls="settings-pane-general"><span class="st-ico" aria-hidden="true">⚙️</span><span>General</span></button>
+          </nav>
+          <div class="settings-panes">
+          <div id="settings-pane-sound" class="settings-pane" role="tabpanel" data-settings-pane="sound">
+          <h3 class="section-label">Sound &amp; feel</h3>
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Master <span class="field-unit" id="volume-value">80%</span></div>
+              <input id="volume-range" class="range" type="range" min="0" max="100" step="1" value="80" aria-label="Master volume" />
+            </div>
 
+            <div class="field">
+              <div class="field-label">Music <span class="field-unit" id="music-value">45%</span></div>
+              <input id="music-range" class="range" type="range" min="0" max="100" step="1" value="45" aria-label="Music volume" />
+              <p class="field-note">Plays under the board, quieter mid-match. Zero switches it off rather than leaving it running silently.</p>
+            </div>
+
+            <div class="field">
+              <label class="sound-row settings-switch"><span class="sound-name">Game sounds</span><input type="checkbox" class="switch" data-settings-sound="fx" /></label>
+              <label class="sound-row settings-switch"><span class="sound-name">Music on</span><input type="checkbox" class="switch" data-settings-sound="music" /></label>
+              <p class="field-note">The speaker button on the home screen and in a match has these switches too, plus Nova's voice.</p>
+            </div>
+          </div>
+          </div>
+
+          <div id="settings-pane-graphics" class="settings-pane" role="tabpanel" data-settings-pane="graphics">
           <h3 class="section-label">Graphics</h3>
           <div class="panel gfx-panel">
             <div class="field">
@@ -419,20 +447,47 @@
               </div>
             </div>
           </div>
+          </div>
 
-          <h3 class="section-label">Sound &amp; feel</h3>
+          <div id="settings-pane-nova" class="settings-pane" role="tabpanel" data-settings-pane="nova">
+          <h3 class="section-label">Nova</h3>
           <div class="panel">
             <div class="field">
-              <div class="field-label">Master <span class="field-unit" id="volume-value">80%</span></div>
-              <input id="volume-range" class="range" type="range" min="0" max="100" step="1" value="80" aria-label="Master volume" />
+              <div class="field-label">Chatter <span class="field-unit">vs computer</span></div>
+              <div id="nova-chatter-group" class="segmented">
+                <button class="segment" data-chatter="lots">Lots</button>
+                <button class="segment" data-chatter="some">Some</button>
+                <button class="segment" data-chatter="off">Off</button>
+              </div>
             </div>
-
             <div class="field">
-              <div class="field-label">Music <span class="field-unit" id="music-value">45%</span></div>
-              <input id="music-range" class="range" type="range" min="0" max="100" step="1" value="45" aria-label="Music volume" />
-              <p class="field-note">Plays under the board, quieter mid-match. Zero switches it off rather than leaving it running silently.</p>
+              <div class="field-label">Voice</div>
+              <div id="nova-voice-group" class="segmented">
+                <button class="segment" data-novavoice="1">On</button>
+                <button class="segment" data-novavoice="0">Off</button>
+              </div>
+              <p class="field-note">Off keeps her lines as text only. She always follows Master volume and mute.</p>
             </div>
+          </div>
+          </div>
 
+          <div id="settings-pane-chat" class="settings-pane" role="tabpanel" data-settings-pane="chat">
+          <h3 class="section-label">Online chat</h3>
+          <div class="panel">
+            <div class="field">
+              <div class="field-label">Typed chat <span class="field-unit">write your own</span></div>
+              <div id="typed-chat-group" class="segmented">
+                <button class="segment" data-typed="1">On</button>
+                <button class="segment active" data-typed="0">Off</button>
+              </div>
+              <p class="field-note">Off: quick phrases and emoji only, and other players' typed messages stay hidden. On: write your own and see theirs. Messages are filtered, links and numbers are removed, and you can mute or report anyone by tapping their message. You can also switch this from the 💬 button during a match.</p>
+            </div>
+          </div>
+          </div>
+
+          <div id="settings-pane-general" class="settings-pane" role="tabpanel" data-settings-pane="general">
+          <h3 class="section-label">General</h3>
+          <div class="panel">
             <div class="field">
               <div class="field-label">Haptics <span class="field-unit">vibration</span></div>
               <div id="haptics-group" class="segmented">
@@ -468,6 +523,8 @@
             <span aria-hidden="true">·</span>
             <a href="/terms.html" target="_blank" rel="noopener">Terms</a>
           </p>
+          </div>
+          </div>
 
           <button id="settings-close-btn" class="primary-btn">Done</button>
         </div>
@@ -476,8 +533,7 @@
       <!-- MATCH SETUP — the old menu, one level down. -->
       <section id="screen-setup" class="screen hidden overlay">
         <div class="howto-card setup-card" role="dialog" aria-label="Local match setup">
-          <div class="win-eyebrow">pass and play</div>
-          <h2>Play local</h2>
+                    <h2>Play local</h2>
 
           <div class="panel">
             <div class="field">
@@ -522,13 +578,6 @@
               <p class="field-note">Wide turns the lattice on its side — the same board, shaped for a monitor instead of a phone.</p>
             </div>
 
-            <div class="field">
-              <div class="field-label">Particle</div>
-              <div id="orb-style-group" class="segmented">
-                <button class="segment active" data-style="dots">Standard</button>
-                <button class="segment" data-style="emoji">Reactive 🤯</button>
-              </div>
-            </div>
 
           </div>
 
@@ -544,14 +593,13 @@
       <section id="screen-online" class="screen page tab-page hidden">
         <header class="page-head">
           <div class="page-titles">
-            <span class="page-eyebrow">server authoritative</span>
             <h1 class="page-title">Online</h1>
           </div>
           <div class="page-actions">
             <span id="online-presence" class="page-pill"><span class="dot-live"></span> <span id="online-presence-n">—</span> <span class="pill-k">online</span></span>
           </div>
         </header>
-        <div class="page-body">
+        <div class="page-body cols-2">
           <div class="panel">
             <div id="account-strip" class="account-strip hidden"></div>
             <p id="account-offline" class="field-note hidden">
@@ -562,35 +610,35 @@
               <div class="field-label">Your name <span class="field-unit">saved on this device</span></div>
               <div class="join-row">
                 <input id="name-input" class="text-input" maxlength="16" placeholder="Your name" autocomplete="off" />
-                <button id="name-save-btn" class="ghost-btn small-btn">SAVE</button>
+                <button id="name-save-btn" class="ghost-btn small-btn">Save</button>
               </div>
               <p id="name-note" class="field-note"></p>
             </div>
 
             <div id="invite-inbox" class="invite-inbox hidden"></div>
 
-            <button id="open-ranked-btn" class="primary-btn">Ranked match</button>
+            <button id="open-ranked-btn" class="primary-btn btn-with-icon"><i data-icon="trophy"></i>Ranked match</button>
           </div>
 
           <section class="page-section">
             <h2 class="section-label">Play with a friend <span class="field-unit">private room</span></h2>
             <div class="panel">
-              <button id="create-room-btn" class="ghost-btn wide-btn">Create a private room</button>
+              <button id="create-room-btn" class="ghost-btn wide-btn btn-with-icon"><i data-icon="plus"></i>Create a private room</button>
               <div class="join-row">
                 <input id="join-code-input" class="text-input code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
-                <button id="join-room-btn" class="ghost-btn small-btn">JOIN</button>
+                <button id="join-room-btn" class="ghost-btn small-btn">Join</button>
               </div>
-              <p class="field-note">Private rooms never appear in a public list and never affect anyone's rating.</p>
+              <p class="field-note">Private rooms never appear in a public list and never affect anyone's rank points.</p>
             </div>
           </section>
 
-          <section class="page-section">
-            <h2 class="section-label">Open rooms <button id="rooms-refresh-btn" class="link-btn section-action">Refresh</button></h2>
+          <section class="page-section span-2">
+            <h2 class="section-label">Open rooms <button id="rooms-refresh-btn" class="link-btn section-action btn-with-icon"><i data-icon="refresh-cw"></i>Refresh</button></h2>
             <div class="panel">
               <div id="rooms-list" class="rooms-list"></div>
             </div>
           </section>
-          <div id="online-error" class="online-error hidden"></div>
+          <div id="online-error" class="online-error span-2 hidden"></div>
         </div>
       </section>
 
@@ -604,21 +652,33 @@
       <section id="screen-ranked" class="screen page sub-page hidden">
         <header class="page-head">
           <button id="ranked-back-btn" class="icon-btn page-back" aria-label="Back">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <i data-icon="chevron-left"></i>
           </button>
           <div class="page-titles">
-            <span class="page-eyebrow">moves your rank</span>
             <h1 class="page-title">Ranked match</h1>
+            <span class="page-sub">Finish higher, earn more points</span>
           </div>
         </header>
         <div class="page-body">
 
           <div class="panel">
             <div class="field">
+              <div class="field-label">Players</div>
+              <div id="quick-players-group" class="segmented seg-3 players-seg">
+                <button class="segment active" data-players="2"><span>1v1</span><small class="seg-count" data-count="2"></small></button>
+                <button class="segment" data-players="3"><span>3 players</span><small class="seg-count" data-count="3"></small></button>
+                <button class="segment" data-players="4"><span>4 players</span><small class="seg-count" data-count="4"></small></button>
+              </div>
+              <div id="quick-points" class="points-table" aria-label="Points by finishing place"></div>
+            </div>
+            <div class="field">
+              <div class="field-label">Mode</div>
               <div id="quick-mode-group" class="mode-grid"></div>
-              <div id="quick-size-group" class="segmented" style="margin-top:8px">
+              <div class="field-label" style="margin-top:10px">Board</div>
+              <div id="quick-size-group" class="segmented seg-4">
+                <button class="segment active" data-size="auto">Auto</button>
                 <button class="segment" data-size="small">9×5</button>
-                <button class="segment active" data-size="medium">11×6</button>
+                <button class="segment" data-size="medium">11×6</button>
                 <button class="segment" data-size="large">13×7</button>
               </div>
 
@@ -649,7 +709,7 @@
               <p id="quick-fallback-msg" class="field-note"></p>
               <button id="quick-fallback-btn" class="ghost-btn wide-btn">Play a practice opponent</button>
             </div>
-            <p class="field-note">Matched on mode and board size against whoever is queued. These are the only games that move your rank.</p>
+            <p class="field-note">Ranked rooms are private: you are matched with players searching for the same mode and player count. Auto takes any board size, so you find a match faster. Leaving a ranked match, or missing three turns, costs 30 points.</p>
             <div id="presence-strip" class="presence-strip"></div>
           </div>
         </div>
@@ -659,10 +719,9 @@
       <section id="screen-lobby" class="screen page sub-page hidden">
         <header class="page-head">
           <button id="lobby-back-btn" class="icon-btn page-back" aria-label="Leave room">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <i data-icon="chevron-left"></i>
           </button>
           <div class="page-titles">
-            <span class="page-eyebrow">waiting room</span>
             <h1 class="page-title">Room</h1>
           </div>
         </header>
@@ -711,13 +770,6 @@
                   <button class="segment" data-orient="landscape">Wide</button>
                 </div>
               </div>
-              <div class="field">
-                <div class="field-label">Particle</div>
-                <div id="lobby-orb-style-group" class="segmented">
-                  <button class="segment active" data-style="dots">Standard</button>
-                  <button class="segment" data-style="emoji">Reactive 🤯</button>
-                </div>
-              </div>
               <p class="field-note">Tournament and Survival are local-only for now — they need series state, or an AI, that the relay doesn't run yet.</p>
             </div>
           </div>
@@ -731,6 +783,7 @@
           </div>
 
           <button id="lobby-start-btn" class="primary-btn">Start reaction</button>
+          <p id="lobby-start-hint" class="field-note lobby-start-hint hidden" role="status"></p>
           <p id="lobby-wait-msg" class="tagline lobby-hint hidden">waiting for host…</p>
         </div>
       </section>
@@ -738,11 +791,16 @@
       <!-- GAME SCREEN -->
       <section id="screen-game" class="screen hidden">
         <div id="hud-top">
-          <button id="back-btn" class="icon-btn" aria-label="Back to menu">←</button>
+          <button id="back-btn" class="icon-btn" aria-label="Back to menu"><i data-icon="chevron-left"></i></button>
           <div id="player-pills" class="player-pills"></div>
-          <button id="mute-btn-game" class="icon-btn" aria-label="Toggle sound">🔊</button>
+          <button id="mute-btn-game" class="icon-btn" aria-label="Toggle sound"><i data-icon="volume-2"></i></button>
+          <button id="settings-btn-game" class="icon-btn" aria-label="Settings"><i data-icon="settings"></i></button>
         </div>
         <div id="match-banner" class="match-banner hidden"></div>
+        <div id="lesson-bar" class="lesson-bar hidden">
+          <span id="lesson-step" class="lesson-step">Lesson · 1 of 5</span>
+          <button id="lesson-skip" class="ghost-btn small-btn">Skip lesson</button>
+        </div>
         <div id="turn-clock" class="turn-clock hidden">
           <div class="turn-clock-bar"><span id="turn-clock-fill"></span></div>
           <div id="turn-clock-value" class="turn-clock-value">10.0</div>
@@ -754,6 +812,14 @@
           <div id="fps-meter" class="fps-meter hidden" aria-hidden="true"></div>
           <div id="puzzle-hud" class="puzzle-hud hidden"></div>
           <div id="taunt-feed" class="taunt-feed" aria-live="polite"></div>
+        </div>
+        <div id="nova-dock" class="nova-stage nova-dock nova-quiet" aria-live="polite">
+          <div class="nova-pfp"></div>
+          <div class="nova-bubble">
+            <span class="nova-name">Nova</span>
+            <p class="nova-text"></p>
+            <div id="lesson-actions" class="lesson-actions hidden"></div>
+          </div>
         </div>
         <div id="taunt-bar" class="taunt-bar hidden">
           <button id="taunt-toggle" class="taunt-toggle" aria-label="Send a reaction" aria-expanded="false">😀</button>
@@ -772,7 +838,7 @@
         <div id="confetti-layer" class="confetti-layer"></div>
         <div class="win-card">
           <div class="win-card-head">
-            <div class="win-eyebrow">reaction complete</div>
+            <div class="win-eyebrow">Match over</div>
             <!-- Two parts, typeset differently: who it was, then what they did.
                  One run-on sentence in the UI font is what made this read as a
                  dialog label rather than a result. -->
@@ -780,6 +846,10 @@
               <span id="win-name" class="win-name">Player 1</span>
               <span id="win-verb" class="win-verb">wins</span>
             </div>
+          </div>
+          <div id="win-nova" class="nova-stage win-nova hidden" aria-live="polite">
+            <div class="nova-pfp"></div>
+            <div class="nova-bubble"><p class="nova-text"></p></div>
           </div>
           <div id="win-rank" class="win-rank hidden"></div>
           <div id="win-metrics" class="win-metrics"></div>
@@ -797,11 +867,13 @@
       <section id="screen-boards" class="screen page tab-page hidden">
         <header class="page-head">
           <div class="page-titles">
-            <span class="page-eyebrow">standings</span>
             <h1 class="page-title">Ranks</h1>
           </div>
         </header>
         <div class="page-body boards-card">
+          <div id="rank-hero" class="rank-hero"></div>
+          <div id="rank-ladder" class="rank-ladder" aria-label="Rank tiers"></div>
+
           <div id="board-tabs" class="segmented">
             <button class="segment active" data-board="world">World</button>
             <button class="segment" data-board="friends">Friends</button>
@@ -815,23 +887,69 @@
             <div class="field-label">Add a friend</div>
             <div class="join-row">
               <input id="friend-code-input" class="text-input code-input" maxlength="6" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
-              <button id="friend-add-btn" class="ghost-btn small-btn">ADD</button>
+              <button id="friend-add-btn" class="ghost-btn small-btn">Add</button>
             </div>
             <p id="friend-msg" class="field-note"></p>
           </div>
 
-          <div id="my-code" class="my-code hidden"></div>
+          <div id="my-code" class="friend-card hidden"></div>
         </div>
       </section>
 
       <!-- HOW TO PLAY — five pages, one idea each. The diagrams are the real
            board's geometry and palette so nothing has to be re-learned when
            the player closes this and taps a cell. -->
+      <section id="screen-share" class="screen hidden overlay">
+        <div class="howto-card share-sheet" role="dialog" aria-label="Share your result">
+          <h2>Share your result</h2>
+          <div class="share-preview">
+            <img id="share-img" alt="Your result card" />
+            <div id="share-loading" class="share-loading">Making your card…</div>
+          </div>
+          <p class="field-note share-note">Story-sized. Post it, or send it to the group chat.</p>
+          <div class="setup-actions">
+            <button id="share-go-btn" class="primary-btn">Share image</button>
+            <button id="share-close-btn" class="ghost-btn">Close</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="sound-menu" class="sound-menu hidden" role="dialog" aria-label="Sound">
+        <div class="sound-menu-title">Sound</div>
+        <label class="sound-row"><span class="sound-ico">🎮</span><span class="sound-name">Game sounds</span><input type="checkbox" class="switch" data-sound="fx" /></label>
+        <label class="sound-row"><span class="sound-ico">🎵</span><span class="sound-name">Music</span><input type="checkbox" class="switch" data-sound="music" /></label>
+        <label class="sound-row"><span class="sound-ico">🎙️</span><span class="sound-name">Nova's voice</span><input type="checkbox" class="switch" data-sound="nova" /></label>
+        <button type="button" class="sound-all" data-sound="all">Mute everything</button>
+      </div>
+
+      <section id="screen-confirm" class="screen hidden overlay">
+        <div class="howto-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+          <h2 id="confirm-title">Exit?</h2>
+          <p id="confirm-body" class="confirm-body"></p>
+          <div class="setup-actions confirm-actions">
+            <button id="confirm-cancel-btn" class="ghost-btn">Stay</button>
+            <button id="confirm-ok-btn" class="primary-btn">Exit</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="screen-nova-welcome" class="screen hidden overlay">
+        <div class="howto-card nova-welcome-card" role="dialog" aria-label="Meet Nova">
+          <div id="nova-welcome-stage" class="nova-stage nova-hero">
+            <div class="nova-pfp"></div>
+            <div class="nova-bubble"><span class="nova-name">Nova</span><p class="nova-text"></p></div>
+          </div>
+          <div class="setup-actions">
+            <button id="nova-lesson-btn" class="primary-btn">Start the lesson</button>
+            <button id="nova-later-btn" class="ghost-btn">Maybe later</button>
+          </div>
+        </div>
+      </section>
+
       <section id="screen-howto" class="screen hidden overlay">
         <div class="howto-card howto-paged" role="dialog" aria-label="How to play">
           <div class="howto-head">
-            <div class="win-eyebrow">protocol</div>
-            <span id="howto-step" class="howto-step">1 / 5</span>
+                        <span id="howto-step" class="howto-step">1 / 5</span>
           </div>
 
           <div id="howto-pages" class="howto-pages">

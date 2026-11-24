@@ -14,7 +14,7 @@ import { account } from '../net/account';
 import { stats } from '../game/stats';
 import { rankFor, rankProgress, nextRankAt } from '../game/rank';
 import { rankBadgeSvg } from '../render/rankBadge';
-import { AVATAR_KEYS, DEFAULT_AVATAR, avatarSvg, avatarName, defaultAvatarFor } from '../render/avatar';
+import { PICKER_KEYS, DEFAULT_AVATAR, avatarSvg, avatarName, defaultAvatarFor } from '../render/avatar';
 import type { MatchRecord, PlayerProfile } from '../net/protocol';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -66,7 +66,7 @@ function renderRank(profile: PlayerProfile) {
   $('profile-rank-note').textContent =
     next === null
       ? 'Top tier. Nothing above this one.'
-      : `${next - profile.rating} rating to ${rankFor(next).name}.`;
+      : `${next - profile.rating} pts to ${rankFor(next).name}.`;
 }
 
 function renderRecord(profile: PlayerProfile) {
@@ -125,7 +125,7 @@ function renderLocal() {
 function buildPicker(onPick: (key: string) => void) {
   const host = $('profile-avatar-picker');
   if (host.childElementCount) return;
-  host.innerHTML = AVATAR_KEYS.map(
+  host.innerHTML = PICKER_KEYS.map(
     (key) =>
       `<button class="avatar-option" data-avatar="${key}" title="${avatarName(key)}" aria-label="${avatarName(key)}">${avatarSvg(key, 44)}</button>`
   ).join('');

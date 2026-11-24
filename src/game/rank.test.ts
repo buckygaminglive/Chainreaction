@@ -2,23 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RANKS, rankFor, rankProgress, nextRankAt } from './rank.ts';
 
-test('a new account starts inside a tier, not on its boundary', () => {
-  // server/PlayerHub.ts mints accounts at 1000. Landing exactly on a floor
-  // would drop a player a whole tier after a single loss.
-  const rank = rankFor(1000);
-  assert.equal(rank.key, 'bronze');
-  assert.ok(rankProgress(1000) > 0, 'a starting account has already climbed into its tier');
-  assert.ok(rankProgress(1000) < 1, 'and has somewhere left to go inside it');
-});
-
-test('every tier is reachable on the rating scale the bots span', () => {
-  // game/bots.ts spans 780–1500; a tier no opponent can put you in is a tier
-  // that never appears.
-  for (const rank of RANKS) {
-    assert.equal(rankFor(Math.max(rank.min, 780)).key, rank.key === 'bronze' ? 'bronze' : rank.key);
-  }
-  assert.equal(rankFor(780).key, 'bronze');
-  assert.equal(rankFor(1500).key, 'master');
+test('a new account starts Unranked at 0 points', () => {
+  assert.equal(rankFor(0).key, 'unranked');
+  assert.equal(rankProgress(0), 0);
+  assert.equal(nextRankAt(0), 100);
+  assert.equal(rankFor(-5).key, 'unranked');
 });
 
 test('tiers are ordered and contiguous', () => {
@@ -30,14 +18,8 @@ test('tiers are ordered and contiguous', () => {
 });
 
 test('progress runs 0 to 1 inside a tier and tops out at Master', () => {
-  assert.equal(rankProgress(1050), 0, 'at the floor of Silver');
-  assert.equal(rankProgress(1100), 0.5, 'halfway through Silver');
-  assert.equal(rankProgress(9999), 1, 'Master has no ceiling to be partway up');
-  assert.equal(nextRankAt(9999), null);
-  assert.equal(nextRankAt(1000), 1050);
-});
-
-test('a rating below the bottom of the scale still has a tier', () => {
-  assert.equal(rankFor(0).key, 'bronze');
-  assert.equal(rankFor(-50).key, 'bronze');
+  assert.equal(rankProgress(300), 0, 'at the floor of Silver');
+  assert.equal(rankProgress(450), 0.5, 'halfway through Silver');
+  assert.equal(rankProgress(99999), 1, 'Master has no ceiling to be partway up');
+  assert.equal(nextRankAt(99999), null);
 });
